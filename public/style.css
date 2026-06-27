@@ -1,22 +1,38 @@
 /* ── Reset & tokens ───────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Dark theme (default) ─────────────────────────────────── */
 :root {
-  --bg:        #0f1117;
-  --surface:   #1a1d27;
-  --surface2:  #21253a;
-  --accent:    #4f8ef7;
-  --danger:    #e05555;
-  --success:   #4caf7d;
-  --text:      #e8eaf0;
-  --text-dim:  #7a80a0;
-  --border:    #272b42;
-  --border2:   #1e223a;
-  --radius:    12px;
-  --topbar-h:  0px; /* set by JS on load */
-  --hour-px:   64px;
-  --cal-start: 6;   /* 6 AM */
-  --cal-hours: 17;  /* 6 AM – 10 PM */
+  --bg:         #0f1117;
+  --surface:    #1a1d27;
+  --surface2:   #21253a;
+  --accent:     #4f8ef7;
+  --danger:     #e05555;
+  --success:    #4caf7d;
+  --text:       #e8eaf0;
+  --text-dim:   #7a80a0;
+  --border:     #272b42;
+  --border2:    #1e223a;
+  --clock-col:  #ffffff;
+  --today-bg:   rgba(79,142,247,0.06);
+  --radius:     12px;
+  --hour-px:    64px;
+}
+
+/* ── Light theme ──────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:         #f4f6ff;
+  --surface:    #ffffff;
+  --surface2:   #edf0fb;
+  --accent:     #3b7ef0;
+  --danger:     #d43f3f;
+  --success:    #3a9a6a;
+  --text:       #1e2240;
+  --text-dim:   #5c6690;
+  --border:     #ced4ee;
+  --border2:    #e2e6f6;
+  --clock-col:  #1e2240;
+  --today-bg:   rgba(59,126,240,0.07);
 }
 
 html, body {
@@ -52,7 +68,7 @@ html, body {
   font-size: clamp(2.4rem, 4.5vw, 4rem);
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: #fff;
+  color: var(--clock-col);
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -165,6 +181,29 @@ html, body {
   color: var(--text-dim);
   font-family: monospace;
 }
+
+/* Theme toggle buttons */
+.theme-options {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.theme-opt {
+  flex: 1;
+  padding: 0.5rem 0.4rem;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.theme-opt:hover  { border-color: var(--accent); color: var(--text); }
+.theme-opt.active { border-color: var(--accent); background: var(--accent); color: #fff; }
 
 /* Error toast */
 .error-toast {
@@ -391,6 +430,8 @@ body {
   overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+  /* Allow content to set its own height; don't collapse */
+  align-items: flex-start;
 }
 
 .cal-body-scroll::-webkit-scrollbar { width: 6px; }
@@ -399,8 +440,7 @@ body {
 .cal-time-gutter {
   width: 52px;
   flex-shrink: 0;
-  position: sticky;
-  left: 0;
+  /* not sticky — scrolls with content so labels line up with rows */
   z-index: 2;
   background: var(--bg);
 }
@@ -422,17 +462,21 @@ body {
   display: flex;
   flex: 1;
   min-width: 0;
+  /* stretch all columns to the same height as the tallest one */
+  align-items: stretch;
 }
 
 .cal-day-col {
   flex: 1;
-  min-width: 80px;
+  min-width: 0;
   position: relative;
   border-left: 1px solid var(--border2);
+  /* explicit min-height = 24 hours × HOUR_PX; JS also sets this */
+  min-height: calc(24 * var(--hour-px));
 }
 
 .cal-day-col.is-today {
-  background: rgba(79, 142, 247, 0.04);
+  background: var(--today-bg);
 }
 
 .cal-hour-row {

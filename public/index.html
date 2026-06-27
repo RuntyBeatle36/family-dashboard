@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -189,6 +189,17 @@
 <div id="settings-modal" class="modal-overlay" hidden>
   <div class="modal">
     <h3 class="modal-title">⚙️ Settings</h3>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Theme</div>
+      <p class="settings-desc">Auto switches at sunrise &amp; sunset using your weather location.</p>
+      <div class="theme-options" id="theme-options">
+        <button class="theme-opt" data-val="auto">🌅 Auto</button>
+        <button class="theme-opt" data-val="light">☀️ Light</button>
+        <button class="theme-opt" data-val="dark">🌙 Dark</button>
+      </div>
+      <p id="theme-status" class="settings-desc" style="margin-top:0.4rem"></p>
+    </div>
 
     <div class="settings-section">
       <div class="settings-section-title">Weather Location</div>
