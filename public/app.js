@@ -192,12 +192,14 @@ setInterval(updateClock, 1000);
 
 /* ══════════════════════════════════════════════════════════
    WEATHER CANVAS ANIMATION
-   Modes: 'none' | 'clear-day' | 'clear-night' | 'rain' | 'storm'
+   Modes: none | clear-day | clear-night |
+          cloudy-day | cloudy-night | overcast | rain | storm
    ══════════════════════════════════════════════════════════ */
 const wxCanvas = document.getElementById('wx-canvas');
 const wxCtx    = wxCanvas.getContext('2d');
 let wxDrops  = [];
 let wxStars  = [];
+let wxClouds = [];
 let wxAnimId = null;
 let wxMode   = 'none';
 
@@ -206,7 +208,7 @@ function resizeWxCanvas() {
   wxCanvas.height = window.innerHeight;
 }
 
-/* ── Rain drops ───────────────────────────────────────────── */
+/* ── Particles ────────────────────────────────────────────── */
 const LEAN = 0.22;
 
 function mkDrop() {
@@ -220,11 +222,9 @@ function mkDrop() {
 }
 
 function initDrops() {
-  const n = wxMode === 'storm' ? 240 : 140;
-  wxDrops = Array.from({ length: n }, mkDrop);
+  wxDrops = Array.from({ length: wxMode === 'storm' ? 240 : 140 }, mkDrop);
 }
 
-/* ── Stars ────────────────────────────────────────────────── */
 function initStars() {
   wxStars = Array.from({ length: 180 }, () => ({
     x:    Math.random() * wxCanvas.width,
@@ -236,66 +236,164 @@ function initStars() {
   }));
 }
 
-/* ── Sky gradient (clear day — drawn once, no loop) ──────── */
-function drawSky() {
+function mkCloud(offscreen) {
   const W = wxCanvas.width, H = wxCanvas.height;
-  const grad = wxCtx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0,    'rgba(10,  60, 160, 0.92)');
-  grad.addColorStop(0.45, 'rgba(20, 110, 210, 0.80)');
-  grad.addColorStop(0.80, 'rgba(50, 155, 230, 0.60)');
-  grad.addColorStop(1,    'rgba(90, 190, 245, 0.35)');
-  wxCtx.fillStyle = grad;
-  wxCtx.fillRect(0, 0, W, H);
-
-  // A few subtle cloud smears
-  wxCtx.save();
-  [[0.20,0.18],[0.55,0.10],[0.78,0.22],[0.38,0.28]].forEach(([cx,cy]) => {
-    const gx = wxCtx.createRadialGradient(W*cx, H*cy, 0, W*cx, H*cy, W*0.14);
-    gx.addColorStop(0,   'rgba(255,255,255,0.12)');
-    gx.addColorStop(0.5, 'rgba(255,255,255,0.05)');
-    gx.addColorStop(1,   'rgba(255,255,255,0)');
-    wxCtx.fillStyle = gx;
-    wxCtx.fillRect(0, 0, W, H);
-  });
-  wxCtx.restore();
+  const n = 4 + Math.floor(Math.random() * 4);
+  const puffs = [];
+  let tw = 0;
+  for (let i = 0; i < n; i++) {
+    const r = 28 + Math.random() * 50;
+    puffs.push({ dx: tw + r * 0.5, dy: (Math.random() - 0.5) * r * 0.4, r });
+    tw += r * (0.7 + Math.random() * 0.45);
+  }
+  return {
+    x:     offscreen ? -tw - 60 : Math.random() * W * 1.3 - W * 0.1,
+    y:     H * (0.04 + Math.random() * 0.42),
+    scale: 0.55 + Math.random() * 1.1,
+    speed: 0.14 + Math.random() * 0.28,
+    opac:  0.28 + Math.random() * 0.42,
+    puffs, tw,
+  };
 }
 
-/* ── Main animation frame ─────────────────────────────────── */
-function drawFrame(ts = 0) {
+function initClouds() {
+  const n = wxMode === 'overcast' ? 10 : 5;
+  wxClouds = Array.from({ length: n }, () => mkCloud(false));
+}
+
+/* ── Drawing helpers ──────────────────────────────────────── */
+function fillGrad(stops) {
+  const g = wxCtx.createLinearGradient(0, 0, 0, wxCanvas.height);
+  stops.forEach(([p, c]) => g.addColorStop(p, c));
+  wxCtx.fillStyle = g;
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+}
+
+function drawDaySky() {
+  fillGrad([
+    [0,    'rgba(10,  60, 160, 0.92)'],
+    [0.45, 'rgba(20, 110, 210, 0.80)'],
+    [0.80, 'rgba(50, 155, 230, 0.60)'],
+    [1,    'rgba(90, 190, 245, 0.35)'],
+  ]);
   const W = wxCanvas.width, H = wxCanvas.height;
-  wxCtx.clearRect(0, 0, W, H);
+  [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cx,cy]) => {
+    const g2 = wxCtx.createRadialGradient(W*cx,H*cy,0, W*cx,H*cy,W*0.14);
+    g2.addColorStop(0, 'rgba(255,255,255,0.11)');
+    g2.addColorStop(1, 'rgba(255,255,255,0)');
+    wxCtx.fillStyle = g2;
+    wxCtx.fillRect(0, 0, W, H);
+  });
+}
 
-  if (wxMode === 'clear-day') {
-    drawSky();
-    wxAnimId = null; // static — no loop needed
-    return;
+function drawNightSky() {
+  fillGrad([
+    [0, 'rgba(4,  7, 28, 0.94)'],
+    [1, 'rgba(8, 16, 52, 0.72)'],
+  ]);
+}
+
+function drawOvercastSky() {
+  fillGrad([
+    [0, 'rgba(38, 43, 62, 0.88)'],
+    [1, 'rgba(58, 68, 90, 0.58)'],
+  ]);
+}
+
+function drawRainSky() {
+  fillGrad([
+    [0, 'rgba(14, 19, 46, 0.82)'],
+    [1, 'rgba(26, 36, 62, 0.52)'],
+  ]);
+}
+
+function drawStars(ts) {
+  for (const s of wxStars) {
+    const o = s.base * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
+    wxCtx.beginPath();
+    wxCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    wxCtx.fillStyle = `rgba(255,255,255,${o.toFixed(3)})`;
+    wxCtx.fill();
   }
+}
 
-  if (wxMode === 'clear-night') {
-    for (const s of wxStars) {
-      const o = s.base * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
+function drawClouds(colorFn) {
+  const W = wxCanvas.width;
+  for (const c of wxClouds) {
+    wxCtx.save();
+    wxCtx.translate(c.x, c.y);
+    wxCtx.scale(c.scale, c.scale * 0.52);
+    for (const p of c.puffs) {
       wxCtx.beginPath();
-      wxCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      wxCtx.fillStyle = `rgba(255,255,255,${o.toFixed(3)})`;
+      wxCtx.arc(p.dx, p.dy, p.r, 0, Math.PI * 2);
+      wxCtx.fillStyle = colorFn(c.opac);
       wxCtx.fill();
     }
+    wxCtx.restore();
+    c.x += c.speed;
+    if (c.x > W + c.tw * c.scale + 60) Object.assign(c, mkCloud(true));
   }
+}
 
-  if (wxMode === 'rain' || wxMode === 'storm') {
-    wxCtx.lineWidth = 1;
-    for (const d of wxDrops) {
-      wxCtx.save();
-      wxCtx.globalAlpha = d.opac;
-      wxCtx.strokeStyle = '#a8d8ff';
-      wxCtx.beginPath();
-      wxCtx.moveTo(d.x, d.y);
-      wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
-      wxCtx.stroke();
-      wxCtx.restore();
-      d.y += d.speed;
-      d.x += LEAN * d.speed * 0.28;
-      if (d.y > H + d.len) Object.assign(d, mkDrop(), { y: -d.len });
-    }
+function drawRain() {
+  wxCtx.lineWidth = 1;
+  const H = wxCanvas.height;
+  for (const d of wxDrops) {
+    wxCtx.save();
+    wxCtx.globalAlpha = d.opac;
+    wxCtx.strokeStyle = '#a8d8ff';
+    wxCtx.beginPath();
+    wxCtx.moveTo(d.x, d.y);
+    wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
+    wxCtx.stroke();
+    wxCtx.restore();
+    d.y += d.speed;
+    d.x += LEAN * d.speed * 0.28;
+    if (d.y > H + d.len) Object.assign(d, mkDrop(), { y: -d.len });
+  }
+}
+
+/* ── Main loop ────────────────────────────────────────────── */
+function drawFrame(ts = 0) {
+  wxCtx.clearRect(0, 0, wxCanvas.width, wxCanvas.height);
+
+  switch (wxMode) {
+    case 'clear-day':
+      drawDaySky();
+      wxAnimId = null; // static — no loop
+      return;
+
+    case 'clear-night':
+      drawNightSky();
+      drawStars(ts);
+      break;
+
+    case 'cloudy-day':
+      drawDaySky();
+      drawClouds(o => `rgba(255,255,255,${(o * 0.88).toFixed(3)})`);
+      break;
+
+    case 'cloudy-night':
+      drawNightSky();
+      drawStars(ts);
+      // Dark cloud shapes occlude stars they pass over
+      drawClouds(o => `rgba(18,25,60,${(o * 2.4).toFixed(3)})`);
+      break;
+
+    case 'overcast':
+      drawOvercastSky();
+      drawClouds(o => `rgba(85,95,120,${(o * 1.6).toFixed(3)})`);
+      break;
+
+    case 'rain':
+    case 'storm':
+      drawRainSky();
+      drawRain();
+      break;
+
+    default:
+      wxAnimId = null;
+      return;
   }
 
   wxAnimId = requestAnimationFrame(drawFrame);
@@ -335,47 +433,47 @@ function applyWxMode(mode) {
   wxMode = mode;
   document.body.dataset.wx = mode;
 
-  // Canvas opacity: sky needs to fill fully; rain/stars are more subtle
   wxCanvas.style.opacity =
-    mode === 'clear-day'   ? '1.0'  :
-    mode === 'clear-night' ? '0.88' : '0.62';
+    mode === 'clear-day'    ? '1.00' :
+    mode === 'clear-night'  ? '0.90' :
+    mode === 'cloudy-day'   ? '1.00' :
+    mode === 'cloudy-night' ? '0.90' :
+    mode === 'overcast'     ? '0.82' : '0.72';
 
   if (mode === 'none') return;
 
-  if (mode === 'clear-night')          initStars();
-  else if (mode === 'rain' || mode === 'storm') initDrops();
+  if (mode === 'clear-night' || mode === 'cloudy-night') initStars();
+  if (mode === 'cloudy-day' || mode === 'cloudy-night' || mode === 'overcast') initClouds();
+  if (mode === 'rain' || mode === 'storm') initDrops();
 
   startAnim();
   if (mode === 'storm') scheduleLightning();
 }
 
-/* ── Derive mode from NWS description ────────────────────── */
-// Logic: block-list the bad conditions; everything else gets sky/stars.
-// NWS descriptions are free-text (e.g. "A Few Clouds", "Partly Cloudy")
-// so an allow-list misses too many valid clear variants.
+/* ── Map NWS description → canvas mode ───────────────────── */
 function setWxMode(desc) {
-  if (!desc) return applyWxMode(isCurrentlyDay() ? 'clear-day' : 'clear-night');
+  const day = isCurrentlyDay();
+  if (!desc) return applyWxMode(day ? 'clear-day' : 'clear-night');
   const d = desc.toLowerCase();
+
   if (d.includes('thunder'))
     return applyWxMode('storm');
   if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
     return applyWxMode('rain');
-  if (d.includes('fog') || d.includes('mist') || d.includes('smoke') ||
-      d.includes('overcast') || d.includes('mostly cloudy'))
-    return applyWxMode('none');
-  // Everything else (clear, sunny, fair, partly cloudy, a few clouds, etc.)
-  applyWxMode(isCurrentlyDay() ? 'clear-day' : 'clear-night');
+  if (d.includes('overcast') || d.includes('fog') || d.includes('mist') ||
+      d.includes('smoke') || d.includes('mostly cloudy') || d.includes('considerable'))
+    return applyWxMode('overcast');
+  if (d.includes('cloud') || d.includes('partly') || d.includes('few') || d.includes('scattered'))
+    return applyWxMode(day ? 'cloudy-day' : 'cloudy-night');
+
+  // Clear, fair, sunny, mostly clear, etc.
+  applyWxMode(day ? 'clear-day' : 'clear-night');
 }
 
-function setWxMode(desc) {
-  if (!desc) return applyWxMode('none');
-  const d = desc.toLowerCase();
-  if (d.includes('thunder'))                                                 applyWxMode('storm');
-  else if (d.includes('rain') || d.includes('shower') || d.includes('drizzle')) applyWxMode('rain');
-  else                                                                       applyWxMode('none');
-}
-
-window.addEventListener('resize', () => { resizeWxCanvas(); initDrops(); });
+window.addEventListener('resize', () => {
+  resizeWxCanvas();
+  applyWxMode(wxMode); // re-init particles to new screen dimensions
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopAnim(); else if (wxMode !== 'none') startAnim();
 });
