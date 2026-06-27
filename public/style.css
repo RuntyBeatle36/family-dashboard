@@ -120,6 +120,72 @@ html, body {
   font-size: clamp(0.9rem, 1.4vw, 1.05rem);
 }
 
+.wx-neighborhood {
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.card-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: -0.35rem;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.settings-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings-desc {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.zip-coords {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+/* Error toast */
+.error-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--danger);
+  color: #fff;
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  z-index: 200;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  max-width: 90vw;
+  text-align: center;
+}
+
+.error-toast[hidden] { display: none; }
+
 /* ── Rain forecast bar ────────────────────────────────────── */
 .wx-rain {
   display: flex;

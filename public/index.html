@@ -30,7 +30,8 @@
         <span id="wx-feels" class="wx-feels">Feels --°</span>
       </div>
       <div class="wx-meta">
-        <span class="wx-city">Corpus</span>
+        <span class="wx-city">Corpus Christi</span>
+        <span id="wx-neighborhood" class="wx-neighborhood">--</span>
         <span id="wx-desc">Loading weather...</span>
         <span id="wx-hi-lo">Hi --° / Lo --°</span>
       </div>
@@ -40,6 +41,8 @@
       <span class="rain-loading">Checking rain...</span>
     </div>
   </div>
+
+  <button class="btn btn-icon settings-btn" id="settings-btn" title="Settings">⚙️</button>
 
 </header>
 
@@ -98,6 +101,7 @@
 
     <section class="card" id="bulletin-card">
       <h2 class="card-title">📌 Bulletin</h2>
+      <p class="card-subtitle">Post notes for the whole family to see on any device</p>
       <form id="bulletin-form" class="input-col">
         <input id="bulletin-author" type="text" placeholder="Your name (optional)" maxlength="40" autocomplete="off" />
         <textarea id="bulletin-msg" placeholder="Post a note..." maxlength="300" rows="2"></textarea>
@@ -180,6 +184,29 @@
     </div>
   </div>
 </div>
+
+<!-- ── Settings Modal ────────────────────────────────────────── -->
+<div id="settings-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h3 class="modal-title">⚙️ Settings</h3>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Weather Location</div>
+      <p class="settings-desc">Choose your neighborhood for hyperlocal weather.</p>
+      <label class="field-label">Corpus Christi Area Zip Code
+        <select id="zip-select"></select>
+      </label>
+      <p id="zip-coords" class="zip-coords"></p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="settings-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Error toast ────────────────────────────────────────────── -->
+<div id="error-toast" class="error-toast" hidden></div>
 
 <script src="/app.js"></script>
 </body>
