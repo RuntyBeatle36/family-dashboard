@@ -191,6 +191,147 @@ updateClock();
 setInterval(updateClock, 1000);
 
 /* ══════════════════════════════════════════════════════════
+   WEATHER CANVAS ANIMATION  (rain · storm · lightning)
+   ══════════════════════════════════════════════════════════ */
+const wxCanvas = document.getElementById('wx-canvas');
+const wxCtx    = wxCanvas.getContext('2d');
+let wxDrops  = [];
+let wxAnimId = null;
+let wxMode   = 'none'; // 'rain' | 'storm' | 'none'
+
+function resizeWxCanvas() {
+  wxCanvas.width  = window.innerWidth;
+  wxCanvas.height = window.innerHeight;
+}
+
+function mkDrop() {
+  return {
+    x:     Math.random() * wxCanvas.width * 1.3 - wxCanvas.width * 0.15,
+    y:     Math.random() * wxCanvas.height - wxCanvas.height,
+    len:   12 + Math.random() * 22,
+    speed:  8 + Math.random() * 16,
+    opac:  0.10 + Math.random() * 0.28,
+  };
+}
+
+function initDrops() {
+  const n = wxMode === 'storm' ? 240 : wxMode === 'rain' ? 140 : 0;
+  wxDrops = Array.from({ length: n }, mkDrop);
+}
+
+const LEAN = 0.22; // slight rightward angle
+
+function drawFrame() {
+  wxCtx.clearRect(0, 0, wxCanvas.width, wxCanvas.height);
+  for (const d of wxDrops) {
+    wxCtx.save();
+    wxCtx.globalAlpha  = d.opac;
+    wxCtx.strokeStyle  = '#a8d8ff';
+    wxCtx.lineWidth    = 1;
+    wxCtx.beginPath();
+    wxCtx.moveTo(d.x, d.y);
+    wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
+    wxCtx.stroke();
+    wxCtx.restore();
+
+    d.y += d.speed;
+    d.x += LEAN * d.speed * 0.28;
+    if (d.y > wxCanvas.height + d.len) Object.assign(d, mkDrop(), { y: -d.len });
+  }
+  wxAnimId = requestAnimationFrame(drawFrame);
+}
+
+function startAnim() { if (!wxAnimId && wxDrops.length) wxAnimId = requestAnimationFrame(drawFrame); }
+function stopAnim()  { if (wxAnimId) { cancelAnimationFrame(wxAnimId); wxAnimId = null; } wxCtx.clearRect(0,0,wxCanvas.width,wxCanvas.height); }
+
+// Lightning
+let lightTimer = null;
+const lightEl  = document.getElementById('lightning-flash');
+
+function flash() {
+  lightEl.classList.remove('active');
+  void lightEl.offsetWidth; // force reflow to restart animation
+  lightEl.classList.add('active');
+  if (Math.random() > 0.5) setTimeout(() => { flash(); }, 150);
+}
+
+function scheduleLightning() {
+  clearTimeout(lightTimer);
+  if (wxMode !== 'storm') return;
+  lightTimer = setTimeout(() => { flash(); scheduleLightning(); }, 5000 + Math.random() * 13000);
+}
+
+function applyWxMode(mode) {
+  wxMode = mode;
+  document.body.dataset.wx = mode;
+  initDrops();
+  if (mode === 'none') {
+    stopAnim();
+    clearTimeout(lightTimer);
+  } else {
+    startAnim();
+    if (mode === 'storm') scheduleLightning();
+    else clearTimeout(lightTimer);
+  }
+}
+
+function setWxMode(desc) {
+  if (!desc) return applyWxMode('none');
+  const d = desc.toLowerCase();
+  if (d.includes('thunder'))                                                 applyWxMode('storm');
+  else if (d.includes('rain') || d.includes('shower') || d.includes('drizzle')) applyWxMode('rain');
+  else                                                                       applyWxMode('none');
+}
+
+window.addEventListener('resize', () => { resizeWxCanvas(); initDrops(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAnim(); else if (wxMode !== 'none') startAnim();
+});
+resizeWxCanvas();
+
+/* ══════════════════════════════════════════════════════════
+   NWS WEATHER ALERTS
+   ══════════════════════════════════════════════════════════ */
+const ALERT_SEV  = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3, Unknown: 4 };
+const ALERT_CLS  = { Extreme: 'alert-extreme', Severe: 'alert-severe', Moderate: 'alert-moderate', Minor: 'alert-minor' };
+const ALERT_ICON = { Extreme: '🚨', Severe: '🚨', Moderate: '⚠️', Minor: '💛' };
+
+function renderAlerts(features) {
+  const banner = document.getElementById('alert-banner');
+  if (!features.length) { banner.hidden = true; return; }
+
+  const sorted = [...features].sort((a, b) =>
+    (ALERT_SEV[a.properties.severity] ?? 4) - (ALERT_SEV[b.properties.severity] ?? 4));
+
+  banner.innerHTML = sorted.map(f => {
+    const p   = f.properties;
+    const cls = ALERT_CLS[p.severity]  || 'alert-minor';
+    const ico = ALERT_ICON[p.severity] || '⚠️';
+    const headline = p.headline || p.event;
+    return `<div class="alert-item ${cls}">
+      <span class="alert-ico">${ico}</span>
+      <span class="alert-txt"><strong>${escHtml(p.event)}</strong> — ${escHtml(headline)}</span>
+    </div>`;
+  }).join('');
+  banner.hidden = false;
+}
+
+async function fetchAlerts() {
+  const z = getActiveZip();
+  try {
+    const r = await fetch(
+      `https://api.weather.gov/alerts/active?point=${z.lat},${z.lon}`,
+      { headers: { 'User-Agent': 'FamilyDashboard/1.0' }, signal: AbortSignal.timeout(8000) }
+    );
+    if (!r.ok) return;
+    renderAlerts((await r.json()).features || []);
+  } catch { /* best-effort, silent */ }
+}
+
+fetchAlerts();
+setInterval(fetchAlerts, 5 * 60 * 1000);
+
+/* ══════════════════════════════════════════════════════════
    WEATHER
    ══════════════════════════════════════════════════════════ */
 // Open-Meteo: forecast only (rain chart + hi/lo + sunrise/sunset).
@@ -271,6 +412,7 @@ async function fetchWeather() {
     document.getElementById('wx-temp').textContent  = (tempF != null ? tempF : '--') + '°';
     document.getElementById('wx-feels').textContent = feelsF != null ? `Feels ${feelsF}°` : '';
     document.getElementById('wx-desc').textContent  = desc;
+    setWxMode(desc); // trigger rain / storm canvas animation
 
     // NWS timestamp is UTC; JS Date auto-converts to local (CDT)
     if (p.timestamp) {
@@ -409,6 +551,7 @@ zipSelect.addEventListener('change', () => {
   localStorage.setItem('wx_zip', zipSelect.value);
   updateZipCoords();
   fetchWeather();
+  fetchAlerts();
 });
 
 document.getElementById('settings-btn').addEventListener('click', () => {
