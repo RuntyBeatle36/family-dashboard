@@ -8,73 +8,178 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Family Dashboard" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
   <link rel="stylesheet" href="/style.css" />
   <title>Family Dashboard</title>
 </head>
 <body>
 
-<!-- ── TOP BAR: Clock & Weather ───────────────────────────── -->
+<!-- ── Top bar ──────────────────────────────────────────────── -->
 <header class="top-bar">
+
   <div class="clock-block">
     <div id="clock" class="clock">--:--</div>
-    <div id="date" class="date-str">Loading...</div>
+    <div id="date-str" class="date-str">Loading...</div>
   </div>
-  <div id="weather" class="weather-block">
-    <div class="weather-icon" id="wx-icon">⛅</div>
-    <div class="weather-info">
-      <span id="wx-temp" class="wx-temp">--°F</span>
-      <span id="wx-desc" class="wx-desc">Weather loading...</span>
+
+  <div class="weather-block">
+    <div class="wx-main">
+      <span id="wx-icon" class="wx-icon">⛅</span>
+      <div class="wx-temps">
+        <span id="wx-temp" class="wx-temp">--°</span>
+        <span id="wx-feels" class="wx-feels">Feels --°</span>
+      </div>
+      <div class="wx-meta">
+        <span class="wx-city">Corpus</span>
+        <span id="wx-desc">Loading weather...</span>
+        <span id="wx-hi-lo">Hi --° / Lo --°</span>
+      </div>
     </div>
-    <div class="weather-detail">
-      <span id="wx-hi-lo">Hi --° / Lo --°</span>
-      <span id="wx-humidity">Humidity --%</span>
+    <!-- Hourly rain section -->
+    <div class="wx-rain" id="wx-rain">
+      <span class="rain-loading">Checking rain...</span>
     </div>
   </div>
+
 </header>
 
-<!-- ── MAIN GRID ────────────────────────────────────────────── -->
-<main class="grid">
+<!-- ── App body: Calendar + Sidebar ─────────────────────────── -->
+<div class="app-body">
 
-  <!-- Grocery List -->
-  <section class="card" id="grocery-card">
-    <h2 class="card-title">🛒 Grocery List</h2>
-    <form id="grocery-form" class="input-row">
-      <input id="grocery-input" type="text" placeholder="Add item..." maxlength="80" autocomplete="off" />
-      <button type="submit" class="btn btn-add">Add</button>
-    </form>
-    <ul id="grocery-list" class="item-list"></ul>
-    <button id="clear-checked" class="btn btn-secondary" style="margin-top:0.75rem;display:none">
-      Remove checked items
-    </button>
-  </section>
+  <!-- Calendar (dominant panel) -->
+  <section class="cal-panel">
 
-  <!-- Bulletin Board -->
-  <section class="card" id="bulletin-card">
-    <h2 class="card-title">📌 Bulletin Board</h2>
-    <form id="bulletin-form" class="input-col">
-      <input id="bulletin-author" type="text" placeholder="Your name (optional)" maxlength="40" autocomplete="off" />
-      <textarea id="bulletin-msg" placeholder="Post a note..." maxlength="300" rows="2"></textarea>
-      <button type="submit" class="btn btn-add">Post</button>
-    </form>
-    <ul id="bulletin-list" class="bulletin-list"></ul>
-  </section>
+    <div class="cal-nav">
+      <button class="btn btn-icon" id="cal-prev" title="Previous week">&#8249;</button>
+      <span id="cal-week-label" class="cal-week-label"></span>
+      <button class="btn btn-icon" id="cal-next" title="Next week">&#8250;</button>
+      <button class="btn btn-sm btn-ghost" id="cal-today">Today</button>
+      <button class="btn btn-sm btn-accent" id="cal-add-btn">+ Add Event</button>
+    </div>
 
-  <!-- Events / Reminders -->
-  <section class="card" id="events-card">
-    <h2 class="card-title">📅 Upcoming Events</h2>
-    <form id="events-form" class="input-col">
-      <input id="event-title" type="text" placeholder="Event title..." maxlength="120" autocomplete="off" />
-      <div class="input-row-inline">
-        <input id="event-date" type="date" />
-        <input id="event-time" type="time" />
+    <!-- Day-name header row (sticky) -->
+    <div class="cal-header" id="cal-header">
+      <div class="cal-gutter-hdr"></div>
+      <!-- 7 .cal-day-hdr cells injected by JS -->
+    </div>
+
+    <!-- All-day strip (sticky, below header) -->
+    <div class="cal-allday-strip" id="cal-allday-strip">
+      <div class="cal-gutter-allday"><span>all‑day</span></div>
+      <!-- 7 .cal-allday-col cells injected by JS -->
+    </div>
+
+    <!-- Scrollable time grid -->
+    <div class="cal-body-scroll" id="cal-body-scroll">
+      <div class="cal-time-gutter" id="cal-time-gutter">
+        <!-- Hour labels injected by JS -->
       </div>
-      <button type="submit" class="btn btn-add">Add Event</button>
-    </form>
-    <ul id="events-list" class="item-list"></ul>
+      <div class="cal-days" id="cal-days">
+        <!-- 7 .cal-day-col injected by JS -->
+      </div>
+    </div>
+
   </section>
 
-</main>
+  <!-- Sidebar: Todo + Bulletin -->
+  <aside class="sidebar">
+
+    <section class="card" id="todo-card">
+      <h2 class="card-title">✅ To-Do</h2>
+      <form id="todo-form" class="input-row">
+        <input id="todo-input" type="text" placeholder="Add task..." maxlength="200" autocomplete="off" />
+        <button type="submit" class="btn btn-accent">Add</button>
+      </form>
+      <ul id="todo-list" class="item-list"></ul>
+      <button id="clear-done" class="btn btn-ghost-sm" style="display:none;margin-top:0.5rem">
+        Clear completed
+      </button>
+    </section>
+
+    <section class="card" id="bulletin-card">
+      <h2 class="card-title">📌 Bulletin</h2>
+      <form id="bulletin-form" class="input-col">
+        <input id="bulletin-author" type="text" placeholder="Your name (optional)" maxlength="40" autocomplete="off" />
+        <textarea id="bulletin-msg" placeholder="Post a note..." maxlength="300" rows="2"></textarea>
+        <button type="submit" class="btn btn-accent">Post</button>
+      </form>
+      <ul id="bulletin-list" class="bulletin-list"></ul>
+    </section>
+
+  </aside>
+</div>
+
+<!-- ── Add Event Modal ───────────────────────────────────────── -->
+<div id="add-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h3 class="modal-title">Add Event</h3>
+    <form id="add-event-form" class="modal-form" autocomplete="off">
+
+      <label class="field-label">Title
+        <input id="ev-title" type="text" placeholder="Event name" maxlength="120" required />
+      </label>
+
+      <label class="field-label">Person
+        <input id="ev-person" type="text" placeholder="Whose event? (optional)" maxlength="40" />
+      </label>
+
+      <div class="field-label">Color
+        <div class="color-swatches" id="color-swatches"></div>
+        <input id="ev-color" type="hidden" value="#4f8ef7" />
+      </div>
+
+      <label class="field-label">Date
+        <input id="ev-date" type="date" required />
+      </label>
+
+      <label class="field-label allday-row">
+        <input id="ev-allday" type="checkbox" />
+        All day
+      </label>
+
+      <div id="ev-time-fields" class="modal-row">
+        <label class="field-label">Start
+          <input id="ev-start" type="time" />
+        </label>
+        <label class="field-label">End
+          <input id="ev-end" type="time" />
+        </label>
+      </div>
+
+      <label class="field-label">Repeat
+        <select id="ev-recur">
+          <option value="none">Does not repeat</option>
+          <option value="daily">Every day</option>
+          <option value="weekly">Every week</option>
+          <option value="monthly">Every month</option>
+          <option value="yearly">Every year</option>
+        </select>
+      </label>
+
+      <label class="field-label" id="ev-until-row" style="display:none">Repeat until
+        <input id="ev-until" type="date" />
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="add-modal-cancel">Cancel</button>
+        <button type="submit" class="btn btn-accent">Save Event</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Event Detail Modal ────────────────────────────────────── -->
+<div id="detail-modal" class="modal-overlay" hidden>
+  <div class="modal modal-sm">
+    <div id="detail-color-bar" class="detail-color-bar"></div>
+    <h3 id="detail-title" class="modal-title"></h3>
+    <div id="detail-body" class="detail-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="detail-delete">Delete Event</button>
+      <button class="btn btn-ghost" id="detail-close">Close</button>
+    </div>
+  </div>
+</div>
 
 <script src="/app.js"></script>
 </body>
