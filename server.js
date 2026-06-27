@@ -1,12 +1,15 @@
 const express = require('express');
 const path = require('path');
-const Database = require('better-sqlite3');
+const fs = require('fs');
+const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize SQLite database
-const db = new Database(path.join(__dirname, 'db', 'dashboard.db'));
+// Initialize SQLite database (node:sqlite is built into Node v22+, no compilation needed)
+const dbDir = path.join(__dirname, 'db');
+fs.mkdirSync(dbDir, { recursive: true });
+const db = new DatabaseSync(path.join(dbDir, 'dashboard.db'));
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS grocery_items (
