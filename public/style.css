@@ -1,0 +1,420 @@
+/* ── Reset & base ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #222636;
+  --accent: #4f8ef7;
+  --accent2: #f7a04f;
+  --danger: #e05555;
+  --success: #4caf7d;
+  --text: #e8eaf0;
+  --text-dim: #8b90a8;
+  --border: #2c3050;
+  --radius: 14px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 18px;
+  line-height: 1.4;
+  overflow-x: hidden;
+}
+
+/* ── Top bar ──────────────────────────────────────────────── */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.clock-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.clock {
+  font-size: clamp(2.8rem, 6vw, 5.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.date-str {
+  font-size: clamp(1rem, 2vw, 1.4rem);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+/* ── Weather block ────────────────────────────────────────── */
+.weather-block {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+}
+
+.weather-icon {
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 1;
+}
+
+.weather-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.wx-temp {
+  font-size: clamp(1.6rem, 3.5vw, 2.8rem);
+  font-weight: 700;
+  color: var(--accent2);
+  line-height: 1;
+}
+
+.wx-desc {
+  font-size: clamp(0.85rem, 1.5vw, 1.1rem);
+  color: var(--text-dim);
+}
+
+.weather-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: clamp(0.8rem, 1.3vw, 1rem);
+  color: var(--text-dim);
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--border);
+}
+
+/* ── Main grid ────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1.25rem;
+  padding: 1.25rem;
+  align-items: start;
+}
+
+/* ── Cards ────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.card-title {
+  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+  font-weight: 700;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.6rem;
+}
+
+/* ── Form inputs ──────────────────────────────────────────── */
+input[type="text"],
+input[type="date"],
+input[type="time"],
+textarea {
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 1rem;
+  padding: 0.65rem 0.9rem;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+}
+
+input[type="text"]:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+input::placeholder, textarea::placeholder { color: var(--text-dim); }
+
+textarea {
+  resize: vertical;
+  min-height: 3.5rem;
+  font-family: inherit;
+}
+
+/* ── Input layouts ────────────────────────────────────────── */
+.input-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.input-row input {
+  flex: 1;
+}
+
+.input-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.input-row-inline {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.input-row-inline input {
+  flex: 1;
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn {
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.65rem 1.1rem;
+  transition: filter 0.15s, transform 0.1s;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
+}
+
+.btn:active { transform: scale(0.97); filter: brightness(0.9); }
+
+.btn-add {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  width: 100%;
+}
+
+.btn-delete {
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  padding: 0.3rem 0.6rem;
+  min-height: 36px;
+  line-height: 1;
+  border-radius: 6px;
+  border: none;
+}
+
+.btn-delete:hover { color: var(--danger); background: rgba(224,85,85,0.12); }
+
+/* ── Lists ────────────────────────────────────────────────── */
+.item-list, .bulletin-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.item-list::-webkit-scrollbar,
+.bulletin-list::-webkit-scrollbar { width: 5px; }
+.item-list::-webkit-scrollbar-thumb,
+.bulletin-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+/* ── Grocery items ────────────────────────────────────────── */
+.grocery-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  transition: opacity 0.2s;
+}
+
+.grocery-item.checked {
+  opacity: 0.45;
+}
+
+.grocery-item label {
+  flex: 1;
+  cursor: pointer;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 36px;
+}
+
+.grocery-item label span.item-name {
+  transition: text-decoration 0.2s;
+}
+
+.grocery-item.checked label span.item-name {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+/* custom checkbox */
+.grocery-item input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  accent-color: var(--success);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+/* ── Bulletin posts ───────────────────────────────────────── */
+.bulletin-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.bulletin-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.bulletin-author {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+
+.bulletin-time {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.bulletin-msg {
+  font-size: 1rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bulletin-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Event items ──────────────────────────────────────────── */
+.event-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+
+.event-date-badge {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  min-width: 70px;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+.event-date-badge.today { background: var(--accent2); }
+.event-date-badge.past { background: var(--border); }
+
+.event-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.event-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.event-time-str {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* ── Empty states ─────────────────────────────────────────── */
+.empty {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  padding: 1.2rem 0;
+}
+
+/* ── Responsive: small phones ─────────────────────────────── */
+@media (max-width: 480px) {
+  .top-bar { padding: 0.75rem 1rem; }
+  .weather-detail { display: none; }
+  .grid { padding: 0.75rem; gap: 0.75rem; }
+  .card { padding: 0.9rem; }
+  .input-row-inline { flex-direction: column; }
+}
+
+/* ── Kiosk / large display tweaks (landscape ≥ 1024px) ───── */
+@media (min-width: 1024px) and (min-height: 600px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+    height: calc(100vh - var(--top-bar-h, 120px));
+    overflow: hidden;
+    padding: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .card {
+    max-height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .item-list, .bulletin-list {
+    flex: 1;
+    max-height: none;
+    overflow-y: auto;
+  }
+}

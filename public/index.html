@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1117" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Family Dashboard" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="stylesheet" href="/style.css" />
+  <title>Family Dashboard</title>
+</head>
+<body>
+
+<!-- ── TOP BAR: Clock & Weather ───────────────────────────── -->
+<header class="top-bar">
+  <div class="clock-block">
+    <div id="clock" class="clock">--:--</div>
+    <div id="date" class="date-str">Loading...</div>
+  </div>
+  <div id="weather" class="weather-block">
+    <div class="weather-icon" id="wx-icon">⛅</div>
+    <div class="weather-info">
+      <span id="wx-temp" class="wx-temp">--°F</span>
+      <span id="wx-desc" class="wx-desc">Weather loading...</span>
+    </div>
+    <div class="weather-detail">
+      <span id="wx-hi-lo">Hi --° / Lo --°</span>
+      <span id="wx-humidity">Humidity --%</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── MAIN GRID ────────────────────────────────────────────── -->
+<main class="grid">
+
+  <!-- Grocery List -->
+  <section class="card" id="grocery-card">
+    <h2 class="card-title">🛒 Grocery List</h2>
+    <form id="grocery-form" class="input-row">
+      <input id="grocery-input" type="text" placeholder="Add item..." maxlength="80" autocomplete="off" />
+      <button type="submit" class="btn btn-add">Add</button>
+    </form>
+    <ul id="grocery-list" class="item-list"></ul>
+    <button id="clear-checked" class="btn btn-secondary" style="margin-top:0.75rem;display:none">
+      Remove checked items
+    </button>
+  </section>
+
+  <!-- Bulletin Board -->
+  <section class="card" id="bulletin-card">
+    <h2 class="card-title">📌 Bulletin Board</h2>
+    <form id="bulletin-form" class="input-col">
+      <input id="bulletin-author" type="text" placeholder="Your name (optional)" maxlength="40" autocomplete="off" />
+      <textarea id="bulletin-msg" placeholder="Post a note..." maxlength="300" rows="2"></textarea>
+      <button type="submit" class="btn btn-add">Post</button>
+    </form>
+    <ul id="bulletin-list" class="bulletin-list"></ul>
+  </section>
+
+  <!-- Events / Reminders -->
+  <section class="card" id="events-card">
+    <h2 class="card-title">📅 Upcoming Events</h2>
+    <form id="events-form" class="input-col">
+      <input id="event-title" type="text" placeholder="Event title..." maxlength="120" autocomplete="off" />
+      <div class="input-row-inline">
+        <input id="event-date" type="date" />
+        <input id="event-time" type="time" />
+      </div>
+      <button type="submit" class="btn btn-add">Add Event</button>
+    </form>
+    <ul id="events-list" class="item-list"></ul>
+  </section>
+
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
