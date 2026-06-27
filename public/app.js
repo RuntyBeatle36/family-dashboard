@@ -46,23 +46,6 @@ const COLORS = [
   { hex: '#eab308', name: 'Yellow' },
 ];
 
-/* ── WMO weather code maps ────────────────────────────────── */
-const WX_CODES = {
-  0:'Clear sky', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast',
-  45:'Fog', 48:'Icy fog',
-  51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle',
-  61:'Light rain', 63:'Rain', 65:'Heavy rain',
-  71:'Light snow', 73:'Snow', 75:'Heavy snow',
-  80:'Light showers', 81:'Showers', 82:'Heavy showers',
-  95:'Thunderstorm', 96:'Thunderstorm w/ hail', 99:'Thunderstorm w/ heavy hail',
-};
-const WX_ICONS = {
-  0:'☀️', 1:'🌤️', 2:'⛅', 3:'☁️', 45:'🌫️', 48:'🌫️',
-  51:'🌦️', 53:'🌦️', 55:'🌧️', 61:'🌧️', 63:'🌧️', 65:'🌧️',
-  71:'🌨️', 73:'❄️', 75:'❄️', 80:'🌦️', 81:'🌧️', 82:'⛈️',
-  95:'⛈️', 96:'⛈️', 99:'⛈️',
-};
-
 /* ── App state ────────────────────────────────────────────── */
 let weekOffset    = 0;
 let calEvents     = [];
@@ -210,65 +193,116 @@ setInterval(updateClock, 1000);
 /* ══════════════════════════════════════════════════════════
    WEATHER
    ══════════════════════════════════════════════════════════ */
+// Open-Meteo: forecast only (rain chart + hi/lo + sunrise/sunset).
+// Current conditions come from the NWS station instead (real sensor data).
 function makeWxUrl(lat, lon) {
   return (
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat}&longitude=${lon}` +
-    `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code` +
-    `&hourly=precipitation_probability,weather_code` +
+    `&hourly=precipitation_probability` +
     `&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset` +
-    `&temperature_unit=fahrenheit&wind_speed_unit=mph` +
+    `&temperature_unit=fahrenheit` +
     `&timezone=America%2FChicago&forecast_days=1`
   );
+}
+
+// NWS KCRP = Corpus Christi International Airport weather station.
+// This is actual sensor data — temperature, humidity, sky conditions — not a model.
+const NWS_OBS_URL = 'https://api.weather.gov/stations/KCRP/observations/latest';
+
+function cToF(c) {
+  return (c != null && isFinite(c)) ? Math.round(c * 9 / 5 + 32) : null;
+}
+
+// Map NWS free-text descriptions (e.g. "Partly Cloudy") to emoji
+function nwsIcon(desc) {
+  if (!desc) return '🌡️';
+  const d = desc.toLowerCase();
+  if (d.includes('thunder'))                                    return '⛈️';
+  if (d.includes('freezing rain') || d.includes('ice pellet')) return '🌨️';
+  if (d.includes('rain') || d.includes('shower') || d.includes('drizzle')) return '🌧️';
+  if (d.includes('snow') || d.includes('sleet'))               return '❄️';
+  if (d.includes('fog') || d.includes('mist') || d.includes('haze')) return '🌫️';
+  if (d.includes('overcast') || d.includes('mostly cloudy'))   return '☁️';
+  if (d.includes('partly') || d.includes('partly sunny'))      return '⛅';
+  if (d.includes('mostly clear') || d.includes('mostly sunny'))return '🌤️';
+  if (d.includes('clear') || d.includes('sunny') || d.includes('fair')) return '☀️';
+  if (d.includes('cloud'))                                      return '⛅';
+  return '🌡️';
 }
 
 async function fetchWeather() {
   const zipData = getActiveZip();
   document.getElementById('wx-neighborhood').textContent = `${zipData.name} · ${zipData.zip}`;
 
-  try {
-    const r = await fetch(makeWxUrl(zipData.lat, zipData.lon),
-                          { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
+  // Run both requests in parallel.
+  // NWS = real sensor at Corpus Christi airport; OM = model forecast for rain + hi/lo + sun times.
+  const [nwsResult, omResult] = await Promise.allSettled([
+    fetch(NWS_OBS_URL, {
+      headers: { 'User-Agent': 'FamilyDashboard/1.0' },
+      signal: AbortSignal.timeout(10000),
+    }).then(r => r.ok ? r.json() : Promise.reject(new Error('NWS ' + r.status))),
 
-    // Parse sunrise/sunset for auto theme (times like "2026-06-26T06:18")
+    fetch(makeWxUrl(zipData.lat, zipData.lon), {
+      signal: AbortSignal.timeout(10000),
+    }).then(r => r.ok ? r.json() : Promise.reject(new Error('OM ' + r.status))),
+  ]);
+
+  // ── Current conditions from NWS (actual measured data) ──
+  if (nwsResult.status === 'fulfilled') {
+    const p     = nwsResult.value.properties;
+    const tempF = cToF(p.temperature?.value);
+    const hiF   = cToF(p.heatIndex?.value);
+    const chiF  = cToF(p.windChill?.value);
+    // Show "Feels X°" only when it meaningfully differs from air temp
+    const feelsF = (hiF != null && hiF !== tempF) ? hiF
+                 : (chiF != null && chiF !== tempF) ? chiF
+                 : null;
+    const desc  = p.textDescription || 'Unknown';
+
+    document.getElementById('wx-icon').textContent  = nwsIcon(desc);
+    document.getElementById('wx-temp').textContent  = (tempF != null ? tempF : '--') + '°';
+    document.getElementById('wx-feels').textContent = feelsF != null ? `Feels ${feelsF}°` : '';
+    document.getElementById('wx-desc').textContent  = desc;
+
+    // NWS timestamp is UTC; JS Date auto-converts to local (CDT)
+    if (p.timestamp) {
+      const t = new Date(p.timestamp).toLocaleTimeString('en-US',
+        { hour: 'numeric', minute: '2-digit' });
+      document.getElementById('wx-updated').textContent = `obs. ${t} · KCRP`;
+    }
+  } else {
+    document.getElementById('wx-icon').textContent   = '🌡️';
+    document.getElementById('wx-desc').textContent   = 'Station unavailable';
+    document.getElementById('wx-updated').textContent = '';
+  }
+
+  // ── Forecast from Open-Meteo (hi/lo, rain chart, sunrise/sunset) ──
+  if (omResult.status === 'fulfilled') {
+    const d = omResult.value;
+
     if (d.daily?.sunrise?.[0] && d.daily?.sunset?.[0]) {
       const parseISO = iso => {
-        const t = iso.split('T')[1]; // "06:18"
-        const [hh, mm] = t.split(':').map(Number);
+        const [hh, mm] = iso.split('T')[1].split(':').map(Number);
         return hh * 60 + mm;
       };
       sunriseMins = parseISO(d.daily.sunrise[0]);
       sunsetMins  = parseISO(d.daily.sunset[0]);
-      applyTheme(); // re-evaluate now that we have real times
+      applyTheme();
     }
 
-    const code = d.current.weather_code;
-    document.getElementById('wx-icon').textContent  = WX_ICONS[code]  ?? '🌡️';
-    document.getElementById('wx-temp').textContent  = Math.round(d.current.temperature_2m) + '°';
-    document.getElementById('wx-feels').textContent = 'Feels ' + Math.round(d.current.apparent_temperature) + '°';
-    document.getElementById('wx-desc').textContent  = WX_CODES[code]  ?? `Code ${code}`;
-    document.getElementById('wx-hi-lo').textContent =
-      `Hi ${Math.round(d.daily.temperature_2m_max[0])}° / Lo ${Math.round(d.daily.temperature_2m_min[0])}°`;
-
-    // Show the exact time Open-Meteo's reading is valid for
-    // d.current.time is like "2026-06-27T14:00" in the requested timezone
-    if (d.current?.time) {
-      const t = d.current.time.split('T')[1]; // "14:00"
-      const [hh, mm] = t.split(':').map(Number);
-      document.getElementById('wx-updated').textContent = `as of ${fmt12hHM(hh, mm)}`;
+    if (d.daily) {
+      document.getElementById('wx-hi-lo').textContent =
+        `Hi ${Math.round(d.daily.temperature_2m_max[0])}° / Lo ${Math.round(d.daily.temperature_2m_min[0])}°`;
     }
 
-    renderRain(d.hourly);
-  } catch (err) {
+    if (d.hourly) renderRain(d.hourly);
+  } else if (nwsResult.status === 'rejected') {
     document.getElementById('wx-desc').textContent = 'Weather unavailable';
-    document.getElementById('wx-updated').textContent = '';
     document.getElementById('wx-rain').innerHTML   = '';
   }
 }
 
-// Manual refresh button
 document.getElementById('wx-refresh').addEventListener('click', () => {
   document.getElementById('wx-desc').textContent    = 'Refreshing…';
   document.getElementById('wx-updated').textContent = '';
