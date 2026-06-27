@@ -219,6 +219,18 @@
       <p id="zip-coords" class="zip-coords"></p>
     </div>
 
+    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
+      <div class="settings-section-title">🧪 Debug: Simulate Weather</div>
+      <p class="settings-desc">Force a visual to preview animations. Resets on next weather refresh.</p>
+      <div class="debug-wx-grid" id="debug-wx-grid">
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="clear-day">☀️ Clear Day</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="clear-night">🌙 Clear Night</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain">🌧️ Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="storm">⛈️ Storm</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="none" style="grid-column:span 2">✕ Reset to None</button>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-ghost" id="settings-close">Close</button>
     </div>

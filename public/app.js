@@ -191,18 +191,23 @@ updateClock();
 setInterval(updateClock, 1000);
 
 /* ══════════════════════════════════════════════════════════
-   WEATHER CANVAS ANIMATION  (rain · storm · lightning)
+   WEATHER CANVAS ANIMATION
+   Modes: 'none' | 'clear-day' | 'clear-night' | 'rain' | 'storm'
    ══════════════════════════════════════════════════════════ */
 const wxCanvas = document.getElementById('wx-canvas');
 const wxCtx    = wxCanvas.getContext('2d');
 let wxDrops  = [];
+let wxStars  = [];
 let wxAnimId = null;
-let wxMode   = 'none'; // 'rain' | 'storm' | 'none'
+let wxMode   = 'none';
 
 function resizeWxCanvas() {
   wxCanvas.width  = window.innerWidth;
   wxCanvas.height = window.innerHeight;
 }
+
+/* ── Rain drops ───────────────────────────────────────────── */
+const LEAN = 0.22;
 
 function mkDrop() {
   return {
@@ -215,44 +220,106 @@ function mkDrop() {
 }
 
 function initDrops() {
-  const n = wxMode === 'storm' ? 240 : wxMode === 'rain' ? 140 : 0;
+  const n = wxMode === 'storm' ? 240 : 140;
   wxDrops = Array.from({ length: n }, mkDrop);
 }
 
-const LEAN = 0.22; // slight rightward angle
+/* ── Stars ────────────────────────────────────────────────── */
+function initStars() {
+  wxStars = Array.from({ length: 180 }, () => ({
+    x:    Math.random() * wxCanvas.width,
+    y:    Math.random() * wxCanvas.height * 0.80,
+    r:    0.4 + Math.random() * 1.8,
+    base: 0.20 + Math.random() * 0.65,
+    freq: 0.0006 + Math.random() * 0.0014,
+    phi:  Math.random() * Math.PI * 2,
+  }));
+}
 
-function drawFrame() {
-  wxCtx.clearRect(0, 0, wxCanvas.width, wxCanvas.height);
-  for (const d of wxDrops) {
-    wxCtx.save();
-    wxCtx.globalAlpha  = d.opac;
-    wxCtx.strokeStyle  = '#a8d8ff';
-    wxCtx.lineWidth    = 1;
-    wxCtx.beginPath();
-    wxCtx.moveTo(d.x, d.y);
-    wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
-    wxCtx.stroke();
-    wxCtx.restore();
+/* ── Sky gradient (clear day — drawn once, no loop) ──────── */
+function drawSky() {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const grad = wxCtx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0,    'rgba(10,  60, 160, 0.92)');
+  grad.addColorStop(0.45, 'rgba(20, 110, 210, 0.80)');
+  grad.addColorStop(0.80, 'rgba(50, 155, 230, 0.60)');
+  grad.addColorStop(1,    'rgba(90, 190, 245, 0.35)');
+  wxCtx.fillStyle = grad;
+  wxCtx.fillRect(0, 0, W, H);
 
-    d.y += d.speed;
-    d.x += LEAN * d.speed * 0.28;
-    if (d.y > wxCanvas.height + d.len) Object.assign(d, mkDrop(), { y: -d.len });
+  // A few subtle cloud smears
+  wxCtx.save();
+  [[0.20,0.18],[0.55,0.10],[0.78,0.22],[0.38,0.28]].forEach(([cx,cy]) => {
+    const gx = wxCtx.createRadialGradient(W*cx, H*cy, 0, W*cx, H*cy, W*0.14);
+    gx.addColorStop(0,   'rgba(255,255,255,0.12)');
+    gx.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+    gx.addColorStop(1,   'rgba(255,255,255,0)');
+    wxCtx.fillStyle = gx;
+    wxCtx.fillRect(0, 0, W, H);
+  });
+  wxCtx.restore();
+}
+
+/* ── Main animation frame ─────────────────────────────────── */
+function drawFrame(ts = 0) {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  wxCtx.clearRect(0, 0, W, H);
+
+  if (wxMode === 'clear-day') {
+    drawSky();
+    wxAnimId = null; // static — no loop needed
+    return;
   }
+
+  if (wxMode === 'clear-night') {
+    for (const s of wxStars) {
+      const o = s.base * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
+      wxCtx.beginPath();
+      wxCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      wxCtx.fillStyle = `rgba(255,255,255,${o.toFixed(3)})`;
+      wxCtx.fill();
+    }
+  }
+
+  if (wxMode === 'rain' || wxMode === 'storm') {
+    wxCtx.lineWidth = 1;
+    for (const d of wxDrops) {
+      wxCtx.save();
+      wxCtx.globalAlpha = d.opac;
+      wxCtx.strokeStyle = '#a8d8ff';
+      wxCtx.beginPath();
+      wxCtx.moveTo(d.x, d.y);
+      wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
+      wxCtx.stroke();
+      wxCtx.restore();
+      d.y += d.speed;
+      d.x += LEAN * d.speed * 0.28;
+      if (d.y > H + d.len) Object.assign(d, mkDrop(), { y: -d.len });
+    }
+  }
+
   wxAnimId = requestAnimationFrame(drawFrame);
 }
 
-function startAnim() { if (!wxAnimId && wxDrops.length) wxAnimId = requestAnimationFrame(drawFrame); }
-function stopAnim()  { if (wxAnimId) { cancelAnimationFrame(wxAnimId); wxAnimId = null; } wxCtx.clearRect(0,0,wxCanvas.width,wxCanvas.height); }
+function startAnim() {
+  if (wxAnimId) return;
+  wxAnimId = requestAnimationFrame(drawFrame);
+}
 
-// Lightning
+function stopAnim() {
+  if (wxAnimId) { cancelAnimationFrame(wxAnimId); wxAnimId = null; }
+  wxCtx.clearRect(0, 0, wxCanvas.width, wxCanvas.height);
+}
+
+/* ── Lightning ────────────────────────────────────────────── */
 let lightTimer = null;
 const lightEl  = document.getElementById('lightning-flash');
 
 function flash() {
   lightEl.classList.remove('active');
-  void lightEl.offsetWidth; // force reflow to restart animation
+  void lightEl.offsetWidth;
   lightEl.classList.add('active');
-  if (Math.random() > 0.5) setTimeout(() => { flash(); }, 150);
+  if (Math.random() > 0.5) setTimeout(flash, 150);
 }
 
 function scheduleLightning() {
@@ -261,18 +328,40 @@ function scheduleLightning() {
   lightTimer = setTimeout(() => { flash(); scheduleLightning(); }, 5000 + Math.random() * 13000);
 }
 
+/* ── Apply mode ───────────────────────────────────────────── */
 function applyWxMode(mode) {
+  stopAnim();
+  clearTimeout(lightTimer);
   wxMode = mode;
   document.body.dataset.wx = mode;
-  initDrops();
-  if (mode === 'none') {
-    stopAnim();
-    clearTimeout(lightTimer);
-  } else {
-    startAnim();
-    if (mode === 'storm') scheduleLightning();
-    else clearTimeout(lightTimer);
-  }
+
+  // Canvas opacity: sky needs to fill fully; rain/stars are more subtle
+  wxCanvas.style.opacity =
+    mode === 'clear-day'   ? '1.0'  :
+    mode === 'clear-night' ? '0.88' : '0.62';
+
+  if (mode === 'none') return;
+
+  if (mode === 'clear-night')          initStars();
+  else if (mode === 'rain' || mode === 'storm') initDrops();
+
+  startAnim();
+  if (mode === 'storm') scheduleLightning();
+}
+
+/* ── Derive mode from NWS description ────────────────────── */
+function setWxMode(desc) {
+  if (!desc) return applyWxMode('none');
+  const d = desc.toLowerCase();
+  if (d.includes('thunder'))
+    applyWxMode('storm');
+  else if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
+    applyWxMode('rain');
+  else if (d.includes('clear') || d.includes('sunny') || d.includes('fair') ||
+           d.includes('mostly clear') || d.includes('mostly sunny'))
+    applyWxMode(isCurrentlyDay() ? 'clear-day' : 'clear-night');
+  else
+    applyWxMode('none');
 }
 
 function setWxMode(desc) {
@@ -557,8 +646,19 @@ zipSelect.addEventListener('change', () => {
 document.getElementById('settings-btn').addEventListener('click', () => {
   zipSelect.value = getActiveZip().zip;
   updateZipCoords();
-  applyTheme(); // refresh status text
+  applyTheme();
+  // Reflect current wx mode on debug buttons
+  document.querySelectorAll('.debug-wx-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === wxMode));
   settingsModal.hidden = false;
+});
+
+document.getElementById('debug-wx-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.debug-wx-btn');
+  if (!btn) return;
+  applyWxMode(btn.dataset.mode);
+  document.querySelectorAll('.debug-wx-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === btn.dataset.mode));
 });
 document.getElementById('settings-close').addEventListener('click', () => { settingsModal.hidden = true; });
 settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.hidden = true; });
