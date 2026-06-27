@@ -194,6 +194,12 @@ setInterval(updateClock, 1000);
    WEATHER CANVAS ANIMATION
    Modes: none | clear-day | clear-night |
           cloudy-day | cloudy-night | overcast | rain | storm
+
+   Performance notes (Raspberry Pi):
+   - Clouds pre-rendered to OffscreenCanvas; each frame = drawImage() call
+   - Bolt pre-rendered to OffscreenCanvas; blitted at varying globalAlpha
+   - Stars/rain use direct globalAlpha instead of save/restore per particle
+   - Canvas promoted to dedicated GPU compositing layer via CSS transform
    ══════════════════════════════════════════════════════════ */
 const wxCanvas = document.getElementById('wx-canvas');
 const wxCtx    = wxCanvas.getContext('2d');
@@ -208,57 +214,77 @@ function resizeWxCanvas() {
   wxCanvas.height = window.innerHeight;
 }
 
-/* ── Particles ────────────────────────────────────────────── */
+/* ── Rain drops ───────────────────────────────────────────── */
 const LEAN = 0.22;
 
 function mkDrop() {
   return {
     x:     Math.random() * wxCanvas.width * 1.3 - wxCanvas.width * 0.15,
     y:     Math.random() * wxCanvas.height - wxCanvas.height,
-    len:   12 + Math.random() * 22,
-    speed:  8 + Math.random() * 16,
-    opac:  0.10 + Math.random() * 0.28,
+    len:   12 + Math.random() * 20,
+    speed:  8 + Math.random() * 14,
+    opac:  0.12 + Math.random() * 0.26,
   };
 }
 
 function initDrops() {
-  wxDrops = Array.from({ length: wxMode === 'storm' ? 240 : 140 }, mkDrop);
+  wxDrops = Array.from({ length: wxMode === 'storm' ? 170 : 100 }, mkDrop);
 }
 
+/* ── Stars ────────────────────────────────────────────────── */
 function initStars() {
-  wxStars = Array.from({ length: 180 }, () => ({
+  wxStars = Array.from({ length: 120 }, () => ({
     x:    Math.random() * wxCanvas.width,
-    y:    Math.random() * wxCanvas.height * 0.80,
-    r:    0.4 + Math.random() * 1.8,
-    base: 0.20 + Math.random() * 0.65,
-    freq: 0.0006 + Math.random() * 0.0014,
+    y:    Math.random() * wxCanvas.height * 0.78,
+    r:    0.5 + Math.random() * 1.6,
+    base: 0.22 + Math.random() * 0.62,
+    freq: 0.0006 + Math.random() * 0.0012,
     phi:  Math.random() * Math.PI * 2,
   }));
 }
 
-function mkCloud(offscreen) {
+/* ── Clouds OffscreenCanvas ───────────────────────────────── */
+function mkCloud(offscreen, colorRgba) {
   const W = wxCanvas.width, H = wxCanvas.height;
-  const n = 4 + Math.floor(Math.random() * 4);
+  const n = 3 + Math.floor(Math.random() * 3);
   const puffs = [];
-  let tw = 0;
+  let cx = 0, maxR = 0;
   for (let i = 0; i < n; i++) {
-    const r = 28 + Math.random() * 50;
-    puffs.push({ dx: tw + r * 0.5, dy: (Math.random() - 0.5) * r * 0.4, r });
-    tw += r * (0.7 + Math.random() * 0.45);
+    const r = 28 + Math.random() * 48;
+    if (r > maxR) maxR = r;
+    puffs.push({ dx: cx + r, dy: (Math.random() - 0.5) * r * 0.28, r });
+    cx += r * (1.55 + Math.random() * 0.35);
   }
+  const pad = 10;
+  const ocW = Math.ceil(cx + maxR * 0.6 + pad * 2);
+  const ocH = Math.ceil(maxR * 2.4 + pad * 2);
+  const oc  = new OffscreenCanvas(ocW, ocH);
+  const occ = oc.getContext('2d');
+  for (const p of puffs) {
+    occ.beginPath();
+    occ.arc(p.dx + pad, maxR * 1.2 + pad + p.dy, p.r, 0, Math.PI * 2);
+    occ.fillStyle = colorRgba;
+    occ.fill();
+  }
+  const scaleX = 0.55 + Math.random() * 1.0;
+  const scaleY = scaleX * (0.46 + Math.random() * 0.10);
   return {
-    x:     offscreen ? -tw - 60 : Math.random() * W * 1.3 - W * 0.1,
-    y:     H * (0.04 + Math.random() * 0.42),
-    scale: 0.55 + Math.random() * 1.1,
-    speed: 0.14 + Math.random() * 0.28,
-    opac:  0.28 + Math.random() * 0.42,
-    puffs, tw,
+    x:      offscreen ? -(ocW * scaleX * 0.5 + 100) : Math.random() * W * 1.2 - W * 0.1,
+    y:      H * (0.03 + Math.random() * 0.40),
+    scaleX, scaleY,
+    speed:  0.15 + Math.random() * 0.28,
+    opac:   0.32 + Math.random() * 0.40,
+    oc, ocW, ocH, colorRgba,
   };
 }
 
 function initClouds() {
-  const n = wxMode === 'overcast' ? 10 : 5;
-  wxClouds = Array.from({ length: n }, () => mkCloud(false));
+  const n = wxMode === 'overcast' ? 8 : 4;
+  const colorRgba =
+    wxMode === 'cloudy-day'   ? 'rgba(255,255,255,0.92)' :
+    wxMode === 'cloudy-night' ? 'rgba(16,22,58,0.96)'    :
+                                'rgba(82,92,118,0.92)';
+  wxClouds = Array.from({ length: n }, () => mkCloud(false, colorRgba));
 }
 
 /* ── Drawing helpers ──────────────────────────────────────── */
@@ -277,8 +303,8 @@ function drawDaySky() {
     [1,    'rgba(90, 190, 245, 0.35)'],
   ]);
   const W = wxCanvas.width, H = wxCanvas.height;
-  [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cx,cy]) => {
-    const g2 = wxCtx.createRadialGradient(W*cx,H*cy,0, W*cx,H*cy,W*0.14);
+  [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cfx,cfy]) => {
+    const g2 = wxCtx.createRadialGradient(W*cfx,H*cfy,0, W*cfx,H*cfy,W*0.14);
     g2.addColorStop(0, 'rgba(255,255,255,0.11)');
     g2.addColorStop(1, 'rgba(255,255,255,0)');
     wxCtx.fillStyle = g2;
@@ -308,49 +334,84 @@ function drawRainSky() {
 }
 
 function drawStars(ts) {
+  wxCtx.fillStyle = '#ffffff';
   for (const s of wxStars) {
-    const o = s.base * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
+    wxCtx.globalAlpha = s.base * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
     wxCtx.beginPath();
     wxCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    wxCtx.fillStyle = `rgba(255,255,255,${o.toFixed(3)})`;
     wxCtx.fill();
   }
+  wxCtx.globalAlpha = 1;
 }
 
-function drawClouds(colorFn) {
+function drawClouds() {
   const W = wxCanvas.width;
   for (const c of wxClouds) {
     wxCtx.save();
+    wxCtx.globalAlpha = c.opac;
     wxCtx.translate(c.x, c.y);
-    wxCtx.scale(c.scale, c.scale * 0.52);
-    for (const p of c.puffs) {
-      wxCtx.beginPath();
-      wxCtx.arc(p.dx, p.dy, p.r, 0, Math.PI * 2);
-      wxCtx.fillStyle = colorFn(c.opac);
-      wxCtx.fill();
-    }
+    wxCtx.scale(c.scaleX, c.scaleY);
+    wxCtx.drawImage(c.oc, -c.ocW * 0.5, -c.ocH * 0.5);
     wxCtx.restore();
     c.x += c.speed;
-    if (c.x > W + c.tw * c.scale + 60) Object.assign(c, mkCloud(true));
+    if (c.x - c.ocW * c.scaleX * 0.5 > W + 20) {
+      Object.assign(c, mkCloud(true, c.colorRgba));
+    }
   }
 }
 
 function drawRain() {
-  wxCtx.lineWidth = 1;
   const H = wxCanvas.height;
+  wxCtx.strokeStyle = '#a8d8ff';
+  wxCtx.lineWidth = 1;
   for (const d of wxDrops) {
-    wxCtx.save();
     wxCtx.globalAlpha = d.opac;
-    wxCtx.strokeStyle = '#a8d8ff';
     wxCtx.beginPath();
     wxCtx.moveTo(d.x, d.y);
     wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
     wxCtx.stroke();
-    wxCtx.restore();
     d.y += d.speed;
     d.x += LEAN * d.speed * 0.28;
     if (d.y > H + d.len) Object.assign(d, mkDrop(), { y: -d.len });
   }
+  wxCtx.globalAlpha = 1;
+}
+
+/* ── Bolt (jagged line via midpoint displacement) ─────────── */
+let boltOC    = null; // reused OffscreenCanvas, invalidated on resize
+let boltAlpha = 0;
+
+function genBolt(x1, y1, x2, y2, depth) {
+  if (depth === 0) return [[x1, y1], [x2, y2]];
+  const disp = (Math.random() - 0.5) * Math.abs(y2 - y1) * 0.55;
+  const mx = (x1 + x2) / 2 + disp;
+  const my = (y1 + y2) / 2;
+  const L = genBolt(x1, y1, mx, my, depth - 1);
+  const R = genBolt(mx, my, x2, y2, depth - 1);
+  return [...L, ...R.slice(1)];
+}
+
+function renderBolt(pts) {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  if (!boltOC || boltOC.width !== W || boltOC.height !== H) {
+    boltOC = new OffscreenCanvas(W, H);
+  }
+  const bc = boltOC.getContext('2d');
+  bc.clearRect(0, 0, W, H);
+  bc.lineCap = bc.lineJoin = 'round';
+  const sp = (lw, rgba) => {
+    bc.lineWidth = lw;
+    bc.strokeStyle = rgba;
+    bc.beginPath();
+    pts.forEach(([x, y], i) => i ? bc.lineTo(x, y) : bc.moveTo(x, y));
+    bc.stroke();
+  };
+  // Glow layers: outer → inner
+  sp(22, 'rgba(100,170,255,0.04)');
+  sp(12, 'rgba(140,200,255,0.09)');
+  sp(6,  'rgba(190,222,255,0.22)');
+  sp(3,  'rgba(222,238,255,0.58)');
+  sp(1.5,'rgba(248,253,255,0.94)');
 }
 
 /* ── Main loop ────────────────────────────────────────────── */
@@ -360,8 +421,8 @@ function drawFrame(ts = 0) {
   switch (wxMode) {
     case 'clear-day':
       drawDaySky();
-      wxAnimId = null; // static — no loop
-      return;
+      wxAnimId = null;
+      return;               // static — no RAF loop needed
 
     case 'clear-night':
       drawNightSky();
@@ -370,19 +431,18 @@ function drawFrame(ts = 0) {
 
     case 'cloudy-day':
       drawDaySky();
-      drawClouds(o => `rgba(255,255,255,${(o * 0.88).toFixed(3)})`);
+      drawClouds();
       break;
 
     case 'cloudy-night':
       drawNightSky();
       drawStars(ts);
-      // Dark cloud shapes occlude stars they pass over
-      drawClouds(o => `rgba(18,25,60,${(o * 2.4).toFixed(3)})`);
+      drawClouds();         // dark puffs occlude stars beneath them
       break;
 
     case 'overcast':
       drawOvercastSky();
-      drawClouds(o => `rgba(85,95,120,${(o * 1.6).toFixed(3)})`);
+      drawClouds();
       break;
 
     case 'rain':
@@ -394,6 +454,13 @@ function drawFrame(ts = 0) {
     default:
       wxAnimId = null;
       return;
+  }
+
+  // Bolt overlays everything (storm mode only); JS controls boltAlpha
+  if (boltOC && boltAlpha > 0) {
+    wxCtx.globalAlpha = boltAlpha;
+    wxCtx.drawImage(boltOC, 0, 0);
+    wxCtx.globalAlpha = 1;
   }
 
   wxAnimId = requestAnimationFrame(drawFrame);
@@ -409,27 +476,65 @@ function stopAnim() {
   wxCtx.clearRect(0, 0, wxCanvas.width, wxCanvas.height);
 }
 
-/* ── Lightning ────────────────────────────────────────────── */
-let lightTimer = null;
-const lightEl  = document.getElementById('lightning-flash');
+/* ── Lightning — realistic multi-flash sequence ───────────── */
+let lightTimer  = null;
+const lightEl   = document.getElementById('lightning-flash');
+const strikeIds = []; // timeout IDs so we can cancel mid-sequence
 
-function flash() {
-  lightEl.classList.remove('active');
-  void lightEl.offsetWidth;
-  lightEl.classList.add('active');
-  if (Math.random() > 0.5) setTimeout(flash, 150);
+function setFlash(o) { lightEl.style.opacity = String(o); }
+
+function clearStrike() {
+  strikeIds.forEach(clearTimeout);
+  strikeIds.length = 0;
+  boltAlpha = 0;
+  setFlash(0);
+}
+
+function triggerStrike() {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const sx = W * (0.15 + Math.random() * 0.70);
+  const ex = sx + (Math.random() - 0.5) * W * 0.20;
+  const ey = H * (0.38 + Math.random() * 0.40);
+  renderBolt(genBolt(sx, 0, ex, ey, 5));
+
+  // Phase 1 — pre-flash: subtle glow, eyes perceive motion
+  boltAlpha = 0.20; setFlash(0.05);
+  // Phase 2 — dark gap: sudden absence makes main flash feel more shocking
+  strikeIds.push(setTimeout(() => { boltAlpha = 0; setFlash(0); }, 30));
+  // Phase 3 — MAIN: sudden full brightness
+  strikeIds.push(setTimeout(() => { boltAlpha = 1.0; setFlash(0.30); }, 58));
+  // Phase 4 — first decay
+  strikeIds.push(setTimeout(() => { boltAlpha = 0.55; setFlash(0.14); }, 120));
+  // Phase 5 — clear; maybe trigger return stroke
+  strikeIds.push(setTimeout(() => {
+    boltAlpha = 0; setFlash(0);
+    // 38% chance: secondary return stroke (same channel, dimmer, faster)
+    if (Math.random() < 0.38) {
+      const echoDelay = 70 + Math.random() * 120;
+      strikeIds.push(setTimeout(() => {
+        renderBolt(genBolt(
+          sx + (Math.random() - 0.5) * 18, 0,
+          ex + (Math.random() - 0.5) * 18, ey * (0.85 + Math.random() * 0.20), 4
+        ));
+        boltAlpha = 0.65; setFlash(0.18);
+        strikeIds.push(setTimeout(() => { boltAlpha = 0.28; setFlash(0.07); }, 50));
+        strikeIds.push(setTimeout(() => { boltAlpha = 0;    setFlash(0);    }, 95));
+      }, echoDelay));
+    }
+  }, 175));
 }
 
 function scheduleLightning() {
   clearTimeout(lightTimer);
   if (wxMode !== 'storm') return;
-  lightTimer = setTimeout(() => { flash(); scheduleLightning(); }, 5000 + Math.random() * 13000);
+  lightTimer = setTimeout(() => { triggerStrike(); scheduleLightning(); }, 5000 + Math.random() * 13000);
 }
 
 /* ── Apply mode ───────────────────────────────────────────── */
 function applyWxMode(mode) {
   stopAnim();
   clearTimeout(lightTimer);
+  clearStrike();
   wxMode = mode;
   document.body.dataset.wx = mode;
 
@@ -443,8 +548,8 @@ function applyWxMode(mode) {
   if (mode === 'none') return;
 
   if (mode === 'clear-night' || mode === 'cloudy-night') initStars();
-  if (mode === 'cloudy-day' || mode === 'cloudy-night' || mode === 'overcast') initClouds();
-  if (mode === 'rain' || mode === 'storm') initDrops();
+  if (mode === 'cloudy-day'  || mode === 'cloudy-night' || mode === 'overcast') initClouds();
+  if (mode === 'rain'        || mode === 'storm') initDrops();
 
   startAnim();
   if (mode === 'storm') scheduleLightning();
@@ -455,7 +560,6 @@ function setWxMode(desc) {
   const day = isCurrentlyDay();
   if (!desc) return applyWxMode(day ? 'clear-day' : 'clear-night');
   const d = desc.toLowerCase();
-
   if (d.includes('thunder'))
     return applyWxMode('storm');
   if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
@@ -465,14 +569,13 @@ function setWxMode(desc) {
     return applyWxMode('overcast');
   if (d.includes('cloud') || d.includes('partly') || d.includes('few') || d.includes('scattered'))
     return applyWxMode(day ? 'cloudy-day' : 'cloudy-night');
-
-  // Clear, fair, sunny, mostly clear, etc.
   applyWxMode(day ? 'clear-day' : 'clear-night');
 }
 
 window.addEventListener('resize', () => {
   resizeWxCanvas();
-  applyWxMode(wxMode); // re-init particles to new screen dimensions
+  boltOC = null; // invalidate bolt canvas — wrong size now
+  applyWxMode(wxMode);
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopAnim(); else if (wxMode !== 'none') startAnim();
