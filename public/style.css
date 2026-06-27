@@ -142,6 +142,20 @@ html, body {
   font-weight: 600;
 }
 
+.wx-updated {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+.wx-refresh-btn {
+  align-self: center;
+  font-size: 1.1rem;
+  padding: 0.3rem 0.55rem;
+  min-height: 32px;
+  flex-shrink: 0;
+}
+
 .settings-btn {
   margin-left: auto;
   flex-shrink: 0;

@@ -248,16 +248,32 @@ async function fetchWeather() {
     document.getElementById('wx-icon').textContent  = WX_ICONS[code]  ?? '🌡️';
     document.getElementById('wx-temp').textContent  = Math.round(d.current.temperature_2m) + '°';
     document.getElementById('wx-feels').textContent = 'Feels ' + Math.round(d.current.apparent_temperature) + '°';
-    document.getElementById('wx-desc').textContent  = WX_CODES[code]  ?? 'Unknown';
+    document.getElementById('wx-desc').textContent  = WX_CODES[code]  ?? `Code ${code}`;
     document.getElementById('wx-hi-lo').textContent =
       `Hi ${Math.round(d.daily.temperature_2m_max[0])}° / Lo ${Math.round(d.daily.temperature_2m_min[0])}°`;
+
+    // Show the exact time Open-Meteo's reading is valid for
+    // d.current.time is like "2026-06-27T14:00" in the requested timezone
+    if (d.current?.time) {
+      const t = d.current.time.split('T')[1]; // "14:00"
+      const [hh, mm] = t.split(':').map(Number);
+      document.getElementById('wx-updated').textContent = `as of ${fmt12hHM(hh, mm)}`;
+    }
 
     renderRain(d.hourly);
   } catch (err) {
     document.getElementById('wx-desc').textContent = 'Weather unavailable';
+    document.getElementById('wx-updated').textContent = '';
     document.getElementById('wx-rain').innerHTML   = '';
   }
 }
+
+// Manual refresh button
+document.getElementById('wx-refresh').addEventListener('click', () => {
+  document.getElementById('wx-desc').textContent    = 'Refreshing…';
+  document.getElementById('wx-updated').textContent = '';
+  fetchWeather();
+});
 
 function renderRain(hourly) {
   const container = document.getElementById('wx-rain');
