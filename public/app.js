@@ -214,8 +214,8 @@ function cToF(c) {
   return (c != null && isFinite(c)) ? Math.round(c * 9 / 5 + 32) : null;
 }
 
-// Map NWS free-text descriptions (e.g. "Partly Cloudy") to emoji
-function nwsIcon(desc) {
+// Map NWS free-text descriptions to emoji, accounting for day vs. night
+function nwsIcon(desc, isDay) {
   if (!desc) return '🌡️';
   const d = desc.toLowerCase();
   if (d.includes('thunder'))                                    return '⛈️';
@@ -224,11 +224,18 @@ function nwsIcon(desc) {
   if (d.includes('snow') || d.includes('sleet'))               return '❄️';
   if (d.includes('fog') || d.includes('mist') || d.includes('haze')) return '🌫️';
   if (d.includes('overcast') || d.includes('mostly cloudy'))   return '☁️';
-  if (d.includes('partly') || d.includes('partly sunny'))      return '⛅';
-  if (d.includes('mostly clear') || d.includes('mostly sunny'))return '🌤️';
-  if (d.includes('clear') || d.includes('sunny') || d.includes('fair')) return '☀️';
-  if (d.includes('cloud'))                                      return '⛅';
+  if (d.includes('partly') || d.includes('partly sunny'))      return isDay ? '⛅' : '☁️';
+  if (d.includes('mostly clear') || d.includes('mostly sunny'))return isDay ? '🌤️' : '🌙';
+  if (d.includes('clear') || d.includes('sunny') || d.includes('fair')) return isDay ? '☀️' : '🌙';
+  if (d.includes('cloud'))                                      return isDay ? '⛅' : '☁️';
   return '🌡️';
+}
+
+function isCurrentlyDay() {
+  const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+  if (sunriseMins !== null && sunsetMins !== null)
+    return nowM >= sunriseMins && nowM < sunsetMins;
+  return nowM >= 7 * 60 && nowM < 19 * 60; // rough fallback before first fetch
 }
 
 async function fetchWeather() {
@@ -260,7 +267,7 @@ async function fetchWeather() {
                  : null;
     const desc  = p.textDescription || 'Unknown';
 
-    document.getElementById('wx-icon').textContent  = nwsIcon(desc);
+    document.getElementById('wx-icon').textContent  = nwsIcon(desc, isCurrentlyDay());
     document.getElementById('wx-temp').textContent  = (tempF != null ? tempF : '--') + '°';
     document.getElementById('wx-feels').textContent = feelsF != null ? `Feels ${feelsF}°` : '';
     document.getElementById('wx-desc').textContent  = desc;
