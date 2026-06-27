@@ -350,18 +350,21 @@ function applyWxMode(mode) {
 }
 
 /* ── Derive mode from NWS description ────────────────────── */
+// Logic: block-list the bad conditions; everything else gets sky/stars.
+// NWS descriptions are free-text (e.g. "A Few Clouds", "Partly Cloudy")
+// so an allow-list misses too many valid clear variants.
 function setWxMode(desc) {
-  if (!desc) return applyWxMode('none');
+  if (!desc) return applyWxMode(isCurrentlyDay() ? 'clear-day' : 'clear-night');
   const d = desc.toLowerCase();
   if (d.includes('thunder'))
-    applyWxMode('storm');
-  else if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
-    applyWxMode('rain');
-  else if (d.includes('clear') || d.includes('sunny') || d.includes('fair') ||
-           d.includes('mostly clear') || d.includes('mostly sunny'))
-    applyWxMode(isCurrentlyDay() ? 'clear-day' : 'clear-night');
-  else
-    applyWxMode('none');
+    return applyWxMode('storm');
+  if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
+    return applyWxMode('rain');
+  if (d.includes('fog') || d.includes('mist') || d.includes('smoke') ||
+      d.includes('overcast') || d.includes('mostly cloudy'))
+    return applyWxMode('none');
+  // Everything else (clear, sunny, fair, partly cloudy, a few clouds, etc.)
+  applyWxMode(isCurrentlyDay() ? 'clear-day' : 'clear-night');
 }
 
 function setWxMode(desc) {
