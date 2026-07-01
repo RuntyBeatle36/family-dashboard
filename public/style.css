@@ -121,8 +121,9 @@ body {
   -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
 
-.alert-ico { font-size: 1.1rem; flex-shrink: 0; }
-.alert-txt { flex: 1; line-height: 1.35; }
+.alert-ico  { font-size: 1.1rem; flex-shrink: 0; }
+.alert-txt  { flex: 1; line-height: 1.35; }
+.alert-area { font-size: 0.76rem; opacity: 0.82; margin-top: 2px; }
 
 .alert-extreme, .alert-severe { background: rgba(180,20,20,0.72);  color: #fff; }
 .alert-moderate               { background: rgba(190,90,5,0.72);   color: #fff; }

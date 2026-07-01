@@ -597,13 +597,20 @@ function renderAlerts(features) {
     (ALERT_SEV[a.properties.severity] ?? 4) - (ALERT_SEV[b.properties.severity] ?? 4));
 
   banner.innerHTML = sorted.map(f => {
-    const p   = f.properties;
-    const cls = ALERT_CLS[p.severity]  || 'alert-minor';
-    const ico = ALERT_ICON[p.severity] || '⚠️';
+    const p        = f.properties;
+    const cls      = ALERT_CLS[p.severity]  || 'alert-minor';
+    const ico      = ALERT_ICON[p.severity] || '⚠️';
     const headline = p.headline || p.event;
+    // areaDesc from NWS is semicolon-delimited: "Nueces; San Patricio; Bee"
+    const areas    = p.areaDesc
+      ? p.areaDesc.split(';').map(s => s.trim()).filter(Boolean).join(', ')
+      : '';
     return `<div class="alert-item ${cls}">
       <span class="alert-ico">${ico}</span>
-      <span class="alert-txt"><strong>${escHtml(p.event)}</strong> — ${escHtml(headline)}</span>
+      <div class="alert-txt">
+        <div><strong>${escHtml(p.event)}</strong> — ${escHtml(headline)}</div>
+        ${areas ? `<div class="alert-area">${escHtml(areas)}</div>` : ''}
+      </div>
     </div>`;
   }).join('');
   banner.hidden = false;
@@ -869,10 +876,17 @@ document.getElementById('debug-alert-grid').addEventListener('click', e => {
   const btn = e.target.closest('.debug-alert-btn');
   if (!btn) return;
   const { sev, event, headline } = btn.dataset;
+  const DEFAULT_AREA = 'Nueces; San Patricio; Kleberg; Aransas';
+
   if (sev === 'none') {
     renderAlerts([]);
+  } else if (sev === 'multi') {
+    renderAlerts([
+      { properties: { severity: 'Severe',   event: 'Severe Thunderstorm Warning', headline: 'Severe Thunderstorm Warning in effect until 6:30 PM CDT. Quarter-size hail and 70 mph winds.', areaDesc: 'Nueces; San Patricio; Kleberg' } },
+      { properties: { severity: 'Moderate', event: 'Flash Flood Watch',            headline: 'Flash Flood Watch in effect through tomorrow morning. Heavy rainfall may produce flash flooding.', areaDesc: 'Nueces; San Patricio; Bee; Kleberg; Aransas' } },
+    ]);
   } else {
-    renderAlerts([{ properties: { severity: sev, event, headline } }]);
+    renderAlerts([{ properties: { severity: sev, event, headline, areaDesc: DEFAULT_AREA } }]);
   }
   document.querySelectorAll('.debug-alert-btn').forEach(b =>
     b.classList.toggle('active', b === btn && sev !== 'none'));
