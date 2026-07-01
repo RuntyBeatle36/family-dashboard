@@ -193,12 +193,12 @@ setInterval(updateClock, 1000);
 /* ══════════════════════════════════════════════════════════
    WEATHER CANVAS ANIMATION
    Modes: none | clear-day | clear-night |
-          cloudy-day | cloudy-night | overcast | rain | storm
+          cloudy-day | cloudy-night | overcast | rain | storm | snow
 
    Performance notes (Raspberry Pi):
    - Clouds pre-rendered to OffscreenCanvas; each frame = drawImage() call
    - Bolt pre-rendered to OffscreenCanvas; blitted at varying globalAlpha
-   - Stars/rain use direct globalAlpha instead of save/restore per particle
+   - Stars/rain/snow use direct globalAlpha instead of save/restore per particle
    - Canvas promoted to dedicated GPU compositing layer via CSS transform
    ══════════════════════════════════════════════════════════ */
 const wxCanvas = document.getElementById('wx-canvas');
@@ -206,6 +206,7 @@ const wxCtx    = wxCanvas.getContext('2d');
 let wxDrops  = [];
 let wxStars  = [];
 let wxClouds = [];
+let wxFlakes = [];
 let wxAnimId = null;
 let wxMode   = 'none';
 
@@ -377,6 +378,50 @@ function drawRain() {
   wxCtx.globalAlpha = 1;
 }
 
+/* ── Snowflakes ───────────────────────────────────────────── */
+function mkFlake() {
+  return {
+    x:         Math.random() * wxCanvas.width,
+    y:         Math.random() * wxCanvas.height,
+    r:         1.5 + Math.random() * 3.2,
+    speed:     1.4 + Math.random() * 2.8,
+    swayPhase: Math.random() * Math.PI * 2,
+    swayFreq:  0.0008 + Math.random() * 0.0012,
+    swayAmp:   18 + Math.random() * 28,
+    opac:      0.55 + Math.random() * 0.40,
+  };
+}
+
+function initFlakes() {
+  wxFlakes = Array.from({ length: 120 }, mkFlake);
+}
+
+function drawSnowSky() {
+  fillGrad([
+    [0,   'rgba(50, 62,  95, 0.90)'],
+    [0.5, 'rgba(62, 76, 108, 0.75)'],
+    [1,   'rgba(78, 92, 122, 0.55)'],
+  ]);
+}
+
+function drawSnow(ts) {
+  const H = wxCanvas.height;
+  wxCtx.fillStyle = '#ffffff';
+  for (const f of wxFlakes) {
+    const sway = Math.sin(ts * f.swayFreq + f.swayPhase) * f.swayAmp;
+    wxCtx.globalAlpha = f.opac;
+    wxCtx.beginPath();
+    wxCtx.arc(f.x + sway, f.y, f.r, 0, Math.PI * 2);
+    wxCtx.fill();
+    f.y += f.speed;
+    if (f.y > H + f.r) {
+      f.x = Math.random() * wxCanvas.width;
+      f.y = -f.r * 2;
+    }
+  }
+  wxCtx.globalAlpha = 1;
+}
+
 /* ── Bolt (jagged line via midpoint displacement) ─────────── */
 let boltOC    = null; // reused OffscreenCanvas, invalidated on resize
 let boltAlpha = 0;
@@ -449,6 +494,11 @@ function drawFrame(ts = 0) {
     case 'storm':
       drawRainSky();
       drawRain();
+      break;
+
+    case 'snow':
+      drawSnowSky();
+      drawSnow(ts);
       break;
 
     default:
@@ -543,13 +593,15 @@ function applyWxMode(mode) {
     mode === 'clear-night'  ? '0.90' :
     mode === 'cloudy-day'   ? '1.00' :
     mode === 'cloudy-night' ? '0.90' :
-    mode === 'overcast'     ? '0.82' : '0.72';
+    mode === 'overcast'     ? '0.82' :
+    mode === 'snow'         ? '0.88' : '0.72';
 
   if (mode === 'none') return;
 
   if (mode === 'clear-night' || mode === 'cloudy-night') initStars();
   if (mode === 'cloudy-day'  || mode === 'cloudy-night' || mode === 'overcast') initClouds();
   if (mode === 'rain'        || mode === 'storm') initDrops();
+  if (mode === 'snow') initFlakes();
 
   startAnim();
   if (mode === 'storm') scheduleLightning();
@@ -562,6 +614,11 @@ function setWxMode(desc) {
   const d = desc.toLowerCase();
   if (d.includes('thunder'))
     return applyWxMode('storm');
+  // Snow check BEFORE rain — "Snow Showers" contains "shower" and would false-match rain
+  if (d.includes('snow') || d.includes('flurr') || d.includes('sleet') ||
+      d.includes('blizzard') || d.includes('wintry') || d.includes('ice pellet') ||
+      d.includes('ice crystal'))
+    return applyWxMode('snow');
   if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
     return applyWxMode('rain');
   if (d.includes('overcast') || d.includes('fog') || d.includes('mist') ||
