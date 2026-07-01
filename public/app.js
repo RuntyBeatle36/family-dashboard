@@ -612,17 +612,19 @@ function setWxMode(desc) {
   const day = isCurrentlyDay();
   if (!desc) return applyWxMode(day ? 'clear-day' : 'clear-night');
   const d = desc.toLowerCase();
-  if (d.includes('thunder'))
+  if (d.includes('thunder') || d.includes('funnel'))
     return applyWxMode('storm');
   // Snow check BEFORE rain — "Snow Showers" contains "shower" and would false-match rain
   if (d.includes('snow') || d.includes('flurr') || d.includes('sleet') ||
       d.includes('blizzard') || d.includes('wintry') || d.includes('ice pellet') ||
-      d.includes('ice crystal'))
+      d.includes('ice crystal') || d.includes('ice storm'))
     return applyWxMode('snow');
   if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
     return applyWxMode('rain');
   if (d.includes('overcast') || d.includes('fog') || d.includes('mist') ||
-      d.includes('smoke') || d.includes('mostly cloudy') || d.includes('considerable'))
+      d.includes('smoke') || d.includes('haze') || d.includes('dust') ||
+      d.includes('sand') || d.includes('ash') || d.includes('spray') ||
+      d.includes('mostly cloudy') || d.includes('considerable'))
     return applyWxMode('overcast');
   if (d.includes('cloud') || d.includes('partly') || d.includes('few') || d.includes('scattered'))
     return applyWxMode(day ? 'cloudy-day' : 'cloudy-night');
