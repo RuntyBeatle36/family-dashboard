@@ -603,7 +603,21 @@ body {
   gap: 0.4rem;
 }
 
-.debug-wx-btn.active {
+.debug-alert-tier {
+  grid-column: span 2;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--glass-border);
+  margin-top: 2px;
+}
+.debug-alert-tier:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+
+.debug-wx-btn.active,
+.debug-alert-btn.active {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
