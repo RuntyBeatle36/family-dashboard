@@ -589,31 +589,112 @@ const ALERT_SEV  = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3, Unknown: 4 };
 const ALERT_CLS  = { Extreme: 'alert-extreme', Severe: 'alert-severe', Moderate: 'alert-moderate', Minor: 'alert-minor' };
 const ALERT_ICON = { Extreme: '🚨', Severe: '🚨', Moderate: '⚠️', Minor: '💛' };
 
+/* ── Alert sound & TTS ────────────────────────────────────── */
+const getSoundEnabled = () => localStorage.getItem('alertSound') === 'true';
+const getTtsEnabled   = () => localStorage.getItem('alertTts')   === 'true';
+
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playAlertSound() {
+  if (!getSoundEnabled()) return;
+  try {
+    const ctx = getAudioCtx();
+    const beep = (freq, start, dur) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.22, start + 0.01);
+      gain.gain.setValueAtTime(0.22, start + dur - 0.02);
+      gain.gain.linearRampToValueAtTime(0, start + dur);
+      osc.start(start);
+      osc.stop(start + dur);
+    };
+    const t = ctx.currentTime;
+    beep(960, t,       0.18);
+    beep(960, t + 0.25, 0.18);
+    beep(960, t + 0.50, 0.18);
+  } catch { /* AudioContext unavailable */ }
+}
+
+function speakAlerts(sorted) {
+  if (!getTtsEnabled() || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const preamble = new SpeechSynthesisUtterance(
+    'The National Weather Service has issued the following alert' +
+    (sorted.length > 1 ? 's' : '') + '.'
+  );
+  preamble.rate = 0.92;
+  window.speechSynthesis.speak(preamble);
+  for (const f of sorted) {
+    const p     = f.properties;
+    const areas = p.areaDesc
+      ? p.areaDesc.split(';').map(s => s.trim()).filter(Boolean).join(', ')
+      : '';
+    const text  = areas
+      ? `${p.event} for ${areas}. ${p.headline || ''}`
+      : `${p.event}. ${p.headline || ''}`;
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.92;
+    window.speechSynthesis.speak(u);
+  }
+}
+
+/* ── Render alert banner (scrolling ticker) ───────────────── */
+let lastAlertKey = '';
+
 function renderAlerts(features) {
   const banner = document.getElementById('alert-banner');
-  if (!features.length) { banner.hidden = true; return; }
+  if (!features.length) {
+    banner.hidden = true;
+    lastAlertKey = '';
+    return;
+  }
 
   const sorted = [...features].sort((a, b) =>
     (ALERT_SEV[a.properties.severity] ?? 4) - (ALERT_SEV[b.properties.severity] ?? 4));
+
+  // Detect new/changed alerts so we only sound once per change
+  const key = sorted.map(f => f.properties.id || f.properties.event).join('|');
+  const isNew = key !== lastAlertKey;
+  lastAlertKey = key;
 
   banner.innerHTML = sorted.map(f => {
     const p        = f.properties;
     const cls      = ALERT_CLS[p.severity]  || 'alert-minor';
     const ico      = ALERT_ICON[p.severity] || '⚠️';
     const headline = p.headline || p.event;
-    // areaDesc from NWS is semicolon-delimited: "Nueces; San Patricio; Bee"
     const areas    = p.areaDesc
       ? p.areaDesc.split(';').map(s => s.trim()).filter(Boolean).join(', ')
       : '';
+
+    // Build ticker text; double it for seamless loop
+    const core   = [p.event, headline, areas ? `Counties: ${areas}` : ''].filter(Boolean).join('  •  ');
+    const doubled = `${core}     •     ${core}`;
+    // ~0.085s per character gives a readable scroll pace
+    const dur    = Math.max(14, core.length * 0.085).toFixed(1);
+
     return `<div class="alert-item ${cls}">
       <span class="alert-ico">${ico}</span>
-      <div class="alert-txt">
-        <div><strong>${escHtml(p.event)}</strong> — ${escHtml(headline)}</div>
-        ${areas ? `<div class="alert-area">${escHtml(areas)}</div>` : ''}
+      <div class="alert-ticker-wrap">
+        <div class="alert-ticker-inner" style="animation-duration:${dur}s">${escHtml(doubled)}</div>
       </div>
     </div>`;
   }).join('');
   banner.hidden = false;
+
+  if (isNew) {
+    playAlertSound();
+    setTimeout(() => speakAlerts(sorted), 1200); // beeps first, then voice
+  }
 }
 
 async function fetchAlerts() {
@@ -858,10 +939,18 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   zipSelect.value = getActiveZip().zip;
   updateZipCoords();
   applyTheme();
-  // Reflect current wx mode on debug buttons
   document.querySelectorAll('.debug-wx-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === wxMode));
+  document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
+  document.getElementById('toggle-alert-tts').checked   = getTtsEnabled();
   settingsModal.hidden = false;
+});
+
+document.getElementById('toggle-alert-sound').addEventListener('change', e => {
+  localStorage.setItem('alertSound', e.target.checked);
+});
+document.getElementById('toggle-alert-tts').addEventListener('change', e => {
+  localStorage.setItem('alertTts', e.target.checked);
 });
 
 document.getElementById('debug-wx-grid').addEventListener('click', e => {
