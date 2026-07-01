@@ -864,6 +864,19 @@ document.getElementById('debug-wx-grid').addEventListener('click', e => {
   document.querySelectorAll('.debug-wx-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === btn.dataset.mode));
 });
+
+document.getElementById('debug-alert-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.debug-alert-btn');
+  if (!btn) return;
+  const { sev, event, headline } = btn.dataset;
+  if (sev === 'none') {
+    renderAlerts([]);
+  } else {
+    renderAlerts([{ properties: { severity: sev, event, headline } }]);
+  }
+  document.querySelectorAll('.debug-alert-btn').forEach(b =>
+    b.classList.toggle('active', b === btn && sev !== 'none'));
+});
 document.getElementById('settings-close').addEventListener('click', () => { settingsModal.hidden = true; });
 settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.hidden = true; });
 

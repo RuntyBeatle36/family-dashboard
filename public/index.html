@@ -234,6 +234,20 @@
       </div>
     </div>
 
+    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
+      <div class="settings-section-title">🚨 Debug: Simulate Alerts</div>
+      <p class="settings-desc">Show a fake alert banner to preview each severity level. Clears on next alert refresh.</p>
+      <div class="debug-wx-grid" id="debug-alert-grid">
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme"  data-event="Tornado Warning"             data-headline="Tornado Warning in effect until 8:00 PM CDT">🌪️ Tornado Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe"   data-event="Severe Thunderstorm Warning"  data-headline="Severe Thunderstorm Warning in effect until 6:30 PM CDT">⛈️ Thunderstorm Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Flash Flood Watch"            data-headline="Flash Flood Watch in effect through tomorrow morning">🌊 Flash Flood Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor"    data-event="Wind Advisory"                data-headline="Wind Advisory in effect from 6 PM this evening to 6 AM CDT Tuesday">💨 Wind Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Winter Storm Watch"           data-headline="Winter Storm Watch in effect from Tuesday evening through Wednesday afternoon">❄️ Winter Storm Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor"    data-event="Heat Advisory"                data-headline="Heat Advisory in effect until 8 PM CDT this evening">🌡️ Heat Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="none" style="grid-column:span 2">✕ Clear Alerts</button>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-ghost" id="settings-close">Close</button>
     </div>
