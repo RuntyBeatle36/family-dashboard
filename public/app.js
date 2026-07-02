@@ -47,7 +47,8 @@ const COLORS = [
 ];
 
 /* ── App state ────────────────────────────────────────────── */
-let weekOffset    = 0;
+let calView       = 'week'; // 'day' | 'week' | 'month'
+let viewOffset    = 0;      // days / weeks / months from today, depending on calView
 let calEvents     = [];
 let detailEventId = null;
 let selectedColor = COLORS[0].hex;
@@ -59,6 +60,8 @@ let sunsetMins  = null;
 /* ══════════════════════════════════════════════════════════
    THEME
    ══════════════════════════════════════════════════════════ */
+let _lastThemeKey = null; // tracks "pref|mode" to skip identical re-applies
+
 function applyTheme() {
   const pref = localStorage.getItem('dashboard_theme') || 'auto';
   let mode = pref;
@@ -76,6 +79,10 @@ function applyTheme() {
   } else {
     document.getElementById('theme-status').textContent = '';
   }
+
+  const key = `${pref}|${mode}`;
+  if (key === _lastThemeKey) return; // nothing changed — skip DOM writes
+  _lastThemeKey = key;
 
   document.documentElement.setAttribute('data-theme', mode);
   // Keep buttons in sync when settings panel is open
@@ -209,6 +216,8 @@ let wxClouds = [];
 let wxFlakes = [];
 let wxAnimId = null;
 let wxMode   = 'none';
+let daySkyOC = null;  // OffscreenCanvas for pre-rendered day sky, invalidated on resize
+let skyGrads = {};    // cached per-mode gradient objects, keyed by name, invalidated on resize
 
 function resizeWxCanvas() {
   wxCanvas.width  = window.innerWidth;
@@ -230,6 +239,14 @@ function mkDrop() {
 
 function initDrops() {
   wxDrops = Array.from({ length: wxMode === 'storm' ? 170 : 100 }, mkDrop);
+}
+
+function resetDrop(d) {
+  d.len   = 12 + Math.random() * 20;
+  d.x     = Math.random() * wxCanvas.width * 1.3 - wxCanvas.width * 0.15;
+  d.speed = 8 + Math.random() * 14;
+  d.opac  = 0.12 + Math.random() * 0.26;
+  d.y     = -d.len;
 }
 
 /* ── Stars ────────────────────────────────────────────────── */
@@ -289,49 +306,65 @@ function initClouds() {
 }
 
 /* ── Drawing helpers ──────────────────────────────────────── */
-function fillGrad(stops) {
-  const g = wxCtx.createLinearGradient(0, 0, 0, wxCanvas.height);
-  stops.forEach(([p, c]) => g.addColorStop(p, c));
-  wxCtx.fillStyle = g;
-  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+// getSkyGrad: returns a cached LinearGradient for the given mode key.
+// Invalidated (via skyGrads = {}) whenever the canvas is resized.
+function getSkyGrad(key, stops) {
+  const H = wxCanvas.height;
+  if (!skyGrads[key] || skyGrads[key].h !== H) {
+    const g = wxCtx.createLinearGradient(0, 0, 0, H);
+    stops.forEach(([p, c]) => g.addColorStop(p, c));
+    skyGrads[key] = { g, h: H };
+  }
+  return skyGrads[key].g;
 }
 
+// drawDaySky: blits a pre-rendered OffscreenCanvas (gradient + cloud-smear highlights).
+// Re-rendered only on canvas resize, not every frame.
 function drawDaySky() {
-  fillGrad([
-    [0,    'rgba(10,  60, 160, 0.92)'],
-    [0.45, 'rgba(20, 110, 210, 0.80)'],
-    [0.80, 'rgba(50, 155, 230, 0.60)'],
-    [1,    'rgba(90, 190, 245, 0.35)'],
-  ]);
   const W = wxCanvas.width, H = wxCanvas.height;
-  [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cfx,cfy]) => {
-    const g2 = wxCtx.createRadialGradient(W*cfx,H*cfy,0, W*cfx,H*cfy,W*0.14);
-    g2.addColorStop(0, 'rgba(255,255,255,0.11)');
-    g2.addColorStop(1, 'rgba(255,255,255,0)');
-    wxCtx.fillStyle = g2;
-    wxCtx.fillRect(0, 0, W, H);
-  });
+  if (!daySkyOC || daySkyOC.width !== W || daySkyOC.height !== H) {
+    daySkyOC = new OffscreenCanvas(W, H);
+    const dc = daySkyOC.getContext('2d');
+    const g = dc.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0,    'rgba(10,  60, 160, 0.92)');
+    g.addColorStop(0.45, 'rgba(20, 110, 210, 0.80)');
+    g.addColorStop(0.80, 'rgba(50, 155, 230, 0.60)');
+    g.addColorStop(1,    'rgba(90, 190, 245, 0.35)');
+    dc.fillStyle = g;
+    dc.fillRect(0, 0, W, H);
+    [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cfx,cfy]) => {
+      const g2 = dc.createRadialGradient(W*cfx,H*cfy,0, W*cfx,H*cfy,W*0.14);
+      g2.addColorStop(0, 'rgba(255,255,255,0.11)');
+      g2.addColorStop(1, 'rgba(255,255,255,0)');
+      dc.fillStyle = g2;
+      dc.fillRect(0, 0, W, H);
+    });
+  }
+  wxCtx.drawImage(daySkyOC, 0, 0);
 }
 
 function drawNightSky() {
-  fillGrad([
+  wxCtx.fillStyle = getSkyGrad('night', [
     [0, 'rgba(4,  7, 28, 0.94)'],
     [1, 'rgba(8, 16, 52, 0.72)'],
   ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
 }
 
 function drawOvercastSky() {
-  fillGrad([
+  wxCtx.fillStyle = getSkyGrad('overcast', [
     [0, 'rgba(38, 43, 62, 0.88)'],
     [1, 'rgba(58, 68, 90, 0.58)'],
   ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
 }
 
 function drawRainSky() {
-  fillGrad([
+  wxCtx.fillStyle = getSkyGrad('rain', [
     [0, 'rgba(14, 19, 46, 0.82)'],
     [1, 'rgba(26, 36, 62, 0.52)'],
   ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
 }
 
 function drawStars(ts) {
@@ -348,17 +381,17 @@ function drawStars(ts) {
 function drawClouds() {
   const W = wxCanvas.width;
   for (const c of wxClouds) {
-    wxCtx.save();
     wxCtx.globalAlpha = c.opac;
-    wxCtx.translate(c.x, c.y);
-    wxCtx.scale(c.scaleX, c.scaleY);
+    // setTransform replaces translate+scale without save/restore overhead
+    wxCtx.setTransform(c.scaleX, 0, 0, c.scaleY, c.x, c.y);
     wxCtx.drawImage(c.oc, -c.ocW * 0.5, -c.ocH * 0.5);
-    wxCtx.restore();
     c.x += c.speed;
     if (c.x - c.ocW * c.scaleX * 0.5 > W + 20) {
       Object.assign(c, mkCloud(true, c.colorRgba));
     }
   }
+  wxCtx.setTransform(1, 0, 0, 1, 0, 0); // reset to identity
+  wxCtx.globalAlpha = 1;
 }
 
 function drawRain() {
@@ -373,7 +406,7 @@ function drawRain() {
     wxCtx.stroke();
     d.y += d.speed;
     d.x += LEAN * d.speed * 0.28;
-    if (d.y > H + d.len) Object.assign(d, mkDrop(), { y: -d.len });
+    if (d.y > H + d.len) resetDrop(d);
   }
   wxCtx.globalAlpha = 1;
 }
@@ -397,11 +430,12 @@ function initFlakes() {
 }
 
 function drawSnowSky() {
-  fillGrad([
+  wxCtx.fillStyle = getSkyGrad('snow', [
     [0,   'rgba(50, 62,  95, 0.90)'],
     [0.5, 'rgba(62, 76, 108, 0.75)'],
     [1,   'rgba(78, 92, 122, 0.55)'],
   ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
 }
 
 function drawSnow(ts) {
@@ -633,7 +667,9 @@ function setWxMode(desc) {
 
 window.addEventListener('resize', () => {
   resizeWxCanvas();
-  boltOC = null; // invalidate bolt canvas — wrong size now
+  boltOC   = null; // invalidate — wrong size
+  daySkyOC = null; // invalidate pre-rendered day sky
+  skyGrads = {};   // invalidate cached gradients
   applyWxMode(wxMode);
 });
 document.addEventListener('visibilitychange', () => {
@@ -1065,39 +1101,61 @@ function toYMD(date) {
 function todayYMD() { return toYMD(new Date()); }
 
 /* ══════════════════════════════════════════════════════════
-   CALENDAR — load (two-phase: structure first, events second)
+   CALENDAR — load (dispatches to day / week / month view)
    ══════════════════════════════════════════════════════════ */
-async function loadCalendar() {
-  const weekStart = getWeekStart(weekOffset);
-  const weekEnd   = addDays(weekStart, 6);
+function getDayStart() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + viewOffset);
+  return d;
+}
 
-  // Phase 1 — instant (no network): update label + render empty grid
-  setWeekLabel(weekStart, weekEnd);
-  buildCalStructure(weekStart);
+async function loadCalendar() {
+  const isMonth = calView === 'month';
+  document.getElementById('cal-month-grid').style.display   = isMonth ? 'grid' : 'none';
+  document.getElementById('cal-allday-strip').style.display = isMonth ? 'none' : 'flex';
+  document.getElementById('cal-body-scroll').style.display  = isMonth ? 'none' : 'flex';
+
+  if (isMonth) { await loadMonthView(); return; }
+
+  const numDays = calView === 'day' ? 1 : 7;
+  const start   = calView === 'day' ? getDayStart() : getWeekStart(viewOffset);
+  const end     = addDays(start, numDays - 1);
+
+  setCalLabel(start, end);
+  buildCalStructure(start, numDays);
   scrollToNow();
 
-  // Phase 2 — async: fetch events and populate columns
   try {
-    calEvents = await api('GET', `/api/calendar?start=${toYMD(weekStart)}&end=${toYMD(weekEnd)}`);
-  } catch {
-    calEvents = [];
-  }
+    calEvents = await api('GET', `/api/calendar?start=${toYMD(start)}&end=${toYMD(end)}`);
+  } catch { calEvents = []; }
   fillCalEvents(calEvents);
 }
 
-function setWeekLabel(weekStart, weekEnd) {
+function setCalLabel(start, end) {
   const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const sm = weekStart.getMonth() === weekEnd.getMonth();
-  document.getElementById('cal-week-label').textContent = sm
-    ? `${M[weekStart.getMonth()]} ${weekStart.getDate()}–${weekEnd.getDate()}, ${weekStart.getFullYear()}`
-    : `${M[weekStart.getMonth()]} ${weekStart.getDate()} – ${M[weekEnd.getMonth()]} ${weekEnd.getDate()}, ${weekEnd.getFullYear()}`;
+  const MLONG = ['January','February','March','April','May','June',
+                 'July','August','September','October','November','December'];
+  let text;
+  if (calView === 'day') {
+    const DN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    text = `${DN[start.getDay()]}, ${M[start.getMonth()]} ${start.getDate()}, ${start.getFullYear()}`;
+  } else if (calView === 'month') {
+    text = `${MLONG[start.getMonth()]} ${start.getFullYear()}`;
+  } else {
+    const sm = start.getMonth() === end.getMonth();
+    text = sm
+      ? `${M[start.getMonth()]} ${start.getDate()}–${end.getDate()}, ${start.getFullYear()}`
+      : `${M[start.getMonth()]} ${start.getDate()} – ${M[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+  }
+  document.getElementById('cal-week-label').textContent = text;
 }
 
 /* ── Build grid skeleton (no events) ─────────────────────── */
-function buildCalStructure(weekStart) {
+function buildCalStructure(weekStart, numDays = 7) {
   const today = todayYMD();
   const DAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const days  = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const days  = Array.from({ length: numDays }, (_, i) => addDays(weekStart, i));
   const totalHours = CAL_END - CAL_START; // 24
 
   // Day-name header row
@@ -1246,6 +1304,80 @@ function layoutEvents(events) {
   });
 }
 
+/* ── Month view ───────────────────────────────────────────── */
+async function loadMonthView() {
+  const pivot = new Date();
+  pivot.setDate(1);
+  pivot.setHours(0, 0, 0, 0);
+  pivot.setMonth(pivot.getMonth() + viewOffset);
+  const year    = pivot.getFullYear();
+  const month   = pivot.getMonth();
+  const lastDay = new Date(year, month + 1, 0);
+
+  setCalLabel(pivot, lastDay);
+  buildMonthStructure(year, month);
+
+  try {
+    calEvents = await api('GET', `/api/calendar?start=${toYMD(pivot)}&end=${toYMD(lastDay)}`);
+  } catch { calEvents = []; }
+  fillMonthEvents(calEvents);
+}
+
+function buildMonthStructure(year, month) {
+  const today = todayYMD();
+  const DAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  // Reuse cal-header for day-name row (no gutter in month view — grid starts at col 1)
+  const hdr = document.getElementById('cal-header');
+  hdr.innerHTML = '';
+  DAYS.forEach(name => {
+    const cell = document.createElement('div');
+    cell.className = 'cal-day-hdr';
+    cell.innerHTML = `<div class="hdr-name">${name}</div>`;
+    hdr.appendChild(cell);
+  });
+
+  const firstDay  = new Date(year, month, 1);
+  const startDow  = firstDay.getDay();
+  const daysInMo  = new Date(year, month + 1, 0).getDate();
+  const totalCells = Math.ceil((startDow + daysInMo) / 7) * 7;
+
+  const grid = document.getElementById('cal-month-grid');
+  grid.innerHTML = '';
+  grid.style.gridTemplateRows = `repeat(${totalCells / 7}, minmax(0, 1fr))`;
+
+  for (let i = 0; i < totalCells; i++) {
+    const d   = new Date(year, month, 1 + i - startDow);
+    const ymd = toYMD(d);
+    const thisMonth = d.getMonth() === month;
+    const cell = document.createElement('div');
+    cell.className = 'cal-month-cell' +
+      (ymd === today   ? ' is-today'    : '') +
+      (!thisMonth      ? ' other-month' : '');
+    cell.dataset.date = ymd;
+    cell.innerHTML = `<div class="cal-month-date">${d.getDate()}</div>
+                      <div class="cal-month-events"></div>`;
+    grid.appendChild(cell);
+  }
+}
+
+function fillMonthEvents(events) {
+  document.querySelectorAll('.cal-month-chip').forEach(el => el.remove());
+  events.forEach(ev => {
+    const cell = document.querySelector(`.cal-month-cell[data-date="${ev.display_date}"]`);
+    if (!cell) return;
+    const container = cell.querySelector('.cal-month-events');
+    const chip = document.createElement('div');
+    chip.className = 'cal-month-chip';
+    chip.style.background = ev.color;
+    chip.textContent = (ev.all_day || !ev.start_time)
+      ? ev.title
+      : `${fmt12h(ev.start_time)} ${ev.title}`;
+    chip.addEventListener('click', () => showEventDetail(ev));
+    container.appendChild(chip);
+  });
+}
+
 /* ── Current time line ────────────────────────────────────── */
 function updateNowLine() {
   document.querySelectorAll('.cal-now-line').forEach(el => el.remove());
@@ -1271,9 +1403,19 @@ function scrollToNow() {
 setInterval(updateNowLine, 60000);
 setInterval(loadCalendar, REFRESH_MS);
 
-document.getElementById('cal-prev').addEventListener('click',  () => { weekOffset--; loadCalendar(); });
-document.getElementById('cal-next').addEventListener('click',  () => { weekOffset++; loadCalendar(); });
-document.getElementById('cal-today').addEventListener('click', () => { weekOffset = 0; loadCalendar(); });
+document.getElementById('cal-prev').addEventListener('click',  () => { viewOffset--; loadCalendar(); });
+document.getElementById('cal-next').addEventListener('click',  () => { viewOffset++; loadCalendar(); });
+document.getElementById('cal-today').addEventListener('click', () => { viewOffset = 0; loadCalendar(); });
+
+document.getElementById('cal-view-btns').addEventListener('click', e => {
+  const btn = e.target.closest('.cal-view-btn');
+  if (!btn || btn.dataset.view === calView) return;
+  calView     = btn.dataset.view;
+  viewOffset  = 0;
+  document.querySelectorAll('.cal-view-btn').forEach(b =>
+    b.classList.toggle('active', b === btn));
+  loadCalendar();
+});
 
 /* ══════════════════════════════════════════════════════════
    ADD EVENT MODAL
@@ -1462,7 +1604,7 @@ clearDoneBtn.addEventListener('click', async () => {
 });
 
 loadTodo();
-setInterval(loadTodo, REFRESH_MS);
+setTimeout(() => setInterval(loadTodo, REFRESH_MS), Math.floor(REFRESH_MS / 3));
 
 /* ══════════════════════════════════════════════════════════
    BULLETIN BOARD
@@ -1516,7 +1658,7 @@ document.getElementById('bulletin-form').addEventListener('submit', async e => {
 });
 
 loadBulletin();
-setInterval(loadBulletin, REFRESH_MS);
+setTimeout(() => setInterval(loadBulletin, REFRESH_MS), Math.floor(2 * REFRESH_MS / 3));
 
 /* ── Service worker ───────────────────────────────────────── */
 if ('serviceWorker' in navigator) {

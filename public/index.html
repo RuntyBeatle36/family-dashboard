@@ -62,10 +62,15 @@
   <section class="cal-panel">
 
     <div class="cal-nav">
-      <button class="btn btn-icon" id="cal-prev" title="Previous week">&#8249;</button>
+      <button class="btn btn-icon" id="cal-prev" title="Previous">&#8249;</button>
       <span id="cal-week-label" class="cal-week-label"></span>
-      <button class="btn btn-icon" id="cal-next" title="Next week">&#8250;</button>
+      <button class="btn btn-icon" id="cal-next" title="Next">&#8250;</button>
       <button class="btn btn-sm btn-ghost" id="cal-today">Today</button>
+      <div class="cal-view-btns" id="cal-view-btns">
+        <button class="cal-view-btn active" data-view="week">Week</button>
+        <button class="cal-view-btn" data-view="day">Day</button>
+        <button class="cal-view-btn" data-view="month">Month</button>
+      </div>
       <button class="btn btn-sm btn-accent" id="cal-add-btn">+ Add Event</button>
     </div>
 
@@ -81,15 +86,18 @@
       <!-- 7 .cal-allday-col cells injected by JS -->
     </div>
 
-    <!-- Scrollable time grid -->
+    <!-- Scrollable time grid (day / week views) -->
     <div class="cal-body-scroll" id="cal-body-scroll">
       <div class="cal-time-gutter" id="cal-time-gutter">
         <!-- Hour labels injected by JS -->
       </div>
       <div class="cal-days" id="cal-days">
-        <!-- 7 .cal-day-col injected by JS -->
+        <!-- .cal-day-col cells injected by JS -->
       </div>
     </div>
+
+    <!-- Month view grid (JS controls display; starts hidden) -->
+    <div class="cal-month-grid" id="cal-month-grid" style="display:none"></div>
 
   </section>
 

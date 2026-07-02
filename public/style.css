@@ -117,8 +117,8 @@ body {
   padding: 0.5rem 1.1rem;
   font-size: 0.85rem;
   font-weight: 500;
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
 }
 
 .alert-ico { font-size: 1.1rem; flex-shrink: 0; }
@@ -608,6 +608,105 @@ body {
   background: #ff5c5c;
   box-shadow: 0 0 10px rgba(255,92,92,0.9);
 }
+
+/* ── View toggle (Day / Week / Month) ────────────────────── */
+.cal-view-btns {
+  display: flex;
+  gap: 2px;
+  background: rgba(0,0,0,0.18);
+  border-radius: 8px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.cal-view-btn {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 5px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+  white-space: nowrap;
+}
+
+.cal-view-btn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 6px rgba(90,180,255,0.45);
+}
+
+.cal-view-btn:hover:not(.active) {
+  color: var(--text);
+  background: rgba(255,255,255,0.07);
+}
+
+/* ── Month grid ───────────────────────────────────────────── */
+.cal-month-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-border) transparent;
+}
+
+.cal-month-grid::-webkit-scrollbar { width: 6px; }
+.cal-month-grid::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 99px; }
+
+.cal-month-cell {
+  border-right: 1px solid var(--day-border);
+  border-bottom: 1px solid var(--day-border);
+  padding: 5px 6px;
+  min-height: 90px;
+  overflow: hidden;
+}
+
+.cal-month-cell.other-month { opacity: 0.32; }
+
+.cal-month-cell.is-today { background: var(--today-bg); }
+
+.cal-month-date {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+  display: inline-block;
+  width: 1.6rem;
+  height: 1.6rem;
+  line-height: 1.6rem;
+  text-align: center;
+}
+
+.cal-month-cell.is-today .cal-month-date {
+  background: #ff5c5c;
+  color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(255,92,92,0.55);
+}
+
+.cal-month-events {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cal-month-chip {
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.67rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+
+.cal-month-chip:hover { filter: brightness(1.18); }
 
 /* ── Sidebar ──────────────────────────────────────────────── */
 .sidebar {
