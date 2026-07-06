@@ -10,7 +10,8 @@
   --glass-2:       rgba(255,255,255,0.095);
   --glass-border:  rgba(255,255,255,0.10);
   --glass-border2: rgba(255,255,255,0.055);
-  --blur:          blur(24px) saturate(1.6);
+  --blur-strong:   blur(24px) saturate(1.6);
+  --blur-soft:     blur(8px) saturate(1.2);
 
   --accent:   #5ab4ff;
   --danger:   #ff5c5c;
@@ -30,6 +31,10 @@
   --hour-px:   64px;
   --shadow:    0 8px 40px rgba(0,0,0,0.50);
   --shadow-sm: 0 2px 16px rgba(0,0,0,0.30);
+
+  /* Dark-theme text is light, so the risky case is a BRIGHT patch of the
+     animated sky behind it (day sky, snow) — halo with a dark shadow. */
+  --label-glow: 0 1px 3px rgba(0,0,0,0.85), 0 0 9px rgba(0,0,0,0.55);
 }
 
 /* ── Light theme ──────────────────────────────────────────── */
@@ -58,6 +63,17 @@
   --clock-col: rgba(8,18,52,0.92);
   --shadow:    0 8px 40px rgba(0,20,80,0.15);
   --shadow-sm: 0 2px 16px rgba(0,20,80,0.10);
+
+  --label-glow: 0 1px 3px rgba(255,255,255,0.85), 0 0 9px rgba(255,255,255,0.55);
+}
+
+/* Graphics setting: disables all backdrop-filter blur (see Settings > Graphics).
+   Panels fall back to their flat background color/opacity — still legible,
+   just not frosted. This is the single biggest GPU cost to cut on Pi-class
+   hardware, especially with the animated weather canvas visible behind it. */
+[data-glass="off"] {
+  --blur-strong: none;
+  --blur-soft:   none;
 }
 
 /* ── Canvas & lightning (bottom z-layer) ──────────────────── */
@@ -140,8 +156,8 @@ body {
   padding: 0.5rem 1.1rem;
   font-size: 0.85rem;
   font-weight: 500;
-  backdrop-filter: blur(8px) saturate(1.2);
-  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
 }
 
 .alert-ico { font-size: 1.1rem; flex-shrink: 0; }
@@ -219,8 +235,8 @@ body {
   gap: 1.5rem;
   padding: 0.75rem 1.25rem;
   background: var(--glass);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-strong);
+  -webkit-backdrop-filter: var(--blur-strong);
   border-bottom: 1px solid var(--glass-border);
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
@@ -340,6 +356,7 @@ body {
   font-size: clamp(0.82rem, 1.3vw, 0.95rem);
   font-weight: 600;
   color: var(--accent);
+  text-shadow: var(--label-glow);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -359,13 +376,19 @@ body {
   height: 32px;
 }
 
+/* Nearly-opaque gradient (was fading to 35% alpha) plus a thin dark outline —
+   the old fade-to-transparent top blended into a similarly-blue sky behind
+   it. The outline keeps every bar readable regardless of backdrop brightness. */
 .rain-bar {
   flex: 1;
-  background: linear-gradient(to top, var(--accent), rgba(90,180,255,0.35));
+  background: linear-gradient(to top, var(--accent), rgba(225,240,255,0.92));
   border-radius: 2px 2px 0 0;
-  min-height: 2px;
+  min-height: 3px;
   position: relative;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.35);
 }
+
+[data-theme="light"] .rain-bar { box-shadow: 0 0 0 1px rgba(0,0,0,0.18); }
 
 .rain-bar.rain-now::after {
   content: '';
@@ -385,6 +408,7 @@ body {
   font-size: 0.68rem;
   font-weight: 600;
   color: var(--text);
+  text-shadow: var(--label-glow);
   padding: 0 1px;
 }
 
@@ -414,8 +438,8 @@ body {
   gap: 0.5rem;
   padding: 0.55rem 0.75rem;
   background: var(--glass);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-strong);
+  -webkit-backdrop-filter: var(--blur-strong);
   border-bottom: 1px solid var(--glass-border);
   flex-shrink: 0;
 }
@@ -432,13 +456,13 @@ body {
   display: flex;
   flex-shrink: 0;
   background: var(--glass);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-strong);
+  -webkit-backdrop-filter: var(--blur-strong);
   border-bottom: 1px solid var(--glass-border);
 }
 
 .cal-gutter-hdr {
-  width: 52px;
+  width: 66px;
   flex-shrink: 0;
 }
 
@@ -482,14 +506,14 @@ body {
   display: flex;
   flex-shrink: 0;
   background: var(--glass);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-strong);
+  -webkit-backdrop-filter: var(--blur-strong);
   border-bottom: 1px solid var(--glass-border);
   min-height: 28px;
 }
 
 .cal-gutter-allday {
-  width: 52px;
+  width: 66px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -537,24 +561,29 @@ body {
 .cal-body-scroll::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 99px; }
 
 .cal-time-gutter {
-  width: 52px;
+  width: 66px;
   flex-shrink: 0;
   z-index: 2;
   background: transparent;
 }
 
+/* Sits directly over the animated weather canvas with no backing panel
+   (.cal-time-gutter is transparent), so color/size alone can't guarantee
+   contrast — a background-colored glow does, regardless of what's behind. */
 .cal-hour-label {
   height: var(--hour-px);
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
-  padding-right: 6px;
-  padding-top: 3px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-dim);
+  padding-right: 8px;
+  padding-top: 2px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+  text-shadow: var(--label-glow);
   border-top: 1px solid var(--hour-line);
   user-select: none;
+  white-space: nowrap;
 }
 
 .cal-days {
@@ -752,8 +781,8 @@ body {
   flex-direction: column;
   gap: 0.75rem;
   background: var(--glass);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-strong);
+  -webkit-backdrop-filter: var(--blur-strong);
 }
 
 .card-title    { font-size: 1rem; font-weight: 700; color: var(--text); }
@@ -815,8 +844,8 @@ body {
   border-radius: 10px;
   border: 1.5px solid var(--glass-border);
   background: var(--glass);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
   color: var(--text-dim);
   font-size: 0.82rem;
   font-weight: 600;
@@ -845,8 +874,8 @@ body {
   border-radius: 10px;
   padding: 0.5rem 0.65rem;
   transition: opacity 0.2s;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
 }
 
 .todo-item.done { opacity: 0.38; }
@@ -877,8 +906,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
 }
 
 .bul-header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
@@ -906,8 +935,8 @@ select {
   font-family: inherit;
   transition: border-color 0.15s, box-shadow 0.15s;
   -webkit-appearance: none;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
 }
 
 input:focus, textarea:focus, select:focus {
@@ -961,8 +990,8 @@ select {
 
 .btn-ghost {
   background: var(--glass-2);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
   color: var(--text-dim);
   border: 1px solid var(--glass-border);
 }
@@ -980,8 +1009,8 @@ select {
 
 .btn-icon {
   background: var(--glass-2);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
   color: var(--text);
   border: 1px solid var(--glass-border);
   padding: 0.4rem 0.7rem;
@@ -1008,8 +1037,8 @@ select {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.52);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1021,8 +1050,8 @@ select {
 
 .modal {
   background: var(--glass-2);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-strong);
+  -webkit-backdrop-filter: var(--blur-strong);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   padding: 1.5rem;

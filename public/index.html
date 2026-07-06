@@ -243,6 +243,12 @@
       </label>
     </div>
 
+    <div class="settings-section">
+      <div class="settings-section-title">🎨 Graphics</div>
+      <p class="settings-desc">Visual quality vs. performance — useful on a Raspberry Pi.</p>
+      <button class="btn btn-ghost btn-sm" id="graphics-open-btn">Open Graphics Options ›</button>
+    </div>
+
     <div class="settings-section" style="margin-bottom:0;border-bottom:none">
       <div class="settings-section-title">🧪 Debug Options</div>
       <p class="settings-desc">Simulate weather visuals and alert banners for testing.</p>
@@ -251,6 +257,62 @@
 
     <div class="modal-actions">
       <button class="btn btn-ghost" id="settings-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Graphics submenu (opened from Settings) ──────────────── -->
+<div id="graphics-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h3 class="modal-title">🎨 Graphics</h3>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Glass Blur Effect</div>
+      <p class="settings-desc">
+        The frosted-glass look on the top bar, calendar, and popups.
+        <strong>Performance:</strong> this is one of the single most GPU-intensive
+        effects in the app on Raspberry Pi — every blurred panel has to re-blur
+        whatever's behind it (including the animated weather), every frame it
+        changes. Turning it off removes that cost almost entirely; panels become
+        solid instead of frosted, but stay fully readable.
+      </p>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-gfx-blur">
+        Enable glass blur (default: on)
+      </label>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Weather Animation</div>
+      <p class="settings-desc">
+        Controls the animated sky behind the dashboard (rain, snow, clouds, stars).
+        <strong>Performance:</strong> <em>Off</em> stops the animation loop entirely —
+        the biggest possible saving. <em>Reduced</em> keeps the effect at roughly
+        half the particle count. <em>Full</em> is the default look.
+      </p>
+      <div class="theme-options" id="gfx-wx-quality">
+        <button class="theme-opt" data-val="off">Off</button>
+        <button class="theme-opt" data-val="reduced">Reduced</button>
+        <button class="theme-opt" data-val="full">Full</button>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
+      <div class="settings-section-title">Lightning Flashes</div>
+      <p class="settings-desc">
+        The screen-flash-and-bolt effect during Storm weather.
+        <strong>Performance:</strong> each strike re-renders a jagged bolt shape
+        with several glow layers — a real but brief spike, only during storms.
+        Disabling it keeps the rain and dark sky, minus the flash.
+      </p>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-gfx-lightning">
+        Enable lightning flashes (default: on)
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="graphics-close">‹ Back to Settings</button>
     </div>
   </div>
 </div>

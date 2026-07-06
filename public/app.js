@@ -219,6 +219,14 @@ let wxMode   = 'none';
 let daySkyOC = null;  // OffscreenCanvas for pre-rendered day sky, invalidated on resize
 let skyGrads = {};    // cached per-mode gradient objects, keyed by name, invalidated on resize
 
+// Graphics setting (Settings > Graphics > Weather Animation): 'off' | 'reduced' | 'full'
+const getWxQuality = () => localStorage.getItem('gfxWxQuality') || 'full';
+// Scales a particle count by the current quality setting; 'off' is handled
+// separately in applyWxMode (skips animation entirely), not via a 0-count here.
+function qCount(base) {
+  return getWxQuality() === 'reduced' ? Math.round(base / 2) : base;
+}
+
 function resizeWxCanvas() {
   wxCanvas.width  = window.innerWidth;
   wxCanvas.height = window.innerHeight;
@@ -238,7 +246,7 @@ function mkDrop() {
 }
 
 function initDrops() {
-  wxDrops = Array.from({ length: wxMode === 'storm' ? 170 : 100 }, mkDrop);
+  wxDrops = Array.from({ length: qCount(wxMode === 'storm' ? 170 : 100) }, mkDrop);
 }
 
 function resetDrop(d) {
@@ -251,7 +259,7 @@ function resetDrop(d) {
 
 /* ── Stars ────────────────────────────────────────────────── */
 function initStars() {
-  wxStars = Array.from({ length: 120 }, () => ({
+  wxStars = Array.from({ length: qCount(120) }, () => ({
     x:    Math.random() * wxCanvas.width,
     y:    Math.random() * wxCanvas.height * 0.78,
     r:    0.5 + Math.random() * 1.6,
@@ -297,7 +305,7 @@ function mkCloud(offscreen, colorRgba) {
 }
 
 function initClouds() {
-  const n = wxMode === 'overcast' ? 8 : 4;
+  const n = qCount(wxMode === 'overcast' ? 8 : 4);
   const colorRgba =
     wxMode === 'cloudy-day'   ? 'rgba(255,255,255,0.92)' :
     wxMode === 'cloudy-night' ? 'rgba(16,22,58,0.96)'    :
@@ -426,7 +434,7 @@ function mkFlake() {
 }
 
 function initFlakes() {
-  wxFlakes = Array.from({ length: 120 }, mkFlake);
+  wxFlakes = Array.from({ length: qCount(120) }, mkFlake);
 }
 
 function drawSnowSky() {
@@ -625,9 +633,11 @@ function triggerStrike() {
   }, 175));
 }
 
+const getLightningEnabled = () => localStorage.getItem('gfxLightning') !== 'false';
+
 function scheduleLightning() {
   clearTimeout(lightTimer);
-  if (wxMode !== 'storm') return;
+  if (wxMode !== 'storm' || !getLightningEnabled()) return;
   lightTimer = setTimeout(() => { triggerStrike(); scheduleLightning(); }, 5000 + Math.random() * 13000);
 }
 
@@ -638,6 +648,13 @@ function applyWxMode(mode) {
   clearStrike();
   wxMode = mode;
   document.body.dataset.wx = mode;
+
+  // Graphics setting: Weather Animation = Off — skip the canvas entirely
+  // (biggest possible saving: no RAF loop, no particle init, ever).
+  if (getWxQuality() === 'off') {
+    wxCanvas.style.opacity = '0';
+    return;
+  }
 
   wxCanvas.style.opacity =
     mode === 'clear-day'    ? '1.00' :
@@ -1090,6 +1107,58 @@ document.getElementById('debug-alert-grid').addEventListener('click', e => {
 });
 document.getElementById('settings-close').addEventListener('click', () => { settingsModal.hidden = true; });
 settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.hidden = true; });
+
+/* ── Graphics submenu (opened from Settings) ──────────────── */
+const graphicsModal = document.getElementById('graphics-modal');
+const getGlassEnabled = () => localStorage.getItem('gfxBlur') !== 'false';
+
+function applyGlassSetting() {
+  document.documentElement.dataset.glass = getGlassEnabled() ? 'on' : 'off';
+}
+applyGlassSetting();
+
+document.getElementById('graphics-open-btn').addEventListener('click', () => {
+  document.getElementById('toggle-gfx-blur').checked      = getGlassEnabled();
+  document.getElementById('toggle-gfx-lightning').checked = getLightningEnabled();
+  document.querySelectorAll('#gfx-wx-quality .theme-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.val === getWxQuality()));
+  settingsModal.hidden = true;
+  graphicsModal.hidden = false;
+});
+
+document.getElementById('graphics-close').addEventListener('click', () => {
+  graphicsModal.hidden = true;
+  settingsModal.hidden = false;
+});
+graphicsModal.addEventListener('click', e => {
+  if (e.target !== graphicsModal) return;
+  graphicsModal.hidden = true;
+  settingsModal.hidden = false;
+});
+
+document.getElementById('toggle-gfx-blur').addEventListener('change', e => {
+  localStorage.setItem('gfxBlur', e.target.checked);
+  applyGlassSetting();
+});
+
+document.getElementById('gfx-wx-quality').addEventListener('click', e => {
+  const btn = e.target.closest('.theme-opt');
+  if (!btn) return;
+  localStorage.setItem('gfxWxQuality', btn.dataset.val);
+  document.querySelectorAll('#gfx-wx-quality .theme-opt').forEach(b =>
+    b.classList.toggle('active', b === btn));
+  applyWxMode(wxMode); // re-init particle counts (or stop/start the loop) immediately
+});
+
+document.getElementById('toggle-gfx-lightning').addEventListener('change', e => {
+  localStorage.setItem('gfxLightning', e.target.checked);
+  if (e.target.checked) {
+    if (wxMode === 'storm') scheduleLightning();
+  } else {
+    clearTimeout(lightTimer);
+    clearStrike();
+  }
+});
 
 /* ── Debug submenu (opened from Settings) ─────────────────── */
 const debugModal = document.getElementById('debug-modal');
