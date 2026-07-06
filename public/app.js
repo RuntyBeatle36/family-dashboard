@@ -1097,6 +1097,7 @@ const debugModal = document.getElementById('debug-modal');
 document.getElementById('debug-open-btn').addEventListener('click', () => {
   document.querySelectorAll('.debug-wx-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === wxMode));
+  document.getElementById('toggle-perf-overlay').checked = getPerfOverlayEnabled();
   settingsModal.hidden = true;
   debugModal.hidden = false;
 });
@@ -1110,6 +1111,107 @@ debugModal.addEventListener('click', e => {
   debugModal.hidden = true;
   settingsModal.hidden = false;
 });
+
+/* ══════════════════════════════════════════════════════════
+   DEBUG: PERFORMANCE OVERLAY
+   FPS is measured client-side (independent rAF tick, separate from the
+   weather canvas's own throttled loop). CPU/MEM/disk/temp/GPU come from
+   /api/sysstats, since browsers have no OS-level access to those.
+   ══════════════════════════════════════════════════════════ */
+const perfOverlay = document.getElementById('perf-overlay');
+const getPerfOverlayEnabled = () => localStorage.getItem('debugPerfOverlay') === 'true';
+
+let perfFrameCount = 0;
+let perfFpsLastTs  = 0;
+let perfFps        = 0;
+let perfRafId      = null;
+let perfPollId     = null;
+let perfLastStats  = null;
+
+function perfFrameTick(ts) {
+  perfFrameCount++;
+  if (!perfFpsLastTs) perfFpsLastTs = ts;
+  const elapsed = ts - perfFpsLastTs;
+  if (elapsed >= 1000) {
+    perfFps = Math.round((perfFrameCount * 1000) / elapsed);
+    perfFrameCount = 0;
+    perfFpsLastTs  = ts;
+    renderPerfOverlay();
+  }
+  perfRafId = requestAnimationFrame(perfFrameTick);
+}
+
+function fmtGB(bytes) {
+  return bytes == null ? null : (bytes / (1024 ** 3)).toFixed(1);
+}
+
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+function renderPerfOverlay() {
+  const s = perfLastStats;
+
+  const memPct  = s?.mem  ? Math.round(s.mem.usedBytes  / s.mem.totalBytes  * 100) : null;
+  const diskPct = s?.disk ? Math.round(s.disk.usedBytes / s.disk.totalBytes * 100) : null;
+
+  const lines = [
+    `FPS:   ${perfFps}`,
+    `CPU:   ${s?.cpuPercent != null ? s.cpuPercent.toFixed(1) + '%' : 'N/A'}`,
+    `MEM:   ${s?.mem  ? `${fmtGB(s.mem.usedBytes)} / ${fmtGB(s.mem.totalBytes)} GB (${memPct}%)`   : 'N/A'}`,
+    `DISK:  ${s?.disk ? `${fmtGB(s.disk.usedBytes)} / ${fmtGB(s.disk.totalBytes)} GB (${diskPct}%)` : 'N/A'}`,
+    `TEMP:  ${s?.tempC != null ? s.tempC.toFixed(1) + '°C' : 'N/A'}`,
+    `GPU:   ${s?.gpu ? [
+      s.gpu.memMB   != null ? `${s.gpu.memMB}MB mem` : null,
+      s.gpu.coreMHz != null ? `${s.gpu.coreMHz}MHz`  : null,
+    ].filter(Boolean).join(' · ') || 'N/A' : 'N/A (no vcgencmd)'}`,
+  ];
+  if (s?.gpu?.throttled != null) lines.push(`THROTTLED: ${s.gpu.throttled ? 'YES ⚠️' : 'No'}`);
+  if (s?.uptimeSec != null)      lines.push(`UPTIME: ${fmtUptime(s.uptimeSec)}`);
+
+  perfOverlay.textContent = lines.join('\n');
+}
+
+async function pollPerfStats() {
+  try { perfLastStats = await api('GET', '/api/sysstats'); }
+  catch { perfLastStats = null; }
+  renderPerfOverlay();
+}
+
+// Anchored below the settings button rather than a fixed offset — that
+// button stretches to the top bar's full height (flex align-items:stretch),
+// so this reliably clears the whole header instead of covering the gear icon.
+function positionPerfOverlay() {
+  const r = document.getElementById('settings-btn').getBoundingClientRect();
+  perfOverlay.style.top   = `${Math.round(r.bottom) + 8}px`;
+  perfOverlay.style.right = '12px';
+}
+window.addEventListener('resize', () => { if (!perfOverlay.hidden) positionPerfOverlay(); });
+
+function startPerfOverlay() {
+  positionPerfOverlay();
+  perfOverlay.hidden = false;
+  perfFrameCount = 0;
+  perfFpsLastTs  = 0;
+  if (!perfRafId)  perfRafId  = requestAnimationFrame(perfFrameTick);
+  if (!perfPollId) perfPollId = setInterval(pollPerfStats, 2000);
+  pollPerfStats();
+}
+
+function stopPerfOverlay() {
+  perfOverlay.hidden = true;
+  if (perfRafId)  { cancelAnimationFrame(perfRafId); perfRafId = null; }
+  if (perfPollId) { clearInterval(perfPollId); perfPollId = null; }
+}
+
+document.getElementById('toggle-perf-overlay').addEventListener('change', e => {
+  localStorage.setItem('debugPerfOverlay', e.target.checked);
+  if (e.target.checked) startPerfOverlay(); else stopPerfOverlay();
+});
+
+if (getPerfOverlayEnabled()) startPerfOverlay();
 
 /* ══════════════════════════════════════════════════════════
    CALENDAR — helpers

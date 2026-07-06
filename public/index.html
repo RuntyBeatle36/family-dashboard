@@ -21,6 +21,9 @@
 <!-- ── Weather alert banner ─────────────────────────────────── -->
 <div id="alert-banner" hidden></div>
 
+<!-- ── Debug: performance overlay ───────────────────────────── -->
+<div id="perf-overlay" class="perf-overlay" hidden></div>
+
 <!-- ── Top bar ──────────────────────────────────────────────── -->
 <header class="top-bar">
 
@@ -256,6 +259,15 @@
 <div id="debug-modal" class="modal-overlay" hidden>
   <div class="modal">
     <h3 class="modal-title">🧪 Debug Options</h3>
+
+    <div class="settings-section">
+      <div class="settings-section-title">📊 Performance Overlay</div>
+      <p class="settings-desc">Shows FPS, CPU, memory, disk, and temperature (plus GPU info on a Pi, where available).</p>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-perf-overlay">
+        Show performance overlay
+      </label>
+    </div>
 
     <div class="settings-section" style="margin-bottom:0;border-bottom:none">
       <div class="settings-section-title">🧪 Debug: Simulate Weather</div>

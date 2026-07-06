@@ -1,6 +1,8 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const { execFileSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
@@ -155,6 +157,79 @@ app.delete('/api/calendar/:id', (req, res) => {
   const info = db.prepare('DELETE FROM calendar_events WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
+});
+
+// ── System stats (debug performance overlay) ───────────────────
+// Raspberry Pi's VideoCore GPU has no load-percentage metric (unlike a
+// discrete GPU) — we surface what `vcgencmd` actually exposes instead:
+// memory split, core clock, and the throttled/undervoltage flag, which
+// is the more actionable signal on this hardware anyway.
+let prevCpuSample = os.cpus();
+
+function cpuPercent() {
+  const cur = os.cpus();
+  let idleDelta = 0, totalDelta = 0;
+  cur.forEach((c, i) => {
+    const prev = prevCpuSample[i];
+    if (!prev) return;
+    const prevTotal = Object.values(prev.times).reduce((a, b) => a + b, 0);
+    const curTotal  = Object.values(c.times).reduce((a, b) => a + b, 0);
+    totalDelta += curTotal - prevTotal;
+    idleDelta  += c.times.idle - prev.times.idle;
+  });
+  prevCpuSample = cur;
+  if (totalDelta <= 0) return null;
+  return Math.round((1 - idleDelta / totalDelta) * 1000) / 10;
+}
+
+function readVcgencmd(args) {
+  try {
+    return execFileSync('vcgencmd', args, { encoding: 'utf8', timeout: 1000 }).trim();
+  } catch { return null; }
+}
+
+function getTempC() {
+  const out = readVcgencmd(['measure_temp']); // "temp=53.8'C"
+  const m   = out?.match(/([\d.]+)/);
+  if (m) return parseFloat(m[1]);
+  try { // non-Pi Linux fallback: same SoC thermal sensor, no vcgencmd needed
+    return Math.round(parseInt(fs.readFileSync('/sys/class/thermal/thermal_zone0/temp', 'utf8'), 10) / 100) / 10;
+  } catch { return null; }
+}
+
+function getGpuInfo() {
+  const memOut       = readVcgencmd(['get_mem', 'gpu']);       // "gpu=76M"
+  const clockOut     = readVcgencmd(['measure_clock', 'core']); // "frequency(1)=500000000"
+  const throttledOut = readVcgencmd(['get_throttled']);         // "throttled=0x0"
+  if (memOut === null && clockOut === null && throttledOut === null) return null;
+
+  const flags = throttledOut ? parseInt(throttledOut.split('=')[1], 16) : null;
+  return {
+    memMB:          memOut   ? parseInt(memOut.match(/(\d+)M/)?.[1] || '0', 10) : null,
+    coreMHz:        clockOut ? Math.round(parseInt(clockOut.split('=')[1] || '0', 10) / 1e6) : null,
+    throttled:      flags != null ? flags !== 0 : null,
+    throttledFlags: flags != null ? '0x' + flags.toString(16) : null,
+  };
+}
+
+app.get('/api/sysstats', (req, res) => {
+  const totalMem = os.totalmem();
+  const freeMem  = os.freemem();
+
+  let disk = null;
+  try {
+    const s = fs.statfsSync(__dirname);
+    disk = { totalBytes: s.blocks * s.bsize, usedBytes: (s.blocks - s.bfree) * s.bsize };
+  } catch { /* statfs unsupported on this platform */ }
+
+  res.json({
+    cpuPercent: cpuPercent(),
+    mem:        { totalBytes: totalMem, usedBytes: totalMem - freeMem },
+    disk,
+    tempC:      getTempC(),
+    gpu:        getGpuInfo(),
+    uptimeSec:  os.uptime(),
+  });
 });
 
 // ── Recurrence expansion helpers ──────────────────────────────

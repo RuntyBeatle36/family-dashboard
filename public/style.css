@@ -80,6 +80,29 @@
   background: rgba(210, 228, 255, 1); /* blue-white, JS controls opacity */
 }
 
+/* ── Debug: performance overlay ───────────────────────────── */
+/* Deliberately no backdrop-filter here — this panel exists to diagnose
+   Pi performance, so it shouldn't itself add GPU/compositing cost. */
+.perf-overlay {
+  position: fixed;
+  right: 12px; /* top is set by JS, anchored below the settings button */
+  z-index: 300;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.72);
+  color: #7CFC7C;
+  font-family: 'Consolas', 'SF Mono', 'Courier New', monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(124, 252, 124, 0.35);
+  white-space: pre;
+}
+
+.perf-overlay[hidden] { display: none; }
+.perf-overlay .perf-warn { color: #ff8a5c; }
+.perf-overlay .perf-bad  { color: #ff5c5c; }
+
 /* ── Base ─────────────────────────────────────────────────── */
 html, body {
   height: 100%;
