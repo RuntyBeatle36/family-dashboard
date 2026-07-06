@@ -378,14 +378,14 @@ function drawStars(ts) {
   wxCtx.globalAlpha = 1;
 }
 
-function drawClouds() {
+function drawClouds(dt = 1) {
   const W = wxCanvas.width;
   for (const c of wxClouds) {
     wxCtx.globalAlpha = c.opac;
     // setTransform replaces translate+scale without save/restore overhead
     wxCtx.setTransform(c.scaleX, 0, 0, c.scaleY, c.x, c.y);
     wxCtx.drawImage(c.oc, -c.ocW * 0.5, -c.ocH * 0.5);
-    c.x += c.speed;
+    c.x += c.speed * dt;
     if (c.x - c.ocW * c.scaleX * 0.5 > W + 20) {
       Object.assign(c, mkCloud(true, c.colorRgba));
     }
@@ -394,7 +394,7 @@ function drawClouds() {
   wxCtx.globalAlpha = 1;
 }
 
-function drawRain() {
+function drawRain(dt = 1) {
   const H = wxCanvas.height;
   wxCtx.strokeStyle = '#a8d8ff';
   wxCtx.lineWidth = 1;
@@ -404,8 +404,8 @@ function drawRain() {
     wxCtx.moveTo(d.x, d.y);
     wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
     wxCtx.stroke();
-    d.y += d.speed;
-    d.x += LEAN * d.speed * 0.28;
+    d.y += d.speed * dt;
+    d.x += LEAN * d.speed * 0.28 * dt;
     if (d.y > H + d.len) resetDrop(d);
   }
   wxCtx.globalAlpha = 1;
@@ -438,7 +438,7 @@ function drawSnowSky() {
   wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
 }
 
-function drawSnow(ts) {
+function drawSnow(ts, dt = 1) {
   const H = wxCanvas.height;
   wxCtx.fillStyle = '#ffffff';
   for (const f of wxFlakes) {
@@ -447,7 +447,7 @@ function drawSnow(ts) {
     wxCtx.beginPath();
     wxCtx.arc(f.x + sway, f.y, f.r, 0, Math.PI * 2);
     wxCtx.fill();
-    f.y += f.speed;
+    f.y += f.speed * dt;
     if (f.y > H + f.r) {
       f.x = Math.random() * wxCanvas.width;
       f.y = -f.r * 2;
@@ -494,7 +494,23 @@ function renderBolt(pts) {
 }
 
 /* ── Main loop ────────────────────────────────────────────── */
+// Capped to ~30fps (Pi-class hardware): halves canvas redraw + backdrop-filter
+// recomposite work under the glass panels. `dt` scales per-frame motion deltas
+// so drops/clouds still cover the same distance per second as at 60fps — only
+// the redraw rate drops, not the apparent speed. Time-based motion (star/snow
+// sway, which already keys off wall-clock `ts`) needs no change.
+const WX_FRAME_MS = 1000 / 30;
+let wxLastFrameTs  = 0;
+
 function drawFrame(ts = 0) {
+  const elapsed = wxLastFrameTs ? ts - wxLastFrameTs : WX_FRAME_MS;
+  if (elapsed < WX_FRAME_MS - 1) {
+    wxAnimId = requestAnimationFrame(drawFrame);
+    return;
+  }
+  const dt = elapsed / WX_FRAME_MS;
+  wxLastFrameTs = ts;
+
   wxCtx.clearRect(0, 0, wxCanvas.width, wxCanvas.height);
 
   switch (wxMode) {
@@ -510,29 +526,29 @@ function drawFrame(ts = 0) {
 
     case 'cloudy-day':
       drawDaySky();
-      drawClouds();
+      drawClouds(dt);
       break;
 
     case 'cloudy-night':
       drawNightSky();
       drawStars(ts);
-      drawClouds();         // dark puffs occlude stars beneath them
+      drawClouds(dt);       // dark puffs occlude stars beneath them
       break;
 
     case 'overcast':
       drawOvercastSky();
-      drawClouds();
+      drawClouds(dt);
       break;
 
     case 'rain':
     case 'storm':
       drawRainSky();
-      drawRain();
+      drawRain(dt);
       break;
 
     case 'snow':
       drawSnowSky();
-      drawSnow(ts);
+      drawSnow(ts, dt);
       break;
 
     default:
@@ -552,6 +568,7 @@ function drawFrame(ts = 0) {
 
 function startAnim() {
   if (wxAnimId) return;
+  wxLastFrameTs = 0; // avoid a huge dt spike from time spent paused/hidden
   wxAnimId = requestAnimationFrame(drawFrame);
 }
 
@@ -1110,26 +1127,50 @@ function getDayStart() {
   return d;
 }
 
+// Identifies "what should be on screen" (view + offset + calendar day, so a
+// midnight rollover still forces a rebuild even if view/offset are unchanged).
+// Rebuilding the grid DOM (up to 168 elements) and re-placing event chips is
+// real reflow cost on Pi-class hardware — skip both unless something that
+// would actually change the rendered output has changed since last poll.
+let _lastCalKey    = null;
+let _lastEventsSig = null;
+function eventsSig(events) {
+  return events.map(e => e.id).sort((a, b) => a - b).join(',');
+}
+
 async function loadCalendar() {
   const isMonth = calView === 'month';
   document.getElementById('cal-month-grid').style.display   = isMonth ? 'grid' : 'none';
   document.getElementById('cal-allday-strip').style.display = isMonth ? 'none' : 'flex';
   document.getElementById('cal-body-scroll').style.display  = isMonth ? 'none' : 'flex';
 
-  if (isMonth) { await loadMonthView(); return; }
+  const calKey           = `${calView}|${viewOffset}|${todayYMD()}`;
+  const structureChanged = calKey !== _lastCalKey;
+
+  if (isMonth) { await loadMonthView(structureChanged, calKey); return; }
 
   const numDays = calView === 'day' ? 1 : 7;
   const start   = calView === 'day' ? getDayStart() : getWeekStart(viewOffset);
   const end     = addDays(start, numDays - 1);
 
-  setCalLabel(start, end);
-  buildCalStructure(start, numDays);
-  scrollToNow();
+  if (structureChanged) {
+    setCalLabel(start, end);
+    buildCalStructure(start, numDays);
+    scrollToNow();
+    _lastCalKey = calKey;
+  }
 
+  let events;
   try {
-    calEvents = await api('GET', `/api/calendar?start=${toYMD(start)}&end=${toYMD(end)}`);
-  } catch { calEvents = []; }
-  fillCalEvents(calEvents);
+    events = await api('GET', `/api/calendar?start=${toYMD(start)}&end=${toYMD(end)}`);
+  } catch { events = []; }
+
+  const sig = eventsSig(events);
+  if (structureChanged || sig !== _lastEventsSig) {
+    calEvents = events;
+    fillCalEvents(calEvents);
+    _lastEventsSig = sig;
+  }
 }
 
 function setCalLabel(start, end) {
@@ -1305,7 +1346,7 @@ function layoutEvents(events) {
 }
 
 /* ── Month view ───────────────────────────────────────────── */
-async function loadMonthView() {
+async function loadMonthView(structureChanged, calKey) {
   const pivot = new Date();
   pivot.setDate(1);
   pivot.setHours(0, 0, 0, 0);
@@ -1314,13 +1355,23 @@ async function loadMonthView() {
   const month   = pivot.getMonth();
   const lastDay = new Date(year, month + 1, 0);
 
-  setCalLabel(pivot, lastDay);
-  buildMonthStructure(year, month);
+  if (structureChanged) {
+    setCalLabel(pivot, lastDay);
+    buildMonthStructure(year, month);
+    _lastCalKey = calKey;
+  }
 
+  let events;
   try {
-    calEvents = await api('GET', `/api/calendar?start=${toYMD(pivot)}&end=${toYMD(lastDay)}`);
-  } catch { calEvents = []; }
-  fillMonthEvents(calEvents);
+    events = await api('GET', `/api/calendar?start=${toYMD(pivot)}&end=${toYMD(lastDay)}`);
+  } catch { events = []; }
+
+  const sig = eventsSig(events);
+  if (structureChanged || sig !== _lastEventsSig) {
+    calEvents = events;
+    fillMonthEvents(calEvents);
+    _lastEventsSig = sig;
+  }
 }
 
 function buildMonthStructure(year, month) {

@@ -101,6 +101,28 @@ sudo systemctl status family-dashboard
 
 ## Chromium kiosk mode on Pi startup
 
+### GPU acceleration (do this first — Pi 4/5, 2GB+)
+
+The dashboard leans on `backdrop-filter: blur()` (glass panels) and a full-screen
+animated canvas. Both are cheap *if* Chromium is actually GPU-compositing them,
+and very expensive if it silently falls back to software rendering — same look
+either way, very different performance. Before tuning anything else:
+
+1. Confirm `/boot/firmware/config.txt` has the full KMS driver:
+   ```
+   dtoverlay=vc4-kms-v3d
+   ```
+2. Give the GPU more memory than the default split (2GB Pi 4 defaults too low
+   for a compositing-heavy page like this):
+   ```
+   gpu_mem=128
+   ```
+3. Add these flags to whichever `chromium-browser` launch line you use below:
+   `--enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist`
+4. After it's running, open `chromium-browser --kiosk chrome://gpu` once and
+   check that rasterization/compositing say "Hardware accelerated" — if they
+   say "Software only", fix that before assuming the app itself is slow.
+
 ### Option A — autostart (Raspberry Pi OS with desktop)
 
 ```bash
@@ -114,7 +136,7 @@ Paste:
 [Desktop Entry]
 Type=Application
 Name=Family Dashboard Kiosk
-Exec=chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:3000
+Exec=chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist http://localhost:3000
 ```
 
 ### Option B — via `/etc/rc.local` (lite / headless)
@@ -122,7 +144,7 @@ Exec=chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost
 Add before `exit 0`:
 
 ```bash
-su pi -c 'DISPLAY=:0 chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:3000 &'
+su pi -c 'DISPLAY=:0 chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist http://localhost:3000 &'
 ```
 
 ### Disable screen blanking
