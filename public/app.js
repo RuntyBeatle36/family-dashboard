@@ -946,9 +946,7 @@ async function fetchWeather() {
 }
 
 document.getElementById('wx-refresh').addEventListener('click', () => {
-  document.getElementById('wx-desc').textContent    = 'Refreshing…';
-  document.getElementById('wx-updated').textContent = '';
-  fetchWeather();
+  location.reload();
 });
 
 function renderRain(hourly) {
@@ -1051,8 +1049,6 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   zipSelect.value = getActiveZip().zip;
   updateZipCoords();
   applyTheme();
-  document.querySelectorAll('.debug-wx-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.mode === wxMode));
   document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
   document.getElementById('toggle-alert-tts').checked   = getTtsEnabled();
   settingsModal.hidden = false;
@@ -1094,6 +1090,26 @@ document.getElementById('debug-alert-grid').addEventListener('click', e => {
 });
 document.getElementById('settings-close').addEventListener('click', () => { settingsModal.hidden = true; });
 settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.hidden = true; });
+
+/* ── Debug submenu (opened from Settings) ─────────────────── */
+const debugModal = document.getElementById('debug-modal');
+
+document.getElementById('debug-open-btn').addEventListener('click', () => {
+  document.querySelectorAll('.debug-wx-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === wxMode));
+  settingsModal.hidden = true;
+  debugModal.hidden = false;
+});
+
+document.getElementById('debug-close').addEventListener('click', () => {
+  debugModal.hidden = true;
+  settingsModal.hidden = false;
+});
+debugModal.addEventListener('click', e => {
+  if (e.target !== debugModal) return;
+  debugModal.hidden = true;
+  settingsModal.hidden = false;
+});
 
 /* ══════════════════════════════════════════════════════════
    CALENDAR — helpers

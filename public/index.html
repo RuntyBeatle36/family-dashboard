@@ -241,6 +241,23 @@
     </div>
 
     <div class="settings-section" style="margin-bottom:0;border-bottom:none">
+      <div class="settings-section-title">🧪 Debug Options</div>
+      <p class="settings-desc">Simulate weather visuals and alert banners for testing.</p>
+      <button class="btn btn-ghost btn-sm" id="debug-open-btn">Open Debug Options ›</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="settings-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Debug submenu (opened from Settings) ─────────────────── -->
+<div id="debug-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h3 class="modal-title">🧪 Debug Options</h3>
+
+    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
       <div class="settings-section-title">🧪 Debug: Simulate Weather</div>
       <p class="settings-desc">Force a visual to preview animations. Resets on next weather refresh.</p>
       <div class="debug-wx-grid" id="debug-wx-grid">
@@ -318,7 +335,7 @@
     </div>
 
     <div class="modal-actions">
-      <button class="btn btn-ghost" id="settings-close">Close</button>
+      <button class="btn btn-ghost" id="debug-close">‹ Back to Settings</button>
     </div>
   </div>
 </div>
