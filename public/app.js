@@ -1145,6 +1145,10 @@ function fmtGB(bytes) {
   return bytes == null ? null : (bytes / (1024 ** 3)).toFixed(1);
 }
 
+function fmtMB(bytes) {
+  return bytes == null ? null : Math.round(bytes / (1024 ** 2));
+}
+
 function fmtUptime(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -1160,7 +1164,8 @@ function renderPerfOverlay() {
   const lines = [
     `FPS:   ${perfFps}`,
     `CPU:   ${s?.cpuPercent != null ? s.cpuPercent.toFixed(1) + '%' : 'N/A'}`,
-    `MEM:   ${s?.mem  ? `${fmtGB(s.mem.usedBytes)} / ${fmtGB(s.mem.totalBytes)} GB (${memPct}%)`   : 'N/A'}`,
+    `MEM:   ${s?.mem  ? `${fmtGB(s.mem.usedBytes)} / ${fmtGB(s.mem.totalBytes)} GB (${memPct}%) [whole device]` : 'N/A'}`,
+    `APP:   ${s?.appMem?.rssBytes != null ? `${fmtMB(s.appMem.rssBytes)} MB [this server process]` : 'N/A'}`,
     `DISK:  ${s?.disk ? `${fmtGB(s.disk.usedBytes)} / ${fmtGB(s.disk.totalBytes)} GB (${diskPct}%)` : 'N/A'}`,
     `TEMP:  ${s?.tempC != null ? s.tempC.toFixed(1) + '°C' : 'N/A'}`,
     `GPU:   ${s?.gpu ? [

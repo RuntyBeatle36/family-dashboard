@@ -225,6 +225,7 @@ app.get('/api/sysstats', (req, res) => {
   res.json({
     cpuPercent: cpuPercent(),
     mem:        { totalBytes: totalMem, usedBytes: totalMem - freeMem },
+    appMem:     { rssBytes: process.memoryUsage().rss }, // this Node process only, vs. `mem` (whole host)
     disk,
     tempC:      getTempC(),
     gpu:        getGpuInfo(),
