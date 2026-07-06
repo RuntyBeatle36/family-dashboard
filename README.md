@@ -14,7 +14,7 @@ A locally-hosted, wall-mounted family dashboard for Raspberry Pi. Serves a touch
 
 - Node.js + Express backend
 - Plain HTML/CSS/JS frontend (no frameworks)
-- SQLite via `better-sqlite3`
+- SQLite via Node's built-in `node:sqlite` (requires Node 22.5+)
 - PWA (Add to Home Screen on iOS & Android)
 
 ---
@@ -33,10 +33,13 @@ Open `http://localhost:3000` in your browser.
 
 ## Deploy on Raspberry Pi
 
-### 1. Install Node.js (v20 LTS recommended)
+### 1. Install Node.js (v22.5+ required — v24 LTS recommended)
+
+`node:sqlite` (used by `server.js`) doesn't exist before Node 22.5. Node 20
+will fail to start the server entirely.
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
