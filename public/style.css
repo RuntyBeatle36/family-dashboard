@@ -922,6 +922,7 @@ body {
 input[type="text"],
 input[type="date"],
 input[type="time"],
+input[type="number"],
 textarea,
 select {
   background: var(--glass-2);
@@ -987,6 +988,13 @@ select {
   color: #fff;
   box-shadow: 0 2px 12px rgba(255,92,92,0.35);
 }
+
+.btn-danger-outline {
+  background: transparent;
+  color: var(--danger);
+  border: 1.5px solid var(--danger);
+}
+.btn-danger-outline:hover { background: rgba(255,92,92,0.12); }
 
 .btn-ghost {
   background: var(--glass-2);
@@ -1088,6 +1096,26 @@ select {
   letter-spacing: 0;
 }
 
+/* "Every [N] week(s)" — the unit is spelled out next to the number so it
+   never reads as ambiguous on its own (was just a bare number before). */
+.interval-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.interval-input-group input[type="number"] {
+  width: 4.2rem;
+  flex-shrink: 0;
+}
+.interval-unit {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 .allday-row {
   flex-direction: row;
   align-items: center;
@@ -1108,11 +1136,29 @@ select {
 
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.6rem;
   margin-top: 0.5rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--glass-border2);
+}
+
+/* Event detail modal: Close kept clearly apart from the destructive actions,
+   which are grouped into their own tidy stack rather than loose in a row. */
+.detail-actions {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.detail-delete-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.detail-delete-group .btn {
+  width: 100%;
+  text-align: center;
 }
 
 .detail-color-bar {
@@ -1124,6 +1170,22 @@ select {
 
 .detail-body            { font-size: 0.95rem; color: var(--text-dim); line-height: 1.7; margin-bottom: 1rem; }
 .detail-body strong     { color: var(--text); }
+
+.detail-desc {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--glass-border2);
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-created {
+  margin-top: 0.6rem;
+  font-size: 0.76rem;
+  color: var(--text-dimmer);
+}
 
 /* ── Color swatches ───────────────────────────────────────── */
 .color-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }

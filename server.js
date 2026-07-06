@@ -30,6 +30,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS calendar_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
+    description TEXT DEFAULT '',
     person TEXT DEFAULT '',
     color TEXT DEFAULT '#4f8ef7',
     event_date TEXT NOT NULL,
@@ -37,10 +38,21 @@ db.exec(`
     end_time TEXT,
     all_day INTEGER DEFAULT 0,
     recurrence TEXT DEFAULT 'none',
+    recurrence_interval INTEGER DEFAULT 1,
     recurrence_until TEXT,
+    excluded_dates TEXT DEFAULT '',
     created_at INTEGER DEFAULT (unixepoch())
   );
 `);
+
+// Lightweight migrations for DBs created before these columns existed.
+for (const stmt of [
+  `ALTER TABLE calendar_events ADD COLUMN excluded_dates TEXT DEFAULT ''`,
+  `ALTER TABLE calendar_events ADD COLUMN description TEXT DEFAULT ''`,
+  `ALTER TABLE calendar_events ADD COLUMN recurrence_interval INTEGER DEFAULT 1`,
+]) {
+  try { db.exec(stmt); } catch { /* column already exists */ }
+}
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -127,19 +139,27 @@ app.get('/api/calendar', (req, res) => {
 });
 
 app.post('/api/calendar', (req, res) => {
-  const { title, person, color, event_date, start_time, end_time, all_day, recurrence, recurrence_until } = req.body;
+  const {
+    title, description, person, color, event_date, start_time, end_time, all_day,
+    recurrence, recurrence_interval, recurrence_until,
+  } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
   if (!event_date)    return res.status(400).json({ error: 'Date required' });
 
-  const safeColor = /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#4f8ef7';
-  const safeRecur = ['none','daily','weekly','monthly','yearly'].includes(recurrence) ? recurrence : 'none';
+  const safeColor    = /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#4f8ef7';
+  // monthly_weekday = "same nth weekday of the month as the start date" (e.g. 1st Monday)
+  const safeRecur    = ['none','daily','weekly','monthly','monthly_weekday','yearly'].includes(recurrence)
+    ? recurrence : 'none';
+  const safeInterval = Math.min(99, Math.max(1, parseInt(recurrence_interval, 10) || 1));
 
   const info = db.prepare(`
     INSERT INTO calendar_events
-      (title, person, color, event_date, start_time, end_time, all_day, recurrence, recurrence_until)
-    VALUES (?,?,?,?,?,?,?,?,?)
+      (title, description, person, color, event_date, start_time, end_time, all_day,
+       recurrence, recurrence_interval, recurrence_until)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     title.trim().slice(0, 120),
+    (description || '').trim().slice(0, 500),
     (person || '').trim().slice(0, 40),
     safeColor,
     event_date,
@@ -147,13 +167,39 @@ app.post('/api/calendar', (req, res) => {
     end_time    || null,
     all_day ? 1 : 0,
     safeRecur,
+    safeRecur === 'none' ? 1 : safeInterval,
     recurrence_until || null
   );
 
   res.json(db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(info.lastInsertRowid));
 });
 
+// DELETE /api/calendar/:id            — delete the event (all occurrences, if recurring)
+// DELETE /api/calendar/:id?date=YYYY-MM-DD — delete just that one occurrence of a
+//   recurring event (recorded in excluded_dates, checked by expandEvent below).
+//   For a non-recurring event, that single date IS the whole event, so it's
+//   the same as an outright delete.
 app.delete('/api/calendar/:id', (req, res) => {
+  const { date } = req.query;
+
+  if (date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date' });
+
+    const ev = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
+    if (!ev) return res.status(404).json({ error: 'Not found' });
+
+    if (ev.recurrence === 'none') {
+      db.prepare('DELETE FROM calendar_events WHERE id = ?').run(req.params.id);
+      return res.json({ ok: true });
+    }
+
+    const excluded = new Set((ev.excluded_dates || '').split(',').filter(Boolean));
+    excluded.add(date);
+    db.prepare('UPDATE calendar_events SET excluded_dates = ? WHERE id = ?')
+      .run([...excluded].join(','), req.params.id);
+    return res.json({ ok: true });
+  }
+
   const info = db.prepare('DELETE FROM calendar_events WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
@@ -244,9 +290,10 @@ function toDateStr(dt) {
 }
 
 function expandEvent(ev, weekStart, weekEnd) {
-  const base  = localDate(ev.event_date);
-  const until = ev.recurrence_until ? localDate(ev.recurrence_until) : new Date(2099, 11, 31);
-  const recur = ev.recurrence || 'none';
+  const base     = localDate(ev.event_date);
+  const until    = ev.recurrence_until ? localDate(ev.recurrence_until) : new Date(2099, 11, 31);
+  const recur    = ev.recurrence || 'none';
+  const interval = Math.max(1, parseInt(ev.recurrence_interval, 10) || 1);
 
   if (recur === 'none') {
     return (base >= weekStart && base <= weekEnd)
@@ -254,17 +301,33 @@ function expandEvent(ev, weekStart, weekEnd) {
       : [];
   }
 
+  const excluded = new Set((ev.excluded_dates || '').split(',').filter(Boolean));
+  // "1st/2nd/3rd/4th/5th occurrence of this weekday in the month" — e.g. the
+  // 6th of a month is always the 1st occurrence of whatever weekday it falls on.
+  const baseNthWeekday = Math.ceil(base.getDate() / 7);
+
   const results = [];
   const cursor  = new Date(weekStart);
   while (cursor <= weekEnd) {
     if (cursor >= base && cursor <= until) {
+      const daysDiff   = Math.round((cursor - base) / 86400000);
+      const weeksDiff  = Math.round((cursor - base) / (7 * 86400000));
+      const monthsDiff = (cursor.getFullYear() - base.getFullYear()) * 12 + (cursor.getMonth() - base.getMonth());
+      const yearsDiff  = cursor.getFullYear() - base.getFullYear();
+
       const match =
-        recur === 'daily'   ? true :
-        recur === 'weekly'  ? cursor.getDay()   === base.getDay() :
-        recur === 'monthly' ? cursor.getDate()  === base.getDate() :
-        recur === 'yearly'  ? cursor.getMonth() === base.getMonth() && cursor.getDate() === base.getDate() :
+        recur === 'daily'           ? daysDiff % interval === 0 :
+        recur === 'weekly'          ? cursor.getDay() === base.getDay() && weeksDiff % interval === 0 :
+        recur === 'monthly'         ? cursor.getDate() === base.getDate() && monthsDiff % interval === 0 :
+        recur === 'monthly_weekday' ? cursor.getDay() === base.getDay() &&
+                                       Math.ceil(cursor.getDate() / 7) === baseNthWeekday &&
+                                       monthsDiff % interval === 0 :
+        recur === 'yearly'          ? cursor.getMonth() === base.getMonth() && cursor.getDate() === base.getDate() &&
+                                       yearsDiff % interval === 0 :
         false;
-      if (match) results.push({ ...ev, display_date: toDateStr(cursor) });
+
+      const dateStr = toDateStr(cursor);
+      if (match && !excluded.has(dateStr)) results.push({ ...ev, display_date: dateStr });
     }
     cursor.setDate(cursor.getDate() + 1);
   }

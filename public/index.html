@@ -147,6 +147,10 @@
         <input id="ev-person" type="text" placeholder="Whose event? (optional)" maxlength="40" />
       </label>
 
+      <label class="field-label">Description
+        <textarea id="ev-desc" placeholder="Optional details…" maxlength="500" rows="2"></textarea>
+      </label>
+
       <div class="field-label">Color
         <div class="color-swatches" id="color-swatches"></div>
         <input id="ev-color" type="hidden" value="#4f8ef7" />
@@ -170,15 +174,24 @@
         </label>
       </div>
 
-      <label class="field-label">Repeat
-        <select id="ev-recur">
-          <option value="none">Does not repeat</option>
-          <option value="daily">Every day</option>
-          <option value="weekly">Every week</option>
-          <option value="monthly">Every month</option>
-          <option value="yearly">Every year</option>
-        </select>
-      </label>
+      <div class="modal-row">
+        <label class="field-label" style="flex:1.6">Repeat
+          <select id="ev-recur">
+            <option value="none">Does not repeat</option>
+            <option value="daily">Day(s)</option>
+            <option value="weekly">Week(s)</option>
+            <option value="monthly">Month(s) — same date</option>
+            <option value="monthly_weekday">Month(s) — same weekday</option>
+            <option value="yearly">Year(s)</option>
+          </select>
+        </label>
+        <label class="field-label" id="ev-interval-row" style="display:none;flex:0 0 150px">Every
+          <div class="interval-input-group">
+            <input id="ev-recur-interval" type="number" min="1" max="99" value="1" />
+            <span id="ev-interval-unit" class="interval-unit">week(s)</span>
+          </div>
+        </label>
+      </div>
 
       <label class="field-label" id="ev-until-row" style="display:none">Repeat until
         <input id="ev-until" type="date" />
@@ -198,9 +211,12 @@
     <div id="detail-color-bar" class="detail-color-bar"></div>
     <h3 id="detail-title" class="modal-title"></h3>
     <div id="detail-body" class="detail-body"></div>
-    <div class="modal-actions">
-      <button class="btn btn-danger" id="detail-delete">Delete Event</button>
+    <div class="modal-actions detail-actions">
       <button class="btn btn-ghost" id="detail-close">Close</button>
+      <div class="detail-delete-group">
+        <button class="btn btn-danger-outline" id="detail-delete-occurrence" hidden>Delete This Occurrence</button>
+        <button class="btn btn-danger" id="detail-delete">Delete Event</button>
+      </div>
     </div>
   </div>
 </div>

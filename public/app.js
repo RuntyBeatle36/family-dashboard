@@ -50,7 +50,8 @@ const COLORS = [
 let calView       = 'week'; // 'day' | 'week' | 'month'
 let viewOffset    = 0;      // days / weeks / months from today, depending on calView
 let calEvents     = [];
-let detailEventId = null;
+let detailEventId   = null;
+let detailEventDate = null; // display_date of the occurrence currently shown
 let selectedColor = COLORS[0].hex;
 
 // Sunrise/sunset from Open-Meteo (updated each weather fetch)
@@ -1663,12 +1664,13 @@ document.getElementById('cal-view-btns').addEventListener('click', e => {
 /* ══════════════════════════════════════════════════════════
    ADD EVENT MODAL
    ══════════════════════════════════════════════════════════ */
-const addModal   = document.getElementById('add-modal');
-const addForm    = document.getElementById('add-event-form');
-const recurSel   = document.getElementById('ev-recur');
-const untilRow   = document.getElementById('ev-until-row');
-const allDayCbx  = document.getElementById('ev-allday');
-const timeFields = document.getElementById('ev-time-fields');
+const addModal    = document.getElementById('add-modal');
+const addForm     = document.getElementById('add-event-form');
+const recurSel    = document.getElementById('ev-recur');
+const intervalRow = document.getElementById('ev-interval-row');
+const untilRow    = document.getElementById('ev-until-row');
+const allDayCbx   = document.getElementById('ev-allday');
+const timeFields  = document.getElementById('ev-time-fields');
 
 // Color swatches
 const swatchContainer = document.getElementById('color-swatches');
@@ -1685,8 +1687,16 @@ COLORS.forEach((c, i) => {
   swatchContainer.appendChild(s);
 });
 
+const RECUR_UNIT_LABELS = {
+  daily: 'day(s)', weekly: 'week(s)', monthly: 'month(s)',
+  monthly_weekday: 'month(s)', yearly: 'year(s)',
+};
+
 recurSel.addEventListener('change', () => {
-  untilRow.style.display = recurSel.value !== 'none' ? 'flex' : 'none';
+  const repeats = recurSel.value !== 'none';
+  untilRow.style.display    = repeats ? 'flex' : 'none';
+  intervalRow.style.display = repeats ? 'flex' : 'none';
+  document.getElementById('ev-interval-unit').textContent = RECUR_UNIT_LABELS[recurSel.value] || '';
 });
 
 allDayCbx.addEventListener('change', () => {
@@ -1702,8 +1712,9 @@ document.getElementById('cal-add-btn').addEventListener('click', () => {
 function closeAddModal() {
   addModal.hidden = true;
   addForm.reset();
-  untilRow.style.display   = 'none';
-  timeFields.style.display = 'flex';
+  untilRow.style.display    = 'none';
+  intervalRow.style.display = 'none';
+  timeFields.style.display  = 'flex';
   swatchContainer.querySelectorAll('.color-swatch').forEach((el, i) =>
     el.classList.toggle('selected', i === 0));
   selectedColor = COLORS[0].hex;
@@ -1718,16 +1729,19 @@ addForm.addEventListener('submit', async e => {
   submitBtn.disabled = true;
   submitBtn.textContent = 'Saving…';
   try {
+    const repeats = recurSel.value !== 'none';
     await api('POST', '/api/calendar', {
-      title:            document.getElementById('ev-title').value.trim(),
-      person:           document.getElementById('ev-person').value.trim(),
-      color:            selectedColor,
-      event_date:       document.getElementById('ev-date').value,
-      start_time:       allDayCbx.checked ? null : (document.getElementById('ev-start').value || null),
-      end_time:         allDayCbx.checked ? null : (document.getElementById('ev-end').value   || null),
-      all_day:          allDayCbx.checked,
-      recurrence:       recurSel.value,
-      recurrence_until: recurSel.value !== 'none' ? (document.getElementById('ev-until').value || null) : null,
+      title:                document.getElementById('ev-title').value.trim(),
+      description:          document.getElementById('ev-desc').value.trim(),
+      person:               document.getElementById('ev-person').value.trim(),
+      color:                selectedColor,
+      event_date:           document.getElementById('ev-date').value,
+      start_time:           allDayCbx.checked ? null : (document.getElementById('ev-start').value || null),
+      end_time:             allDayCbx.checked ? null : (document.getElementById('ev-end').value   || null),
+      all_day:              allDayCbx.checked,
+      recurrence:           recurSel.value,
+      recurrence_interval:  repeats ? (parseInt(document.getElementById('ev-recur-interval').value, 10) || 1) : 1,
+      recurrence_until:     repeats ? (document.getElementById('ev-until').value || null) : null,
     });
     closeAddModal();
     loadCalendar();
@@ -1744,8 +1758,29 @@ addForm.addEventListener('submit', async e => {
    ══════════════════════════════════════════════════════════ */
 const detailModal = document.getElementById('detail-modal');
 
+const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
+
+function describeRecurrence(ev) {
+  const n = Math.max(1, parseInt(ev.recurrence_interval, 10) || 1);
+  switch (ev.recurrence) {
+    case 'daily':   return n === 1 ? 'Repeats daily'  : `Repeats every ${n} days`;
+    case 'weekly':  return n === 1 ? 'Repeats weekly' : `Repeats every ${n} weeks`;
+    case 'monthly': return (n === 1 ? 'Repeats monthly' : `Repeats every ${n} months`) + ' (same date)';
+    case 'monthly_weekday': {
+      const [, m, d] = ev.event_date.split('-').map(Number);
+      const base = new Date(2000, m - 1, d); // arbitrary year — only weekday/ordinal matter
+      const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const nth  = ORDINALS[Math.ceil(d / 7) - 1] || `${Math.ceil(d / 7)}th`;
+      return (n === 1 ? 'Repeats monthly' : `Repeats every ${n} months`) + ` (${nth} ${DAYS[base.getDay()]})`;
+    }
+    case 'yearly':  return n === 1 ? 'Repeats yearly' : `Repeats every ${n} years`;
+    default:        return '';
+  }
+}
+
 function showEventDetail(ev) {
-  detailEventId = ev.id;
+  detailEventId   = ev.id;
+  detailEventDate = ev.display_date;
   document.getElementById('detail-color-bar').style.background = ev.color;
   document.getElementById('detail-title').textContent = ev.title;
 
@@ -1764,13 +1799,23 @@ function showEventDetail(ev) {
   }
   if (ev.person) info += `<strong>Person:</strong> ${escHtml(ev.person)}<br>`;
 
-  const recurLabels = { daily:'Repeats daily', weekly:'Repeats weekly',
-                        monthly:'Repeats monthly', yearly:'Repeats yearly' };
-  if (ev.recurrence && ev.recurrence !== 'none') {
-    info += `<strong>Recurrence:</strong> ${recurLabels[ev.recurrence]}<br>`;
+  const isRecurring = ev.recurrence && ev.recurrence !== 'none';
+  const occBtn = document.getElementById('detail-delete-occurrence');
+  if (isRecurring) {
+    info += `<strong>Recurrence:</strong> ${describeRecurrence(ev)}<br>`;
     document.getElementById('detail-delete').textContent = 'Delete All Occurrences';
+    occBtn.hidden = false;
   } else {
     document.getElementById('detail-delete').textContent = 'Delete Event';
+    occBtn.hidden = true;
+  }
+
+  if (ev.description) info += `<div class="detail-desc">${escHtml(ev.description)}</div>`;
+
+  if (ev.created_at) {
+    const createdFmt = new Date(ev.created_at * 1000).toLocaleDateString('en-US',
+      { month: 'long', day: 'numeric', year: 'numeric' });
+    info += `<div class="detail-created">Created ${createdFmt}</div>`;
   }
 
   document.getElementById('detail-body').innerHTML = info;
@@ -1779,10 +1824,20 @@ function showEventDetail(ev) {
 
 document.getElementById('detail-close').addEventListener('click', () => { detailModal.hidden = true; });
 detailModal.addEventListener('click', e => { if (e.target === detailModal) detailModal.hidden = true; });
+
 document.getElementById('detail-delete').addEventListener('click', async () => {
   if (!detailEventId) return;
   try {
     await api('DELETE', `/api/calendar/${detailEventId}`);
+    detailModal.hidden = true;
+    loadCalendar();
+  } catch (err) { showError('Delete failed: ' + err.message); }
+});
+
+document.getElementById('detail-delete-occurrence').addEventListener('click', async () => {
+  if (!detailEventId || !detailEventDate) return;
+  try {
+    await api('DELETE', `/api/calendar/${detailEventId}?date=${detailEventDate}`);
     detailModal.hidden = true;
     loadCalendar();
   } catch (err) { showError('Delete failed: ' + err.message); }
