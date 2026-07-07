@@ -144,6 +144,13 @@ setInterval(loadLockAgenda, REFRESH_MS);
 let sunriseMins = null; // minutes since midnight
 let sunsetMins  = null;
 
+// Last time any internet-dependent fetch (weather/alerts) actually
+// succeeded — calendar/todo/bulletin only need the local Pi, so they
+// aren't a useful "are we online" signal. Starts at boot time so a
+// genuinely offline Pi shows stale immediately rather than staying
+// silent until the first check interval passes.
+let lastOnlineAt = Date.now();
+
 /* ══════════════════════════════════════════════════════════
    THEME
    ══════════════════════════════════════════════════════════ */
@@ -1041,6 +1048,7 @@ async function fetchAlerts() {
     );
     if (!r.ok) return;
     renderAlerts((await r.json()).features || []);
+    lastOnlineAt = Date.now();
   } catch { /* best-effort, silent */ }
 }
 
@@ -1119,6 +1127,8 @@ async function fetchWeather() {
       signal: AbortSignal.timeout(10000),
     }).then(r => r.ok ? r.json() : Promise.reject(new Error('OM ' + r.status))),
   ]);
+
+  if (nwsResult.status === 'fulfilled' || omResult.status === 'fulfilled') lastOnlineAt = Date.now();
 
   // Parse sunrise/sunset FIRST, before deciding the icon/canvas mode below —
   // these used to update after, so every fetch cycle briefly judged day/night
@@ -1261,6 +1271,41 @@ fetchWeather();
 setInterval(fetchWeather, 10 * 60 * 1000);
 
 /* ══════════════════════════════════════════════════════════
+   CONNECTIVITY / STALENESS INDICATOR
+   Weather polls every 10min and alerts every 5min — 20min with zero
+   successful sync is a generous margin over either interval before
+   flagging real trouble rather than one transient failure.
+   ══════════════════════════════════════════════════════════ */
+const OFFLINE_THRESHOLD_MS = 20 * 60 * 1000;
+
+function updateConnectivityBadge() {
+  const offlineMs = Date.now() - lastOnlineAt;
+  const stale = offlineMs > OFFLINE_THRESHOLD_MS;
+  const label = stale
+    ? `📡 Offline · last synced ${Math.round(offlineMs / 60000)}m ago`
+    : '';
+  for (const id of ['connectivity-badge', 'lock-connectivity-badge']) {
+    const el = document.getElementById(id);
+    el.textContent = label;
+    el.hidden = !stale;
+  }
+}
+updateConnectivityBadge();
+setInterval(updateConnectivityBadge, 60000);
+
+/* ══════════════════════════════════════════════════════════
+   TEXT SIZE
+   Scales the root font-size — nearly everything in the app is sized in
+   rem/em, so this one variable scales essentially the whole UI.
+   ══════════════════════════════════════════════════════════ */
+const getTextScalePct = () => parseInt(localStorage.getItem('textScalePct'), 10) || 100;
+
+function applyTextScale() {
+  document.documentElement.style.setProperty('--text-scale', getTextScalePct() / 100);
+}
+applyTextScale();
+
+/* ══════════════════════════════════════════════════════════
    DISPLAY BRIGHTNESS
    Pure CSS overlay dimming — works on any display regardless of whether
    the monitor supports real hardware brightness (DDC/CI), but unlike real
@@ -1333,6 +1378,7 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('toggle-boot-sound').checked  = getBootSoundEnabled();
   document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
   document.getElementById('toggle-alert-tts').checked   = getTtsEnabled();
+  document.getElementById('text-scale-slider').value       = getTextScalePct();
   document.getElementById('brightness-slider').value       = getBrightnessPct();
   document.getElementById('toggle-night-dim').checked      = getNightDimEnabled();
   document.getElementById('night-dim-start').value         = getNightDimStart();
@@ -1353,6 +1399,11 @@ document.getElementById('toggle-alert-sound').addEventListener('change', e => {
 });
 document.getElementById('toggle-alert-tts').addEventListener('change', e => {
   localStorage.setItem('alertTts', e.target.checked);
+});
+
+document.getElementById('text-scale-slider').addEventListener('input', e => {
+  localStorage.setItem('textScalePct', e.target.value);
+  applyTextScale();
 });
 
 document.getElementById('brightness-slider').addEventListener('input', e => {

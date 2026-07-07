@@ -178,6 +178,17 @@ html, body {
   overflow: hidden;
 }
 
+html {
+  /* Settings > Text Size. `zoom` (not font-size) because this app mixes
+     rem and vw units (e.g. clock uses clamp(2.4rem, 4.5vw, 4rem)) — scaling
+     root font-size alone doesn't touch the vw term, and rem-based clamp
+     bounds shifting independently of a fixed vw term caused inconsistent,
+     non-proportional results. zoom re-renders the whole page at the given
+     factor, text and layout together, uniformly. Chromium-only, which is
+     fine since this app is a Chromium kiosk app.  */
+  zoom: var(--text-scale, 1);
+}
+
 body {
   display: flex;
   flex-direction: column;
@@ -393,6 +404,30 @@ body {
   margin-top: 1.5rem;
   font-size: 0.85rem;
   color: var(--text-dimmer);
+}
+
+/* ── Connectivity badge ───────────────────────────────────── */
+/* Shown only when weather/alerts (the only internet-dependent fetches —
+   calendar/todo/bulletin only need the local Pi, so they aren't a useful
+   "are we online" signal) haven't synced successfully in a while. Amber,
+   not red — this is informational, not an alarm. */
+.connectivity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ffb648;
+  background: rgba(255, 182, 72, 0.14);
+  border: 1px solid rgba(255, 182, 72, 0.35);
+  white-space: nowrap;
+}
+.connectivity-badge[hidden] { display: none; }
+
+#lock-connectivity-badge {
+  margin-top: 1rem;
 }
 
 /* ── Weather block ────────────────────────────────────────── */

@@ -46,6 +46,7 @@
       <div class="lock-agenda-list" id="lock-agenda-tomorrow"></div>
     </div>
   </div>
+  <span id="lock-connectivity-badge" class="connectivity-badge" hidden></span>
   <div class="lock-hint">Tap anywhere to open</div>
 </div>
 
@@ -78,6 +79,8 @@
       <span class="rain-loading">Checking rain...</span>
     </div>
   </div>
+
+  <span id="connectivity-badge" class="connectivity-badge" hidden></span>
 
   <button class="btn btn-icon settings-btn" id="settings-btn" title="Settings">⚙️</button>
 
@@ -271,6 +274,14 @@
         <button class="theme-opt" data-val="dark">🌙 Dark</button>
       </div>
       <p id="theme-status" class="settings-desc" style="margin-top:0.4rem"></p>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">🔤 Text Size</div>
+      <p class="settings-desc">Scales text throughout the whole dashboard.</p>
+      <label class="field-label">Text Size
+        <input type="range" id="text-scale-slider" min="85" max="150" step="5" value="100" />
+      </label>
     </div>
 
     <div class="settings-section">
