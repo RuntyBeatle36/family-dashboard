@@ -24,6 +24,9 @@
 <!-- ── Debug: performance overlay ───────────────────────────── -->
 <div id="perf-overlay" class="perf-overlay" hidden></div>
 
+<!-- ── Brightness dimming overlay (above everything, incl. modals) ──── -->
+<div id="brightness-overlay"></div>
+
 <!-- ── Top bar ──────────────────────────────────────────────── -->
 <header class="top-bar">
 
@@ -168,6 +171,11 @@
         All day
       </label>
 
+      <label class="field-label allday-row">
+        <input id="ev-private" type="checkbox" />
+        🔒 Private — shows as "Busy" on the wall display until someone taps the screen
+      </label>
+
       <div id="ev-time-fields" class="modal-row">
         <label class="field-label">Start
           <input id="ev-start" type="time" />
@@ -241,6 +249,35 @@
         <button class="theme-opt" data-val="dark">🌙 Dark</button>
       </div>
       <p id="theme-status" class="settings-desc" style="margin-top:0.4rem"></p>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">🔆 Display Brightness</div>
+      <p class="settings-desc">
+        Dims the screen with an overlay — works on any display, but (unlike real
+        hardware brightness) doesn't reduce actual power draw or screen wear.
+      </p>
+      <label class="field-label">Brightness
+        <input type="range" id="brightness-slider" min="20" max="100" value="100" />
+      </label>
+
+      <label class="settings-toggle" style="margin-top:0.6rem">
+        <input type="checkbox" id="toggle-night-dim">
+        Dim automatically at night
+      </label>
+      <div id="night-dim-fields" style="display:none">
+        <div class="modal-row">
+          <label class="field-label">From
+            <input type="time" id="night-dim-start" value="21:00" />
+          </label>
+          <label class="field-label">Until
+            <input type="time" id="night-dim-end" value="07:00" />
+          </label>
+        </div>
+        <label class="field-label">Night brightness
+          <input type="range" id="night-brightness-slider" min="10" max="80" value="30" />
+        </label>
+      </div>
     </div>
 
     <div class="settings-section">

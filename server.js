@@ -41,6 +41,7 @@ db.exec(`
     recurrence_interval INTEGER DEFAULT 1,
     recurrence_until TEXT,
     excluded_dates TEXT DEFAULT '',
+    is_private INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch())
   );
 `);
@@ -50,6 +51,7 @@ for (const stmt of [
   `ALTER TABLE calendar_events ADD COLUMN excluded_dates TEXT DEFAULT ''`,
   `ALTER TABLE calendar_events ADD COLUMN description TEXT DEFAULT ''`,
   `ALTER TABLE calendar_events ADD COLUMN recurrence_interval INTEGER DEFAULT 1`,
+  `ALTER TABLE calendar_events ADD COLUMN is_private INTEGER DEFAULT 0`,
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }
@@ -141,7 +143,7 @@ app.get('/api/calendar', (req, res) => {
 app.post('/api/calendar', (req, res) => {
   const {
     title, description, person, color, event_date, start_time, end_time, all_day,
-    recurrence, recurrence_interval, recurrence_until,
+    recurrence, recurrence_interval, recurrence_until, is_private,
   } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
   if (!event_date)    return res.status(400).json({ error: 'Date required' });
@@ -155,8 +157,8 @@ app.post('/api/calendar', (req, res) => {
   const info = db.prepare(`
     INSERT INTO calendar_events
       (title, description, person, color, event_date, start_time, end_time, all_day,
-       recurrence, recurrence_interval, recurrence_until)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       recurrence, recurrence_interval, recurrence_until, is_private)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     title.trim().slice(0, 120),
     (description || '').trim().slice(0, 500),
@@ -168,7 +170,8 @@ app.post('/api/calendar', (req, res) => {
     all_day ? 1 : 0,
     safeRecur,
     safeRecur === 'none' ? 1 : safeInterval,
-    recurrence_until || null
+    recurrence_until || null,
+    is_private ? 1 : 0
   );
 
   res.json(db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(info.lastInsertRowid));
@@ -183,7 +186,7 @@ app.patch('/api/calendar/:id', (req, res) => {
 
   const {
     title, description, person, color, event_date, start_time, end_time, all_day,
-    recurrence, recurrence_interval, recurrence_until,
+    recurrence, recurrence_interval, recurrence_until, is_private,
   } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
   if (!event_date)    return res.status(400).json({ error: 'Date required' });
@@ -197,7 +200,7 @@ app.patch('/api/calendar/:id', (req, res) => {
     UPDATE calendar_events SET
       title = ?, description = ?, person = ?, color = ?, event_date = ?,
       start_time = ?, end_time = ?, all_day = ?,
-      recurrence = ?, recurrence_interval = ?, recurrence_until = ?
+      recurrence = ?, recurrence_interval = ?, recurrence_until = ?, is_private = ?
     WHERE id = ?
   `).run(
     title.trim().slice(0, 120),
@@ -211,6 +214,7 @@ app.patch('/api/calendar/:id', (req, res) => {
     safeRecur,
     safeRecur === 'none' ? 1 : safeInterval,
     recurrence_until || null,
+    is_private ? 1 : 0,
     req.params.id
   );
 

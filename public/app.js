@@ -59,6 +59,42 @@ let detailEventFull = null; // full event object currently shown, for Edit
 let editingEventId  = null; // set while the Add Event form is reused for editing
 let selectedColor = COLORS[0].hex;
 
+/* ══════════════════════════════════════════════════════════
+   EVENT PRIVACY
+   Private events show as "🔒 Busy" everywhere on the shared display, with
+   no title/time/person visible — tapping ANYWHERE reveals real titles for
+   a while, then automatically hides them again. Deliberately no per-event
+   reveal (findable/tappable target) — a family member who won't remember
+   "which thing do I tap" just needs to know "tap the screen".
+   ══════════════════════════════════════════════════════════ */
+const PRIVACY_REVEAL_MS = 45000;
+let privacyRevealed     = false;
+let privacyRevealTimer  = null;
+
+function privacyRerender() {
+  if (calView === 'month') fillMonthEvents(calEvents);
+  else fillCalEvents(calEvents);
+}
+
+function revealPrivacy() {
+  const wasHidden = !privacyRevealed;
+  privacyRevealed = true;
+  if (wasHidden) privacyRerender();
+  clearTimeout(privacyRevealTimer);
+  privacyRevealTimer = setTimeout(() => {
+    privacyRevealed = false;
+    privacyRerender();
+  }, PRIVACY_REVEAL_MS);
+}
+document.addEventListener('pointerdown', revealPrivacy, true);
+
+function displayTitleFor(ev) {
+  return (ev.is_private && !privacyRevealed) ? '🔒 Busy' : ev.title;
+}
+function displayColorFor(ev) {
+  return (ev.is_private && !privacyRevealed) ? '#7a8296' : ev.color;
+}
+
 // Sunrise/sunset from Open-Meteo (updated each weather fetch)
 let sunriseMins = null; // minutes since midnight
 let sunsetMins  = null;
@@ -1117,6 +1153,42 @@ fetchWeather();
 setInterval(fetchWeather, 10 * 60 * 1000);
 
 /* ══════════════════════════════════════════════════════════
+   DISPLAY BRIGHTNESS
+   Pure CSS overlay dimming — works on any display regardless of whether
+   the monitor supports real hardware brightness (DDC/CI), but unlike real
+   hardware control it doesn't reduce actual backlight power draw or wear.
+   ══════════════════════════════════════════════════════════ */
+const MAX_DIM_OPACITY = 0.75; // overlay opacity at the dimmest slider setting
+
+const getBrightnessPct      = () => parseInt(localStorage.getItem('brightnessPct'), 10) || 100;
+const getNightDimEnabled    = () => localStorage.getItem('nightDimEnabled') === 'true';
+const getNightDimStart      = () => localStorage.getItem('nightDimStart') || '21:00';
+const getNightDimEnd        = () => localStorage.getItem('nightDimEnd')   || '07:00';
+const getNightBrightnessPct = () => parseInt(localStorage.getItem('nightBrightnessPct'), 10) || 30;
+
+function isWithinNightWindow(startStr, endStr) {
+  const now     = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = startStr.split(':').map(Number);
+  const [eh, em] = endStr.split(':').map(Number);
+  const startMins = sh * 60 + sm;
+  const endMins   = eh * 60 + em;
+  if (startMins === endMins) return false;
+  return startMins < endMins
+    ? (nowMins >= startMins && nowMins < endMins)   // e.g. 09:00-17:00, same day
+    : (nowMins >= startMins || nowMins < endMins);  // e.g. 21:00-07:00, wraps midnight
+}
+
+function applyBrightness() {
+  const usingNight = getNightDimEnabled() && isWithinNightWindow(getNightDimStart(), getNightDimEnd());
+  const pct = usingNight ? getNightBrightnessPct() : getBrightnessPct();
+  document.getElementById('brightness-overlay').style.opacity = (1 - pct / 100) * MAX_DIM_OPACITY;
+}
+
+applyBrightness();
+setInterval(applyBrightness, 60000); // re-check the night window every minute
+
+/* ══════════════════════════════════════════════════════════
    SETTINGS PANEL
    ══════════════════════════════════════════════════════════ */
 const settingsModal = document.getElementById('settings-modal');
@@ -1144,6 +1216,8 @@ zipSelect.addEventListener('change', () => {
   fetchAlerts();
 });
 
+const nightDimFields = document.getElementById('night-dim-fields');
+
 document.getElementById('settings-btn').addEventListener('click', () => {
   zipSelect.value = getActiveZip().zip;
   updateZipCoords();
@@ -1151,6 +1225,12 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('toggle-boot-sound').checked  = getBootSoundEnabled();
   document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
   document.getElementById('toggle-alert-tts').checked   = getTtsEnabled();
+  document.getElementById('brightness-slider').value       = getBrightnessPct();
+  document.getElementById('toggle-night-dim').checked      = getNightDimEnabled();
+  document.getElementById('night-dim-start').value         = getNightDimStart();
+  document.getElementById('night-dim-end').value           = getNightDimEnd();
+  document.getElementById('night-brightness-slider').value = getNightBrightnessPct();
+  nightDimFields.style.display = getNightDimEnabled() ? 'block' : 'none';
   settingsModal.hidden = false;
 });
 
@@ -1162,6 +1242,28 @@ document.getElementById('toggle-alert-sound').addEventListener('change', e => {
 });
 document.getElementById('toggle-alert-tts').addEventListener('change', e => {
   localStorage.setItem('alertTts', e.target.checked);
+});
+
+document.getElementById('brightness-slider').addEventListener('input', e => {
+  localStorage.setItem('brightnessPct', e.target.value);
+  applyBrightness();
+});
+document.getElementById('toggle-night-dim').addEventListener('change', e => {
+  localStorage.setItem('nightDimEnabled', e.target.checked);
+  nightDimFields.style.display = e.target.checked ? 'block' : 'none';
+  applyBrightness();
+});
+document.getElementById('night-dim-start').addEventListener('change', e => {
+  localStorage.setItem('nightDimStart', e.target.value);
+  applyBrightness();
+});
+document.getElementById('night-dim-end').addEventListener('change', e => {
+  localStorage.setItem('nightDimEnd', e.target.value);
+  applyBrightness();
+});
+document.getElementById('night-brightness-slider').addEventListener('input', e => {
+  localStorage.setItem('nightBrightnessPct', e.target.value);
+  applyBrightness();
 });
 
 document.getElementById('debug-wx-grid').addEventListener('click', e => {
@@ -1557,8 +1659,8 @@ function fillCalEvents(events) {
       allDay.forEach(ev => {
         const chip = document.createElement('div');
         chip.className = 'allday-chip';
-        chip.style.background = ev.color;
-        chip.textContent = ev.title;
+        chip.style.background = displayColorFor(ev);
+        chip.textContent = displayTitleFor(ev);
         chip.addEventListener('click', () => showEventDetail(ev));
         adCol.appendChild(chip);
       });
@@ -1588,12 +1690,13 @@ function placeEventBlock(col, ev) {
   el.style.cssText =
     `top:${topPx}px;height:${heightPx}px;` +
     `left:calc(${ev._left}% + 2px);width:calc(${ev._width}% - 4px);` +
-    `background:${ev.color};`;
+    `background:${displayColorFor(ev)};`;
 
-  const showTime   = heightPx >= 36;
-  const showPerson = heightPx >= 50 && ev.person;
+  const hidden     = ev.is_private && !privacyRevealed;
+  const showTime   = !hidden && heightPx >= 36;
+  const showPerson = !hidden && heightPx >= 50 && ev.person;
   el.innerHTML =
-    `<div class="ev-title">${escHtml(ev.title)}</div>` +
+    `<div class="ev-title">${escHtml(displayTitleFor(ev))}</div>` +
     (showTime   ? `<div class="ev-time">${fmt12h(ev.start_time)}${ev.end_time ? ' – ' + fmt12h(ev.end_time) : ''}</div>` : '') +
     (showPerson ? `<div class="ev-person">${escHtml(ev.person)}</div>` : '');
 
@@ -1703,9 +1806,10 @@ function fillMonthEvents(events) {
     const container = cell.querySelector('.cal-month-events');
     const chip = document.createElement('div');
     chip.className = 'cal-month-chip';
-    chip.style.background = ev.color;
-    chip.textContent = (ev.all_day || !ev.start_time)
-      ? ev.title
+    chip.style.background = displayColorFor(ev);
+    const hidden = ev.is_private && !privacyRevealed;
+    chip.textContent = hidden ? displayTitleFor(ev)
+      : (ev.all_day || !ev.start_time) ? ev.title
       : `${fmt12h(ev.start_time)} ${ev.title}`;
     chip.addEventListener('click', () => showEventDetail(ev));
     container.appendChild(chip);
@@ -1835,6 +1939,7 @@ function openEditModal(ev) {
   timeFields.style.display = allDayCbx.checked ? 'none' : 'flex';
   document.getElementById('ev-start').value = ev.start_time || '';
   document.getElementById('ev-end').value   = ev.end_time   || '';
+  document.getElementById('ev-private').checked = !!ev.is_private;
 
   recurSel.value = ev.recurrence || 'none';
   const repeats = recurSel.value !== 'none';
@@ -1872,6 +1977,7 @@ addForm.addEventListener('submit', async e => {
       start_time:           allDayCbx.checked ? null : (document.getElementById('ev-start').value || null),
       end_time:             allDayCbx.checked ? null : (document.getElementById('ev-end').value   || null),
       all_day:              allDayCbx.checked,
+      is_private:           document.getElementById('ev-private').checked,
       recurrence:           recurSel.value,
       recurrence_interval:  repeats ? (parseInt(document.getElementById('ev-recur-interval').value, 10) || 1) : 1,
       recurrence_until:     repeats ? (document.getElementById('ev-until').value || null) : null,
@@ -1934,6 +2040,7 @@ function showEventDetail(ev) {
     info += `<strong>Time:</strong> All day<br>`;
   }
   if (ev.person) info += `<strong>Person:</strong> ${escHtml(ev.person)}<br>`;
+  if (ev.is_private) info += `<strong>🔒 Private</strong> — shows as "Busy" until tapped<br>`;
 
   const isRecurring = ev.recurrence && ev.recurrence !== 'none';
   const occBtn = document.getElementById('detail-delete-occurrence');

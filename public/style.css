@@ -119,6 +119,20 @@
 .perf-overlay .perf-warn { color: #ff8a5c; }
 .perf-overlay .perf-bad  { color: #ff5c5c; }
 
+/* Software-only dimming — sits above absolutely everything, including
+   modals, so the whole screen dims consistently. pointer-events:none so
+   it never blocks touch. Doesn't reduce actual backlight power/wear —
+   see the Settings copy — only real DDC/CI hardware control would. */
+#brightness-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
 /* ── Base ─────────────────────────────────────────────────── */
 html, body {
   height: 100vh;  /* fallback for browsers without dvh support */
