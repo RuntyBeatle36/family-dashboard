@@ -733,6 +733,17 @@ function getAudioCtx() {
   return audioCtx;
 }
 
+// 6 beeps, louder — was 3 beeps at 0.22 gain, which turned out to be too
+// few and too quiet to notice from across a room. ALERT_BEEP_TOTAL_MS is
+// derived from these so the "beeps, then speech" delay in renderAlerts()
+// below never has to be kept in sync by hand.
+const ALERT_BEEP_COUNT = 6;
+const ALERT_BEEP_FREQ  = 960;
+const ALERT_BEEP_DUR   = 0.18;  // seconds
+const ALERT_BEEP_GAP   = 0.22;  // seconds between beep starts
+const ALERT_BEEP_GAIN  = 0.75;  // 0-1; square wave, pushed close to clipping on purpose
+const ALERT_BEEP_TOTAL_MS = Math.round(((ALERT_BEEP_COUNT - 1) * ALERT_BEEP_GAP + ALERT_BEEP_DUR) * 1000);
+
 function playBeepSequence(ctx) {
   const beep = (freq, start, dur) => {
     const osc = ctx.createOscillator();
@@ -742,16 +753,14 @@ function playBeepSequence(ctx) {
     osc.type = 'square';
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(0.22, start + 0.01);
-    gain.gain.setValueAtTime(0.22, start + dur - 0.02);
+    gain.gain.linearRampToValueAtTime(ALERT_BEEP_GAIN, start + 0.01);
+    gain.gain.setValueAtTime(ALERT_BEEP_GAIN, start + dur - 0.02);
     gain.gain.linearRampToValueAtTime(0, start + dur);
     osc.start(start);
     osc.stop(start + dur);
   };
   const t = ctx.currentTime;
-  beep(960, t,       0.18);
-  beep(960, t + 0.25, 0.18);
-  beep(960, t + 0.50, 0.18);
+  for (let i = 0; i < ALERT_BEEP_COUNT; i++) beep(ALERT_BEEP_FREQ, t + i * ALERT_BEEP_GAP, ALERT_BEEP_DUR);
 }
 
 function playAlertSound() {
@@ -760,15 +769,33 @@ function playAlertSound() {
   catch { /* AudioContext unavailable */ }
 }
 
+// Linux/Chromium (e.g. Raspberry Pi OS) commonly has speechSynthesis defined
+// but zero voices registered unless a system speech engine is installed —
+// it's not a bug in this code, there's just nothing for it to talk through.
+// Surface that distinctly instead of a generic/silent failure.
+function speakText(text, rate, onerror) {
+  if (!window.speechSynthesis) {
+    onerror?.('Text-to-speech is not available in this browser.');
+    return;
+  }
+  if (window.speechSynthesis.getVoices().length === 0) {
+    onerror?.('No text-to-speech voices are installed. On a Raspberry Pi, try: sudo apt install speech-dispatcher espeak-ng, then reboot.');
+    return;
+  }
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = rate;
+  u.onerror = e => onerror?.(`TTS error (${e.error || 'unknown'}).`);
+  window.speechSynthesis.speak(u);
+}
+
 function speakAlerts(sorted) {
   if (!getTtsEnabled() || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
-  const preamble = new SpeechSynthesisUtterance(
+  speakText(
     'The National Weather Service has issued the following alert' +
-    (sorted.length > 1 ? 's' : '') + '.'
+    (sorted.length > 1 ? 's' : '') + '.',
+    0.92
   );
-  preamble.rate = 0.92;
-  window.speechSynthesis.speak(preamble);
   for (const f of sorted) {
     const p     = f.properties;
     const areas = p.areaDesc
@@ -777,9 +804,7 @@ function speakAlerts(sorted) {
     const text  = areas
       ? `${p.event} for ${areas}. ${p.headline || ''}`
       : `${p.event}. ${p.headline || ''}`;
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 0.92;
-    window.speechSynthesis.speak(u);
+    speakText(text, 0.92);
   }
 }
 
@@ -791,15 +816,8 @@ document.getElementById('debug-test-beep').addEventListener('click', () => {
 });
 
 document.getElementById('debug-test-tts').addEventListener('click', () => {
-  if (!window.speechSynthesis) {
-    showError('Text-to-speech is not available in this browser.');
-    return;
-  }
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance('This is a test of the alert text to speech system.');
-  u.rate = 0.92;
-  u.onerror = e => showError('TTS error: ' + (e.error || 'unknown'));
-  window.speechSynthesis.speak(u);
+  window.speechSynthesis?.cancel();
+  speakText('This is a test of the alert text to speech system.', 0.92, showError);
 });
 
 /* ── Render alert banner (scrolling ticker) ───────────────── */
@@ -847,7 +865,7 @@ function renderAlerts(features) {
 
   if (isNew) {
     playAlertSound();
-    setTimeout(() => speakAlerts(sorted), 1200); // beeps first, then voice
+    setTimeout(() => speakAlerts(sorted), ALERT_BEEP_TOTAL_MS + 500); // beeps first, then voice
   }
 }
 
