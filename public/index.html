@@ -385,13 +385,17 @@
         <strong>Performance:</strong> this is one of the single most GPU-intensive
         effects in the app on Raspberry Pi — every blurred panel has to re-blur
         whatever's behind it (including the animated weather), every frame it
-        changes. Turning it off removes that cost almost entirely; panels become
-        solid instead of frosted, but stay fully readable.
+        changes. <em>Reduced</em> uses a much cheaper blur radius — most of the
+        savings, still frosted. <em>Off</em> removes the cost almost entirely;
+        panels switch to a solid color instead of frosted glass, since without
+        any blur the usual near-transparent panels are too see-through to stay
+        readable. <em>Full</em> is the default look.
       </p>
-      <label class="settings-toggle">
-        <input type="checkbox" id="toggle-gfx-blur">
-        Enable glass blur (default: on)
-      </label>
+      <div class="theme-options" id="gfx-glass">
+        <button class="theme-opt" data-val="off">Off</button>
+        <button class="theme-opt" data-val="reduced">Reduced</button>
+        <button class="theme-opt" data-val="full">Full</button>
+      </div>
     </div>
 
     <div class="settings-section">

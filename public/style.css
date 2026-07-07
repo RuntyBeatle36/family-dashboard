@@ -13,6 +13,13 @@
   --blur-strong:   blur(24px) saturate(1.6);
   --blur-soft:     blur(8px) saturate(1.2);
 
+  /* Used when Graphics > Glass Blur is "Off" — the usual --glass/--glass-2
+     are deliberately near-transparent, relying on blur to stay legible.
+     Without blur they're too see-through and whatever's behind (weather
+     canvas, calendar text) clutters the panel — these are solid instead. */
+  --glass-solid:   rgba(11, 16, 28, 0.94);
+  --glass-solid-2: rgba(16, 22, 38, 0.97);
+
   --accent:   #5ab4ff;
   --danger:   #ff5c5c;
   --success:  #4dd898;
@@ -46,6 +53,8 @@
   --glass-2:       rgba(255,255,255,0.70);
   --glass-border:  rgba(255,255,255,0.78);
   --glass-border2: rgba(255,255,255,0.45);
+  --glass-solid:   rgba(240, 244, 250, 0.95);
+  --glass-solid-2: rgba(248, 250, 253, 0.98);
 
   --accent:   #2878e8;
   --danger:   #d43030;
@@ -67,13 +76,35 @@
   --label-glow: 0 1px 3px rgba(255,255,255,0.85), 0 0 9px rgba(255,255,255,0.55);
 }
 
-/* Graphics setting: disables all backdrop-filter blur (see Settings > Graphics).
-   Panels fall back to their flat background color/opacity — still legible,
-   just not frosted. This is the single biggest GPU cost to cut on Pi-class
-   hardware, especially with the animated weather canvas visible behind it. */
+/* Graphics > Glass Blur has three tiers:
+   - full    (default): unchanged, uses the :root/[data-theme] values above.
+   - reduced: a much cheaper blur radius, cutting most of the GPU cost while
+     keeping enough frosting that the near-transparent --glass/--glass-2
+     background still reads as legible rather than see-through.
+   - off: no blur at all — the biggest possible saving. Blur is the actual
+     performance cost here, not transparency itself (plain alpha blending is
+     essentially free) — so this only disables backdrop-filter globally;
+     it does NOT touch --glass/--glass-2 background opacity. */
+[data-glass="reduced"] {
+  --blur-strong: blur(8px) saturate(1.3);
+  --blur-soft:   blur(4px) saturate(1.15);
+}
+
 [data-glass="off"] {
   --blur-strong: none;
   --blur-soft:   none;
+}
+
+/* The persistent dashboard chrome (top bar, calendar nav, sidebar) stays
+   transparent regardless of the Glass Blur setting — it was never the
+   readability complaint, and plain transparency isn't the expensive part.
+   Only the button-triggered menus (Settings, Add Event, etc.) — which sit
+   on top of much busier, more cluttered content — switch to a solid
+   background when blur is off, scoped here to just .modal-overlay so nothing
+   outside a menu is affected. */
+[data-glass="off"] .modal-overlay {
+  --glass:   var(--glass-solid);
+  --glass-2: var(--glass-solid-2);
 }
 
 /* ── Canvas & lightning (bottom z-layer) ──────────────────── */

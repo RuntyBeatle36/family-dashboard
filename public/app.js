@@ -50,7 +50,7 @@ const COLORS = [
 // Week/Month need room for 7 columns; on a phone-width screen there simply
 // isn't any, so default to Day view there instead of an unreadably squeezed
 // week grid. (Only affects the initial view — tapping Week/Month still works.)
-let calView = window.matchMedia('(max-width: 700px)').matches ? 'day' : 'week';
+let calView = window.matchMedia('(max-width: 700px)').matches ? 'day' : 'month';
 let viewOffset    = 0;      // days / weeks / months from today, depending on calView
 let calEvents     = [];
 let detailEventId   = null;
@@ -61,12 +61,13 @@ let selectedColor = COLORS[0].hex;
 
 /* ══════════════════════════════════════════════════════════
    EVENT PRIVACY + LOCK SCREEN
-   Private events show as "🔒 Busy" (dashboard) / "Private event" (Lock
-   Screen) everywhere — no title/time/person visible. Tapping ANYWHERE
-   reveals real titles — and, if Lock Screen is enabled, opens the full
-   dashboard — for a configurable while, then automatically returns to
-   hidden/locked. Deliberately no per-event reveal target: a family member
-   who won't remember "which thing do I tap" just needs "tap the screen".
+   Private events only ever read as "Private event" on the Lock Screen's
+   agenda — once you've tapped through to the actual dashboard, events show
+   normally there (you deliberately opened it; no need to keep masking).
+   Tapping ANYWHERE opens the full dashboard for a configurable while, then
+   automatically returns to the Lock Screen. Deliberately no per-event
+   reveal target: a family member who won't remember "which thing do I tap"
+   just needs "tap the screen".
    ══════════════════════════════════════════════════════════ */
 const getLockScreenEnabled = () => localStorage.getItem('lockScreenEnabled') === 'true';
 const getLockRevealSecs    = () => parseInt(localStorage.getItem('lockRevealSecs'), 10) || 60;
@@ -75,24 +76,24 @@ const getLockAgendaEnabled = () => localStorage.getItem('lockAgendaEnabled') !==
 let privacyRevealed    = false;
 let privacyRevealTimer = null;
 
-function privacyRerender() {
-  if (calView === 'month') fillMonthEvents(calEvents);
-  else fillCalEvents(calEvents);
-}
-
 function updateLockUI() {
   const locked = getLockScreenEnabled() && !privacyRevealed;
   document.getElementById('lock-screen').hidden     = !locked;
   document.querySelector('.top-bar').style.display  = locked ? 'none' : '';
   document.querySelector('.app-body').style.display = locked ? 'none' : '';
   if (locked) renderLockScreen();
-  privacyRerender();
 }
 
 function revealPrivacy() {
   const wasHidden = !privacyRevealed;
   privacyRevealed = true;
-  if (wasHidden) updateLockUI();
+  if (wasHidden) {
+    // Only chime on a genuine Lock Screen -> dashboard transition, not on
+    // every first tap of the day when Lock Screen is off (or already open).
+    const wasLocked = getLockScreenEnabled() && !document.getElementById('lock-screen').hidden;
+    updateLockUI();
+    if (wasLocked && getBootSoundEnabled()) playBootChime();
+  }
   clearTimeout(privacyRevealTimer);
   privacyRevealTimer = setTimeout(() => {
     privacyRevealed = false;
@@ -100,13 +101,6 @@ function revealPrivacy() {
   }, getLockRevealSecs() * 1000);
 }
 document.addEventListener('pointerdown', revealPrivacy, true);
-
-function displayTitleFor(ev) {
-  return (ev.is_private && !privacyRevealed) ? '🔒 Busy' : ev.title;
-}
-function displayColorFor(ev) {
-  return (ev.is_private && !privacyRevealed) ? '#7a8296' : ev.color;
-}
 
 /* ── Lock Screen agenda ("Today you have" / "Tomorrow you have") ───── */
 let lockAgendaEvents = { today: [], tomorrow: [] };
@@ -910,20 +904,30 @@ function cancelTts() {
   ttsPlaying = false;
 }
 
+// Speed/clarity is tuned server-side via espeak-ng's own -s flag now (see
+// /api/tts) — deliberately no client-side playbackRate here. Time-stretching
+// an already-synthetic voice via playbackRate introduces its own warble on
+// top of espeak's, compounding into something worse than either alone.
+const TTS_GAP_MS = 300; // brief pause between queued utterances, for clarity
+
 function processTtsQueue() {
   if (ttsPlaying || ttsQueue.length === 0) return;
   ttsPlaying = true;
-  const { url, rate, onerror, onsuccess } = ttsQueue.shift();
+  const { url, onerror, onsuccess } = ttsQueue.shift();
   const audio = new Audio(url);
   currentTtsAudio = audio;
-  audio.playbackRate = rate;
-  const done = () => { URL.revokeObjectURL(url); currentTtsAudio = null; ttsPlaying = false; processTtsQueue(); };
+  const done = () => {
+    URL.revokeObjectURL(url);
+    currentTtsAudio = null;
+    ttsPlaying = false;
+    setTimeout(processTtsQueue, TTS_GAP_MS);
+  };
   audio.onended = done;
   audio.onerror = () => { onerror?.('Audio playback failed.'); done(); };
   audio.play().then(() => onsuccess?.()).catch(err => { onerror?.('Playback blocked: ' + err.message); done(); });
 }
 
-async function speakText(text, rate, onerror, onsuccess) {
+async function speakText(text, onerror, onsuccess) {
   try {
     const res = await fetch('/api/tts', {
       method: 'POST',
@@ -937,7 +941,7 @@ async function speakText(text, rate, onerror, onsuccess) {
       return;
     }
     const url = URL.createObjectURL(await res.blob());
-    ttsQueue.push({ url, rate, onerror, onsuccess });
+    ttsQueue.push({ url, onerror, onsuccess });
     processTtsQueue();
   } catch (err) {
     onerror?.('Could not reach the dashboard server for text-to-speech.');
@@ -949,8 +953,7 @@ function speakAlerts(sorted) {
   cancelTts();
   speakText(
     'The National Weather Service has issued the following alert' +
-    (sorted.length > 1 ? 's' : '') + '.',
-    0.92
+    (sorted.length > 1 ? 's' : '') + '.'
   );
   for (const f of sorted) {
     const p     = f.properties;
@@ -960,7 +963,7 @@ function speakAlerts(sorted) {
     const text  = areas
       ? `${p.event} for ${areas}. ${p.headline || ''}`
       : `${p.event}. ${p.headline || ''}`;
-    speakText(text, 0.92);
+    speakText(text);
   }
 }
 
@@ -974,7 +977,7 @@ document.getElementById('debug-test-beep').addEventListener('click', () => {
 document.getElementById('debug-test-tts').addEventListener('click', () => {
   cancelTts();
   speakText(
-    'This is a test of the alert text to speech system.', 0.92,
+    'This is a test of the alert text to speech system.',
     showError,
     () => showToast('Speaking now via server-side text to speech.', 'success')
   );
@@ -1089,7 +1092,15 @@ function isCurrentlyDay() {
   const nowM = new Date().getHours() * 60 + new Date().getMinutes();
   if (sunriseMins !== null && sunsetMins !== null)
     return nowM >= sunriseMins && nowM < sunsetMins;
-  return nowM >= 7 * 60 && nowM < 19 * 60; // rough fallback before first fetch
+  // Fallback before the first successful sunrise/sunset fetch (or after one
+  // fails). Was 7am-7pm, which is wrong for a good chunk of the year here —
+  // Corpus Christi's sunset runs past 8:30pm in summer, so anyone loading
+  // the page in the evening saw an incorrect "Night" flash before the real
+  // data arrived a few seconds later, and on repeated reloads, repeated
+  // flicker between the two. Widened generously to the realistic year-round
+  // sunrise/sunset range for this latitude — false "day" at the very edges
+  // of dawn/dusk is a much smaller error than false "night" in broad daylight.
+  return nowM >= 6 * 60 && nowM < 20 * 60 + 45;
 }
 
 async function fetchWeather() {
@@ -1108,6 +1119,23 @@ async function fetchWeather() {
       signal: AbortSignal.timeout(10000),
     }).then(r => r.ok ? r.json() : Promise.reject(new Error('OM ' + r.status))),
   ]);
+
+  // Parse sunrise/sunset FIRST, before deciding the icon/canvas mode below —
+  // these used to update after, so every fetch cycle briefly judged day/night
+  // using the *previous* cycle's (up to 10min stale) sunrise/sunset instead
+  // of the values just fetched in this same cycle.
+  if (omResult.status === 'fulfilled') {
+    const d = omResult.value;
+    if (d.daily?.sunrise?.[0] && d.daily?.sunset?.[0]) {
+      const parseISO = iso => {
+        const [hh, mm] = iso.split('T')[1].split(':').map(Number);
+        return hh * 60 + mm;
+      };
+      sunriseMins = parseISO(d.daily.sunrise[0]);
+      sunsetMins  = parseISO(d.daily.sunset[0]);
+      applyTheme();
+    }
+  }
 
   // ── Current conditions from NWS (actual measured data) ──
   if (nwsResult.status === 'fulfilled') {
@@ -1144,19 +1172,9 @@ async function fetchWeather() {
   document.getElementById('lock-wx-temp').textContent = document.getElementById('wx-temp').textContent;
   document.getElementById('lock-wx-desc').textContent = document.getElementById('wx-desc').textContent;
 
-  // ── Forecast from Open-Meteo (hi/lo, rain chart, sunrise/sunset) ──
+  // ── Forecast from Open-Meteo (hi/lo, rain chart) ──
   if (omResult.status === 'fulfilled') {
     const d = omResult.value;
-
-    if (d.daily?.sunrise?.[0] && d.daily?.sunset?.[0]) {
-      const parseISO = iso => {
-        const [hh, mm] = iso.split('T')[1].split(':').map(Number);
-        return hh * 60 + mm;
-      };
-      sunriseMins = parseISO(d.daily.sunrise[0]);
-      sunsetMins  = parseISO(d.daily.sunset[0]);
-      applyTheme();
-    }
 
     if (d.daily) {
       document.getElementById('wx-hi-lo').textContent =
@@ -1403,15 +1421,16 @@ settingsModal.addEventListener('click', e => { if (e.target === settingsModal) s
 
 /* ── Graphics submenu (opened from Settings) ──────────────── */
 const graphicsModal = document.getElementById('graphics-modal');
-const getGlassEnabled = () => localStorage.getItem('gfxBlur') !== 'false';
+const getGlassMode = () => localStorage.getItem('gfxGlass') || 'full';
 
 function applyGlassSetting() {
-  document.documentElement.dataset.glass = getGlassEnabled() ? 'on' : 'off';
+  document.documentElement.dataset.glass = getGlassMode();
 }
 applyGlassSetting();
 
 document.getElementById('graphics-open-btn').addEventListener('click', () => {
-  document.getElementById('toggle-gfx-blur').checked      = getGlassEnabled();
+  document.querySelectorAll('#gfx-glass .theme-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.val === getGlassMode()));
   document.getElementById('toggle-gfx-lightning').checked = getLightningEnabled();
   document.querySelectorAll('#gfx-wx-quality .theme-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.val === getWxQuality()));
@@ -1429,8 +1448,12 @@ graphicsModal.addEventListener('click', e => {
   settingsModal.hidden = false;
 });
 
-document.getElementById('toggle-gfx-blur').addEventListener('change', e => {
-  localStorage.setItem('gfxBlur', e.target.checked);
+document.getElementById('gfx-glass').addEventListener('click', e => {
+  const btn = e.target.closest('.theme-opt');
+  if (!btn) return;
+  localStorage.setItem('gfxGlass', btn.dataset.val);
+  document.querySelectorAll('#gfx-glass .theme-opt').forEach(b =>
+    b.classList.toggle('active', b === btn));
   applyGlassSetting();
 });
 
@@ -1764,8 +1787,8 @@ function fillCalEvents(events) {
       allDay.forEach(ev => {
         const chip = document.createElement('div');
         chip.className = 'allday-chip';
-        chip.style.background = displayColorFor(ev);
-        chip.textContent = displayTitleFor(ev);
+        chip.style.background = ev.color;
+        chip.textContent = ev.title;
         chip.addEventListener('click', () => showEventDetail(ev));
         adCol.appendChild(chip);
       });
@@ -1795,13 +1818,12 @@ function placeEventBlock(col, ev) {
   el.style.cssText =
     `top:${topPx}px;height:${heightPx}px;` +
     `left:calc(${ev._left}% + 2px);width:calc(${ev._width}% - 4px);` +
-    `background:${displayColorFor(ev)};`;
+    `background:${ev.color};`;
 
-  const hidden     = ev.is_private && !privacyRevealed;
-  const showTime   = !hidden && heightPx >= 36;
-  const showPerson = !hidden && heightPx >= 50 && ev.person;
+  const showTime   = heightPx >= 36;
+  const showPerson = heightPx >= 50 && ev.person;
   el.innerHTML =
-    `<div class="ev-title">${escHtml(displayTitleFor(ev))}</div>` +
+    `<div class="ev-title">${escHtml(ev.title)}</div>` +
     (showTime   ? `<div class="ev-time">${fmt12h(ev.start_time)}${ev.end_time ? ' – ' + fmt12h(ev.end_time) : ''}</div>` : '') +
     (showPerson ? `<div class="ev-person">${escHtml(ev.person)}</div>` : '');
 
@@ -1911,10 +1933,9 @@ function fillMonthEvents(events) {
     const container = cell.querySelector('.cal-month-events');
     const chip = document.createElement('div');
     chip.className = 'cal-month-chip';
-    chip.style.background = displayColorFor(ev);
-    const hidden = ev.is_private && !privacyRevealed;
-    chip.textContent = hidden ? displayTitleFor(ev)
-      : (ev.all_day || !ev.start_time) ? ev.title
+    chip.style.background = ev.color;
+    chip.textContent = (ev.all_day || !ev.start_time)
+      ? ev.title
       : `${fmt12h(ev.start_time)} ${ev.title}`;
     chip.addEventListener('click', () => showEventDetail(ev));
     container.appendChild(chip);

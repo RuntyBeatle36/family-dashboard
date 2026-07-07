@@ -317,10 +317,13 @@ app.post('/api/tts', (req, res) => {
   if (!text) return res.status(400).json({ error: 'text required' });
 
   try {
-    const wav = execFileSync('espeak-ng', ['--stdout', text], {
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 10000,
-    });
+    // Defaults (en male, ~175wpm) read as flat/robotic and run words together.
+    // en-us+f3 is a noticeably less harsh voice; slower speed (150wpm) and a
+    // touch of extra word-gap both trade a little naturalness for clarity.
+    const wav = execFileSync('espeak-ng',
+      ['-v', 'en-us+f3', '-s', '150', '-p', '48', '-g', '3', '--stdout', text],
+      { maxBuffer: 10 * 1024 * 1024, timeout: 10000 }
+    );
     res.set('Content-Type', 'audio/wav');
     res.send(wav);
   } catch (err) {
