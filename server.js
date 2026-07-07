@@ -174,6 +174,49 @@ app.post('/api/calendar', (req, res) => {
   res.json(db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(info.lastInsertRowid));
 });
 
+// PATCH /api/calendar/:id — edit an event. Always applies to the whole
+// series for a recurring event (no per-occurrence edit, unlike delete);
+// existing excluded_dates are left as-is.
+app.patch('/api/calendar/:id', (req, res) => {
+  const existing = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+
+  const {
+    title, description, person, color, event_date, start_time, end_time, all_day,
+    recurrence, recurrence_interval, recurrence_until,
+  } = req.body;
+  if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
+  if (!event_date)    return res.status(400).json({ error: 'Date required' });
+
+  const safeColor    = /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#4f8ef7';
+  const safeRecur    = ['none','daily','weekly','monthly','monthly_weekday','yearly'].includes(recurrence)
+    ? recurrence : 'none';
+  const safeInterval = Math.min(99, Math.max(1, parseInt(recurrence_interval, 10) || 1));
+
+  db.prepare(`
+    UPDATE calendar_events SET
+      title = ?, description = ?, person = ?, color = ?, event_date = ?,
+      start_time = ?, end_time = ?, all_day = ?,
+      recurrence = ?, recurrence_interval = ?, recurrence_until = ?
+    WHERE id = ?
+  `).run(
+    title.trim().slice(0, 120),
+    (description || '').trim().slice(0, 500),
+    (person || '').trim().slice(0, 40),
+    safeColor,
+    event_date,
+    start_time  || null,
+    end_time    || null,
+    all_day ? 1 : 0,
+    safeRecur,
+    safeRecur === 'none' ? 1 : safeInterval,
+    recurrence_until || null,
+    req.params.id
+  );
+
+  res.json(db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id));
+});
+
 // DELETE /api/calendar/:id            — delete the event (all occurrences, if recurring)
 // DELETE /api/calendar/:id?date=YYYY-MM-DD — delete just that one occurrence of a
 //   recurring event (recorded in excluded_dates, checked by expandEvent below).

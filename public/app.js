@@ -55,6 +55,8 @@ let viewOffset    = 0;      // days / weeks / months from today, depending on ca
 let calEvents     = [];
 let detailEventId   = null;
 let detailEventDate = null; // display_date of the occurrence currently shown
+let detailEventFull = null; // full event object currently shown, for Edit
+let editingEventId  = null; // set while the Add Event form is reused for editing
 let selectedColor = COLORS[0].hex;
 
 // Sunrise/sunset from Open-Meteo (updated each weather fetch)
@@ -171,13 +173,15 @@ function addOneHour(str) {
 }
 
 let toastTimer;
-function showError(msg) {
+function showToast(msg, kind = 'error') {
   const el = document.getElementById('error-toast');
   el.textContent = msg;
+  el.classList.toggle('toast-success', kind === 'success');
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
 }
+function showError(msg) { showToast(msg, 'error'); }
 
 /* ══════════════════════════════════════════════════════════
    CLOCK & DATE
@@ -725,6 +729,7 @@ const ALERT_ICON = { Extreme: '🚨', Severe: '🚨', Moderate: '⚠️', Minor:
 /* ── Alert sound & TTS ────────────────────────────────────── */
 const getSoundEnabled = () => localStorage.getItem('alertSound') === 'true';
 const getTtsEnabled   = () => localStorage.getItem('alertTts')   === 'true';
+const getBootSoundEnabled = () => localStorage.getItem('bootSound') !== 'false'; // default on
 
 let audioCtx = null;
 function getAudioCtx() {
@@ -769,23 +774,53 @@ function playAlertSound() {
   catch { /* AudioContext unavailable */ }
 }
 
+// Soft ascending sine chime (C5-E5-G5-C6) — deliberately the opposite
+// character of the alert beeps (sine vs. square, gentle vs. urgent).
+function playBootChime() {
+  try {
+    const ctx   = getAudioCtx();
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    const dur   = 0.5;
+    const gap   = 0.14;
+    const peak  = 0.28;
+    const t0    = ctx.currentTime;
+    notes.forEach((freq, i) => {
+      const start = t0 + i * gap;
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(peak, start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      osc.start(start);
+      osc.stop(start + dur + 0.05);
+    });
+  } catch { /* AudioContext unavailable */ }
+}
+
 // Linux/Chromium (e.g. Raspberry Pi OS) commonly has speechSynthesis defined
 // but zero voices registered unless a system speech engine is installed —
 // it's not a bug in this code, there's just nothing for it to talk through.
 // Surface that distinctly instead of a generic/silent failure.
-function speakText(text, rate, onerror) {
+function speakText(text, rate, onerror, onsuccess) {
   if (!window.speechSynthesis) {
     onerror?.('Text-to-speech is not available in this browser.');
     return;
   }
-  if (window.speechSynthesis.getVoices().length === 0) {
-    onerror?.('No text-to-speech voices are installed. On a Raspberry Pi, try: sudo apt install speech-dispatcher espeak-ng, then reboot.');
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length === 0) {
+    console.warn('No TTS voices installed. On a Raspberry Pi: sudo apt install speech-dispatcher espeak-ng, then reboot.');
+    onerror?.('No text-to-speech voices installed on this device.');
     return;
   }
   const u = new SpeechSynthesisUtterance(text);
   u.rate = rate;
   u.onerror = e => onerror?.(`TTS error (${e.error || 'unknown'}).`);
   window.speechSynthesis.speak(u);
+  onsuccess?.(voices.length);
 }
 
 function speakAlerts(sorted) {
@@ -817,7 +852,11 @@ document.getElementById('debug-test-beep').addEventListener('click', () => {
 
 document.getElementById('debug-test-tts').addEventListener('click', () => {
   window.speechSynthesis?.cancel();
-  speakText('This is a test of the alert text to speech system.', 0.92, showError);
+  speakText(
+    'This is a test of the alert text to speech system.', 0.92,
+    showError,
+    n => showToast(`Speaking now — ${n} voice${n === 1 ? '' : 's'} available.`, 'success')
+  );
 });
 
 /* ── Render alert banner (scrolling ticker) ───────────────── */
@@ -1109,11 +1148,15 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   zipSelect.value = getActiveZip().zip;
   updateZipCoords();
   applyTheme();
+  document.getElementById('toggle-boot-sound').checked  = getBootSoundEnabled();
   document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
   document.getElementById('toggle-alert-tts').checked   = getTtsEnabled();
   settingsModal.hidden = false;
 });
 
+document.getElementById('toggle-boot-sound').addEventListener('change', e => {
+  localStorage.setItem('bootSound', e.target.checked);
+});
 document.getElementById('toggle-alert-sound').addEventListener('change', e => {
   localStorage.setItem('alertSound', e.target.checked);
 });
@@ -1369,8 +1412,13 @@ function getDayStart() {
 // would actually change the rendered output has changed since last poll.
 let _lastCalKey    = null;
 let _lastEventsSig = null;
+// Was ID-only, which was safe back when events could only be added/removed
+// (both change ID membership) — but editing an event in place keeps the
+// same ID with different content, which an ID-only signature can't see,
+// so an edited title/time/color would silently not appear until the view
+// or date changed and forced a rebuild anyway. Stringify full content instead.
 function eventsSig(events) {
-  return events.map(e => e.id).sort((a, b) => a - b).join(',');
+  return JSON.stringify(events.slice().sort((a, b) => a.id - b.id));
 }
 
 async function loadCalendar() {
@@ -1760,6 +1808,48 @@ function closeAddModal() {
   swatchContainer.querySelectorAll('.color-swatch').forEach((el, i) =>
     el.classList.toggle('selected', i === 0));
   selectedColor = COLORS[0].hex;
+  editingEventId = null;
+  document.getElementById('add-modal-title').textContent  = 'Add Event';
+  document.getElementById('add-modal-submit').textContent = 'Save Event';
+  document.getElementById('edit-recur-hint').hidden = true;
+}
+
+// Reuses the Add Event form/modal for editing — populates every field from
+// the existing event, then the submit handler below routes to PATCH instead
+// of POST based on `editingEventId`. Always edits the whole series for a
+// recurring event (there's no per-occurrence edit, unlike delete).
+function openEditModal(ev) {
+  editingEventId = ev.id;
+
+  document.getElementById('ev-title').value  = ev.title;
+  document.getElementById('ev-desc').value   = ev.description || '';
+  document.getElementById('ev-person').value = ev.person || '';
+
+  selectedColor = ev.color;
+  swatchContainer.querySelectorAll('.color-swatch').forEach((el, i) =>
+    el.classList.toggle('selected', COLORS[i].hex === ev.color));
+
+  document.getElementById('ev-date').value = ev.event_date;
+
+  allDayCbx.checked = !!ev.all_day;
+  timeFields.style.display = allDayCbx.checked ? 'none' : 'flex';
+  document.getElementById('ev-start').value = ev.start_time || '';
+  document.getElementById('ev-end').value   = ev.end_time   || '';
+
+  recurSel.value = ev.recurrence || 'none';
+  const repeats = recurSel.value !== 'none';
+  untilRow.style.display    = repeats ? 'flex' : 'none';
+  intervalRow.style.display = repeats ? 'flex' : 'none';
+  document.getElementById('ev-interval-unit').textContent = RECUR_UNIT_LABELS[recurSel.value] || '';
+  document.getElementById('ev-recur-interval').value = ev.recurrence_interval || 1;
+  document.getElementById('ev-until').value = ev.recurrence_until || '';
+
+  document.getElementById('add-modal-title').textContent  = 'Edit Event';
+  document.getElementById('add-modal-submit').textContent = 'Save Changes';
+  document.getElementById('edit-recur-hint').hidden = !repeats;
+
+  addModal.hidden = false;
+  document.getElementById('ev-title').focus();
 }
 
 document.getElementById('add-modal-cancel').addEventListener('click', closeAddModal);
@@ -1768,11 +1858,12 @@ addModal.addEventListener('click', e => { if (e.target === addModal) closeAddMod
 addForm.addEventListener('submit', async e => {
   e.preventDefault();
   const submitBtn = addForm.querySelector('[type="submit"]');
+  const isEdit = editingEventId !== null;
   submitBtn.disabled = true;
   submitBtn.textContent = 'Saving…';
   try {
     const repeats = recurSel.value !== 'none';
-    await api('POST', '/api/calendar', {
+    const payload = {
       title:                document.getElementById('ev-title').value.trim(),
       description:          document.getElementById('ev-desc').value.trim(),
       person:               document.getElementById('ev-person').value.trim(),
@@ -1784,14 +1875,16 @@ addForm.addEventListener('submit', async e => {
       recurrence:           recurSel.value,
       recurrence_interval:  repeats ? (parseInt(document.getElementById('ev-recur-interval').value, 10) || 1) : 1,
       recurrence_until:     repeats ? (document.getElementById('ev-until').value || null) : null,
-    });
+    };
+    if (isEdit) await api('PATCH', `/api/calendar/${editingEventId}`, payload);
+    else        await api('POST', '/api/calendar', payload);
     closeAddModal();
     loadCalendar();
   } catch (err) {
-    showError('Could not save event: ' + err.message);
+    showError(`Could not ${isEdit ? 'save changes' : 'save event'}: ` + err.message);
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Save Event';
+    submitBtn.textContent = editingEventId !== null ? 'Save Changes' : 'Save Event';
   }
 });
 
@@ -1823,6 +1916,7 @@ function describeRecurrence(ev) {
 function showEventDetail(ev) {
   detailEventId   = ev.id;
   detailEventDate = ev.display_date;
+  detailEventFull = ev;
   document.getElementById('detail-color-bar').style.background = ev.color;
   document.getElementById('detail-title').textContent = ev.title;
 
@@ -1866,6 +1960,12 @@ function showEventDetail(ev) {
 
 document.getElementById('detail-close').addEventListener('click', () => { detailModal.hidden = true; });
 detailModal.addEventListener('click', e => { if (e.target === detailModal) detailModal.hidden = true; });
+
+document.getElementById('detail-edit').addEventListener('click', () => {
+  if (!detailEventFull) return;
+  detailModal.hidden = true;
+  openEditModal(detailEventFull);
+});
 
 document.getElementById('detail-delete').addEventListener('click', async () => {
   if (!detailEventId) return;
@@ -2009,3 +2109,18 @@ if ('serviceWorker' in navigator) {
 document.querySelectorAll('.cal-view-btn').forEach(b =>
   b.classList.toggle('active', b.dataset.view === calView));
 loadCalendar();
+
+// Chromium's autoplay policy can block audio before any user gesture, so
+// this tries immediately and — only if that was actually blocked — falls
+// back to the very first tap/click anywhere on the page.
+if (getBootSoundEnabled()) {
+  let bootSoundPlayed = false;
+  const tryBootChime = () => {
+    if (bootSoundPlayed) return;
+    const ctx = getAudioCtx();
+    playBootChime();
+    if (ctx.state === 'running') bootSoundPlayed = true;
+  };
+  tryBootChime();
+  document.addEventListener('pointerdown', tryBootChime, { once: true });
+}

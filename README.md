@@ -121,10 +121,15 @@ either way, very different performance. Before tuning anything else:
    gpu_mem=128
    ```
 3. Add these flags to whichever `chromium-browser` launch line you use below:
-   `--enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist`
+   `--enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required`
 4. After it's running, open `chromium-browser --kiosk chrome://gpu` once and
    check that rasterization/compositing say "Hardware accelerated" — if they
    say "Software only", fix that before assuming the app itself is slow.
+
+The `--autoplay-policy=no-user-gesture-required` flag above isn't about
+performance — without it, Chromium blocks all audio (the startup chime,
+alert beeps, TTS) until the very first tap, since kiosk mode never gets an
+initial user gesture the way a normal browser tab would.
 
 ### Option A — autostart (Raspberry Pi OS with desktop)
 
@@ -139,7 +144,7 @@ Paste:
 [Desktop Entry]
 Type=Application
 Name=Family Dashboard Kiosk
-Exec=chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist http://localhost:3000
+Exec=chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required http://localhost:3000
 ```
 
 ### Option B — via `/etc/rc.local` (lite / headless)
@@ -147,7 +152,7 @@ Exec=chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-ras
 Add before `exit 0`:
 
 ```bash
-su pi -c 'DISPLAY=:0 chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist http://localhost:3000 &'
+su pi -c 'DISPLAY=:0 chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required http://localhost:3000 &'
 ```
 
 ### Disable screen blanking

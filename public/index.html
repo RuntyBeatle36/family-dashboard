@@ -136,7 +136,10 @@
 <!-- ── Add Event Modal ───────────────────────────────────────── -->
 <div id="add-modal" class="modal-overlay" hidden>
   <div class="modal">
-    <h3 class="modal-title">Add Event</h3>
+    <h3 class="modal-title" id="add-modal-title">Add Event</h3>
+    <p class="settings-desc" id="edit-recur-hint" hidden>
+      Editing a recurring event updates the entire series (all occurrences).
+    </p>
     <form id="add-event-form" class="modal-form" autocomplete="off">
 
       <label class="field-label">Title
@@ -199,7 +202,7 @@
 
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="add-modal-cancel">Cancel</button>
-        <button type="submit" class="btn btn-accent">Save Event</button>
+        <button type="submit" class="btn btn-accent" id="add-modal-submit">Save Event</button>
       </div>
     </form>
   </div>
@@ -212,7 +215,10 @@
     <h3 id="detail-title" class="modal-title"></h3>
     <div id="detail-body" class="detail-body"></div>
     <div class="modal-actions detail-actions">
-      <button class="btn btn-ghost" id="detail-close">Close</button>
+      <div class="detail-safe-actions">
+        <button class="btn btn-ghost" id="detail-close">Close</button>
+        <button class="btn btn-accent" id="detail-edit">✏️ Edit</button>
+      </div>
       <div class="detail-delete-group">
         <button class="btn btn-danger-outline" id="detail-delete-occurrence" hidden>Delete This Occurrence</button>
         <button class="btn btn-danger" id="detail-delete">Delete Event</button>
@@ -244,6 +250,15 @@
         <select id="zip-select"></select>
       </label>
       <p id="zip-coords" class="zip-coords"></p>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">🔔 Startup Sound</div>
+      <p class="settings-desc">A short chime when the dashboard finishes loading.</p>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-boot-sound">
+        Play a sound on startup (default: on)
+      </label>
     </div>
 
     <div class="settings-section">

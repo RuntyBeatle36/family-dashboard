@@ -1176,6 +1176,16 @@ select {
   text-align: center;
 }
 
+.detail-safe-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.detail-safe-actions .btn {
+  width: 100%;
+  text-align: center;
+}
+
 .detail-color-bar {
   height: 5px;
   border-radius: 3px;
@@ -1238,6 +1248,11 @@ select {
 }
 
 .error-toast[hidden] { display: none; }
+
+.error-toast.toast-success {
+  background: var(--success);
+  box-shadow: 0 4px 22px rgba(77,216,152,0.45);
+}
 
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 700px) {
