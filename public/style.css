@@ -1236,7 +1236,11 @@ select {
 
   .cal-panel {
     height: 520px;
-    flex-shrink: 0;
+    /* Base .cal-panel has `flex: 1` (flex-basis: 0%), which — in a column
+       flex container — wins over `height` for sizing. Without pinning
+       flex-basis here too, the height above is silently ignored and the
+       panel collapses to ~150px, clipping the actual hour grid entirely. */
+    flex: 0 0 auto;
     border-right: none;
     border-bottom: 1px solid var(--glass-border);
   }
@@ -1246,6 +1250,15 @@ select {
   .wx-meta     { display: none; }
   .weather-block { flex: none; }
   .clock       { font-size: 2.4rem; }
+
+  /* cal-nav's controls (prev/next, label, Today, view toggle, Add Event)
+     used to overflow off the right edge with no way to reach them — wrap
+     instead. */
+  .cal-nav {
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+  }
+  .cal-week-label { font-size: 0.88rem; }
 }
 
 @media (max-width: 420px) {

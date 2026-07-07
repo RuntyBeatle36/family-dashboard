@@ -347,6 +347,18 @@
       </label>
     </div>
 
+    <div class="settings-section">
+      <div class="settings-section-title">🔊 Debug: Test Audio</div>
+      <p class="settings-desc">
+        Plays/speaks immediately, ignoring the Alert Sound / Read Aloud toggles above —
+        use this to check the Pi's audio output itself, separate from alert settings.
+      </p>
+      <div class="debug-wx-grid">
+        <button class="btn btn-ghost btn-sm" id="debug-test-beep">🔔 Test Alert Beep</button>
+        <button class="btn btn-ghost btn-sm" id="debug-test-tts">🗣️ Test Text-to-Speech</button>
+      </div>
+    </div>
+
     <div class="settings-section" style="margin-bottom:0;border-bottom:none">
       <div class="settings-section-title">🧪 Debug: Simulate Weather</div>
       <p class="settings-desc">Force a visual to preview animations. Resets on next weather refresh.</p>

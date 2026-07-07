@@ -47,7 +47,10 @@ const COLORS = [
 ];
 
 /* ── App state ────────────────────────────────────────────── */
-let calView       = 'week'; // 'day' | 'week' | 'month'
+// Week/Month need room for 7 columns; on a phone-width screen there simply
+// isn't any, so default to Day view there instead of an unreadably squeezed
+// week grid. (Only affects the initial view — tapping Week/Month still works.)
+let calView = window.matchMedia('(max-width: 700px)').matches ? 'day' : 'week';
 let viewOffset    = 0;      // days / weeks / months from today, depending on calView
 let calEvents     = [];
 let detailEventId   = null;
@@ -730,29 +733,31 @@ function getAudioCtx() {
   return audioCtx;
 }
 
+function playBeepSequence(ctx) {
+  const beep = (freq, start, dur) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.22, start + 0.01);
+    gain.gain.setValueAtTime(0.22, start + dur - 0.02);
+    gain.gain.linearRampToValueAtTime(0, start + dur);
+    osc.start(start);
+    osc.stop(start + dur);
+  };
+  const t = ctx.currentTime;
+  beep(960, t,       0.18);
+  beep(960, t + 0.25, 0.18);
+  beep(960, t + 0.50, 0.18);
+}
+
 function playAlertSound() {
   if (!getSoundEnabled()) return;
-  try {
-    const ctx = getAudioCtx();
-    const beep = (freq, start, dur) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'square';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.22, start + 0.01);
-      gain.gain.setValueAtTime(0.22, start + dur - 0.02);
-      gain.gain.linearRampToValueAtTime(0, start + dur);
-      osc.start(start);
-      osc.stop(start + dur);
-    };
-    const t = ctx.currentTime;
-    beep(960, t,       0.18);
-    beep(960, t + 0.25, 0.18);
-    beep(960, t + 0.50, 0.18);
-  } catch { /* AudioContext unavailable */ }
+  try { playBeepSequence(getAudioCtx()); }
+  catch { /* AudioContext unavailable */ }
 }
 
 function speakAlerts(sorted) {
@@ -777,6 +782,25 @@ function speakAlerts(sorted) {
     window.speechSynthesis.speak(u);
   }
 }
+
+/* ── Debug: test audio (bypasses the enabled toggles above — this is for
+   checking the Pi's actual audio output, not alert settings) ──────── */
+document.getElementById('debug-test-beep').addEventListener('click', () => {
+  try { playBeepSequence(getAudioCtx()); }
+  catch (err) { showError('Audio test failed: ' + err.message); }
+});
+
+document.getElementById('debug-test-tts').addEventListener('click', () => {
+  if (!window.speechSynthesis) {
+    showError('Text-to-speech is not available in this browser.');
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance('This is a test of the alert text to speech system.');
+  u.rate = 0.92;
+  u.onerror = e => showError('TTS error: ' + (e.error || 'unknown'));
+  window.speechSynthesis.speak(u);
+});
 
 /* ── Render alert banner (scrolling ticker) ───────────────── */
 let lastAlertKey = '';
@@ -1964,4 +1988,6 @@ if ('serviceWorker' in navigator) {
 }
 
 /* ── Boot ─────────────────────────────────────────────────── */
+document.querySelectorAll('.cal-view-btn').forEach(b =>
+  b.classList.toggle('active', b.dataset.view === calView));
 loadCalendar();
