@@ -305,6 +305,32 @@ function getGpuInfo() {
   };
 }
 
+// ── Server-side TTS ─────────────────────────────────────────────
+// Chromium's built-in speechSynthesis has been unreliable on Raspberry Pi OS
+// (depends on Chromium's Linux TTS platform support + speech-dispatcher
+// wiring, both of which are inconsistent across builds). Synthesizing with
+// espeak-ng directly on the server and handing back a plain WAV file
+// sidesteps that entire fragile chain — the browser just plays audio,
+// which is far more universally supported than Web Speech API on Linux.
+app.post('/api/tts', (req, res) => {
+  const text = (req.body?.text || '').toString().trim().slice(0, 500);
+  if (!text) return res.status(400).json({ error: 'text required' });
+
+  try {
+    const wav = execFileSync('espeak-ng', ['--stdout', text], {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 10000,
+    });
+    res.set('Content-Type', 'audio/wav');
+    res.send(wav);
+  } catch (err) {
+    res.status(500).json({
+      error: 'espeak-ng unavailable or failed',
+      detail: err.message,
+    });
+  }
+});
+
 app.get('/api/sysstats', (req, res) => {
   const totalMem = os.totalmem();
   const freeMem  = os.freemem();

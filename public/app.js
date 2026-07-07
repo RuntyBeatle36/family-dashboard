@@ -60,31 +60,44 @@ let editingEventId  = null; // set while the Add Event form is reused for editin
 let selectedColor = COLORS[0].hex;
 
 /* ══════════════════════════════════════════════════════════
-   EVENT PRIVACY
-   Private events show as "🔒 Busy" everywhere on the shared display, with
-   no title/time/person visible — tapping ANYWHERE reveals real titles for
-   a while, then automatically hides them again. Deliberately no per-event
-   reveal (findable/tappable target) — a family member who won't remember
-   "which thing do I tap" just needs to know "tap the screen".
+   EVENT PRIVACY + LOCK SCREEN
+   Private events show as "🔒 Busy" (dashboard) / "Private event" (Lock
+   Screen) everywhere — no title/time/person visible. Tapping ANYWHERE
+   reveals real titles — and, if Lock Screen is enabled, opens the full
+   dashboard — for a configurable while, then automatically returns to
+   hidden/locked. Deliberately no per-event reveal target: a family member
+   who won't remember "which thing do I tap" just needs "tap the screen".
    ══════════════════════════════════════════════════════════ */
-const PRIVACY_REVEAL_MS = 45000;
-let privacyRevealed     = false;
-let privacyRevealTimer  = null;
+const getLockScreenEnabled = () => localStorage.getItem('lockScreenEnabled') === 'true';
+const getLockRevealSecs    = () => parseInt(localStorage.getItem('lockRevealSecs'), 10) || 60;
+const getLockAgendaEnabled = () => localStorage.getItem('lockAgendaEnabled') !== 'false'; // default on
+
+let privacyRevealed    = false;
+let privacyRevealTimer = null;
 
 function privacyRerender() {
   if (calView === 'month') fillMonthEvents(calEvents);
   else fillCalEvents(calEvents);
 }
 
+function updateLockUI() {
+  const locked = getLockScreenEnabled() && !privacyRevealed;
+  document.getElementById('lock-screen').hidden     = !locked;
+  document.querySelector('.top-bar').style.display  = locked ? 'none' : '';
+  document.querySelector('.app-body').style.display = locked ? 'none' : '';
+  if (locked) renderLockScreen();
+  privacyRerender();
+}
+
 function revealPrivacy() {
   const wasHidden = !privacyRevealed;
   privacyRevealed = true;
-  if (wasHidden) privacyRerender();
+  if (wasHidden) updateLockUI();
   clearTimeout(privacyRevealTimer);
   privacyRevealTimer = setTimeout(() => {
     privacyRevealed = false;
-    privacyRerender();
-  }, PRIVACY_REVEAL_MS);
+    updateLockUI();
+  }, getLockRevealSecs() * 1000);
 }
 document.addEventListener('pointerdown', revealPrivacy, true);
 
@@ -94,6 +107,44 @@ function displayTitleFor(ev) {
 function displayColorFor(ev) {
   return (ev.is_private && !privacyRevealed) ? '#7a8296' : ev.color;
 }
+
+/* ── Lock Screen agenda ("Today you have" / "Tomorrow you have") ───── */
+let lockAgendaEvents = { today: [], tomorrow: [] };
+
+async function loadLockAgenda() {
+  const todayD    = new Date();
+  todayD.setHours(0, 0, 0, 0);
+  const tomorrowD = addDays(todayD, 1);
+  const todayStr  = toYMD(todayD);
+  const tomorrowStr = toYMD(tomorrowD);
+  try {
+    const events = await api('GET', `/api/calendar?start=${todayStr}&end=${tomorrowStr}`);
+    lockAgendaEvents = {
+      today:    events.filter(e => e.display_date === todayStr),
+      tomorrow: events.filter(e => e.display_date === tomorrowStr),
+    };
+  } catch { lockAgendaEvents = { today: [], tomorrow: [] }; }
+  if (!document.getElementById('lock-screen').hidden) renderLockAgenda();
+}
+
+function renderLockAgenda() {
+  const listFor = events => {
+    if (!events.length) return '<div class="lock-agenda-empty">Nothing scheduled</div>';
+    return events.map(ev =>
+      `<div class="lock-agenda-item">${ev.is_private ? '🔒 Private event' : escHtml(ev.title)}</div>`
+    ).join('');
+  };
+  document.getElementById('lock-agenda-today').innerHTML    = listFor(lockAgendaEvents.today);
+  document.getElementById('lock-agenda-tomorrow').innerHTML = listFor(lockAgendaEvents.tomorrow);
+}
+
+function renderLockScreen() {
+  document.getElementById('lock-agenda').hidden = !getLockAgendaEnabled();
+  if (getLockAgendaEnabled()) renderLockAgenda();
+}
+
+loadLockAgenda();
+setInterval(loadLockAgenda, REFRESH_MS);
 
 // Sunrise/sunset from Open-Meteo (updated each weather fetch)
 let sunriseMins = null; // minutes since midnight
@@ -234,6 +285,10 @@ function updateClock() {
                 'July','August','September','October','November','December'];
   document.getElementById('date-str').textContent =
     `${DAYS[now.getDay()]}, ${MONS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+
+  // Mirror into the Lock Screen too, so it stays live without its own timer
+  document.getElementById('lock-clock').textContent = document.getElementById('clock').textContent;
+  document.getElementById('lock-date').textContent  = document.getElementById('date-str').textContent;
 
   // Re-evaluate auto theme every minute
   if (now.getSeconds() === 0) applyTheme();
@@ -837,31 +892,61 @@ function playBootChime() {
   } catch { /* AudioContext unavailable */ }
 }
 
-// Linux/Chromium (e.g. Raspberry Pi OS) commonly has speechSynthesis defined
-// but zero voices registered unless a system speech engine is installed —
-// it's not a bug in this code, there's just nothing for it to talk through.
-// Surface that distinctly instead of a generic/silent failure.
-function speakText(text, rate, onerror, onsuccess) {
-  if (!window.speechSynthesis) {
-    onerror?.('Text-to-speech is not available in this browser.');
-    return;
+// Server-side TTS (/api/tts, espeak-ng) instead of the browser's own
+// speechSynthesis — Chromium's Linux TTS platform support has proven
+// unreliable across builds/distros, whereas espeak-ng running directly is
+// deterministic. The browser's job shrinks to "play this audio file",
+// which is far more universally supported than the Web Speech API.
+// Utterances are queued and played one at a time, same as speechSynthesis
+// did natively — a plain <audio> element has no such built-in queue.
+let ttsQueue        = [];
+let ttsPlaying      = false;
+let currentTtsAudio = null;
+
+function cancelTts() {
+  ttsQueue.forEach(item => URL.revokeObjectURL(item.url));
+  ttsQueue = [];
+  if (currentTtsAudio) { currentTtsAudio.pause(); currentTtsAudio = null; }
+  ttsPlaying = false;
+}
+
+function processTtsQueue() {
+  if (ttsPlaying || ttsQueue.length === 0) return;
+  ttsPlaying = true;
+  const { url, rate, onerror, onsuccess } = ttsQueue.shift();
+  const audio = new Audio(url);
+  currentTtsAudio = audio;
+  audio.playbackRate = rate;
+  const done = () => { URL.revokeObjectURL(url); currentTtsAudio = null; ttsPlaying = false; processTtsQueue(); };
+  audio.onended = done;
+  audio.onerror = () => { onerror?.('Audio playback failed.'); done(); };
+  audio.play().then(() => onsuccess?.()).catch(err => { onerror?.('Playback blocked: ' + err.message); done(); });
+}
+
+async function speakText(text, rate, onerror, onsuccess) {
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.warn('TTS request failed:', body.detail || res.status);
+      onerror?.('Text-to-speech engine unavailable on this device.');
+      return;
+    }
+    const url = URL.createObjectURL(await res.blob());
+    ttsQueue.push({ url, rate, onerror, onsuccess });
+    processTtsQueue();
+  } catch (err) {
+    onerror?.('Could not reach the dashboard server for text-to-speech.');
   }
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length === 0) {
-    console.warn('No TTS voices installed. On a Raspberry Pi: sudo apt install speech-dispatcher espeak-ng, then reboot.');
-    onerror?.('No text-to-speech voices installed on this device.');
-    return;
-  }
-  const u = new SpeechSynthesisUtterance(text);
-  u.rate = rate;
-  u.onerror = e => onerror?.(`TTS error (${e.error || 'unknown'}).`);
-  window.speechSynthesis.speak(u);
-  onsuccess?.(voices.length);
 }
 
 function speakAlerts(sorted) {
-  if (!getTtsEnabled() || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
+  if (!getTtsEnabled()) return;
+  cancelTts();
   speakText(
     'The National Weather Service has issued the following alert' +
     (sorted.length > 1 ? 's' : '') + '.',
@@ -887,11 +972,11 @@ document.getElementById('debug-test-beep').addEventListener('click', () => {
 });
 
 document.getElementById('debug-test-tts').addEventListener('click', () => {
-  window.speechSynthesis?.cancel();
+  cancelTts();
   speakText(
     'This is a test of the alert text to speech system.', 0.92,
     showError,
-    n => showToast(`Speaking now — ${n} voice${n === 1 ? '' : 's'} available.`, 'success')
+    () => showToast('Speaking now via server-side text to speech.', 'success')
   );
 });
 
@@ -1053,6 +1138,11 @@ async function fetchWeather() {
     document.getElementById('wx-desc').textContent   = 'Station unavailable';
     document.getElementById('wx-updated').textContent = '';
   }
+
+  // Mirror into the Lock Screen too, so it stays live without its own fetch
+  document.getElementById('lock-wx-icon').textContent = document.getElementById('wx-icon').textContent;
+  document.getElementById('lock-wx-temp').textContent = document.getElementById('wx-temp').textContent;
+  document.getElementById('lock-wx-desc').textContent = document.getElementById('wx-desc').textContent;
 
   // ── Forecast from Open-Meteo (hi/lo, rain chart, sunrise/sunset) ──
   if (omResult.status === 'fulfilled') {
@@ -1231,6 +1321,9 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('night-dim-end').value           = getNightDimEnd();
   document.getElementById('night-brightness-slider').value = getNightBrightnessPct();
   nightDimFields.style.display = getNightDimEnabled() ? 'block' : 'none';
+  document.getElementById('toggle-lock-screen').checked = getLockScreenEnabled();
+  document.getElementById('lock-reveal-secs').value     = getLockRevealSecs();
+  document.getElementById('toggle-lock-agenda').checked = getLockAgendaEnabled();
   settingsModal.hidden = false;
 });
 
@@ -1264,6 +1357,18 @@ document.getElementById('night-dim-end').addEventListener('change', e => {
 document.getElementById('night-brightness-slider').addEventListener('input', e => {
   localStorage.setItem('nightBrightnessPct', e.target.value);
   applyBrightness();
+});
+
+document.getElementById('toggle-lock-screen').addEventListener('change', e => {
+  localStorage.setItem('lockScreenEnabled', e.target.checked);
+  updateLockUI();
+});
+document.getElementById('lock-reveal-secs').addEventListener('change', e => {
+  localStorage.setItem('lockRevealSecs', e.target.value);
+});
+document.getElementById('toggle-lock-agenda').addEventListener('change', e => {
+  localStorage.setItem('lockAgendaEnabled', e.target.checked);
+  if (!document.getElementById('lock-screen').hidden) renderLockScreen();
 });
 
 document.getElementById('debug-wx-grid').addEventListener('click', e => {
@@ -2216,6 +2321,7 @@ if ('serviceWorker' in navigator) {
 document.querySelectorAll('.cal-view-btn').forEach(b =>
   b.classList.toggle('active', b.dataset.view === calView));
 loadCalendar();
+updateLockUI(); // shows the Lock Screen immediately on load if it's enabled
 
 // Chromium's autoplay policy can block audio before any user gesture, so
 // this tries immediately and — only if that was actually blocked — falls

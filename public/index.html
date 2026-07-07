@@ -27,6 +27,28 @@
 <!-- ── Brightness dimming overlay (above everything, incl. modals) ──── -->
 <div id="brightness-overlay"></div>
 
+<!-- ── Lock Screen (ambient view; tap anywhere to open the dashboard) ── -->
+<div id="lock-screen" hidden>
+  <div class="lock-clock" id="lock-clock">--:--</div>
+  <div class="lock-date" id="lock-date"></div>
+  <div class="lock-weather">
+    <span id="lock-wx-icon">⛅</span>
+    <span id="lock-wx-temp">--°</span>
+    <span id="lock-wx-desc"></span>
+  </div>
+  <div class="lock-agenda" id="lock-agenda">
+    <div class="lock-agenda-block">
+      <div class="lock-agenda-title">Today you have</div>
+      <div class="lock-agenda-list" id="lock-agenda-today"></div>
+    </div>
+    <div class="lock-agenda-block">
+      <div class="lock-agenda-title">Tomorrow you have</div>
+      <div class="lock-agenda-list" id="lock-agenda-tomorrow"></div>
+    </div>
+  </div>
+  <div class="lock-hint">Tap anywhere to open</div>
+</div>
+
 <!-- ── Top bar ──────────────────────────────────────────────── -->
 <header class="top-bar">
 
@@ -278,6 +300,28 @@
           <input type="range" id="night-brightness-slider" min="10" max="80" value="30" />
         </label>
       </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">🔒 Lock Screen</div>
+      <p class="settings-desc">
+        An ambient screen — just the clock, weather, and a simple agenda — shown
+        by default instead of the full calendar. Tap anywhere to open the full
+        dashboard; it returns to the Lock Screen after the time below.
+        Private events always show as "Private event" here, regardless of
+        whether the dashboard itself is unlocked.
+      </p>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-lock-screen">
+        Enable Lock Screen (default: off)
+      </label>
+      <label class="field-label" style="margin-top:0.6rem">Stay unlocked for (seconds)
+        <input type="number" id="lock-reveal-secs" min="10" max="600" value="60" />
+      </label>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-lock-agenda">
+        Show "Today / Tomorrow" agenda on Lock Screen (default: on)
+      </label>
     </div>
 
     <div class="settings-section">
