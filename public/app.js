@@ -124,9 +124,14 @@ async function loadLockAgenda() {
 function renderLockAgenda() {
   const listFor = events => {
     if (!events.length) return '<div class="lock-agenda-empty">Nothing scheduled</div>';
-    return events.map(ev =>
-      `<div class="lock-agenda-item">${ev.is_private ? '🔒 Private event' : escHtml(ev.title)}</div>`
-    ).join('');
+    return events.map(ev => {
+      // Private events already hide the title — giving them their real
+      // color too would leak identity (color = person/category) through
+      // the lock screen, defeating the point of marking them private.
+      const label = ev.is_private ? '🔒 Private event' : escHtml(ev.title);
+      const bg    = ev.is_private ? 'rgba(255,255,255,0.14)' : ev.color;
+      return `<div class="lock-agenda-item" style="background:${bg}">${label}</div>`;
+    }).join('');
   };
   document.getElementById('lock-agenda-today').innerHTML    = listFor(lockAgendaEvents.today);
   document.getElementById('lock-agenda-tomorrow').innerHTML = listFor(lockAgendaEvents.tomorrow);
@@ -274,22 +279,29 @@ function showError(msg) { showToast(msg, 'error'); }
 /* ══════════════════════════════════════════════════════════
    CLOCK & DATE
    ══════════════════════════════════════════════════════════ */
+// Elements + weekday/month names cached once instead of re-fetched/rebuilt
+// on every tick — this runs once a second for the lifetime of the page.
+const clockEl     = document.getElementById('clock');
+const dateStrEl   = document.getElementById('date-str');
+const lockClockEl = document.getElementById('lock-clock');
+const lockDateEl  = document.getElementById('lock-date');
+const CLOCK_DAYS  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const CLOCK_MONS  = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+
 function updateClock() {
   const now  = new Date();
   const h    = now.getHours();
   const m    = String(now.getMinutes()).padStart(2, '0');
   const ampm = h >= 12 ? 'PM' : 'AM';
-  document.getElementById('clock').textContent = `${h % 12 || 12}:${m} ${ampm}`;
+  const clockText = `${h % 12 || 12}:${m} ${ampm}`;
+  const dateText  = `${CLOCK_DAYS[now.getDay()]}, ${CLOCK_MONS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
 
-  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const MONS = ['January','February','March','April','May','June',
-                'July','August','September','October','November','December'];
-  document.getElementById('date-str').textContent =
-    `${DAYS[now.getDay()]}, ${MONS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
-
+  clockEl.textContent   = clockText;
+  dateStrEl.textContent = dateText;
   // Mirror into the Lock Screen too, so it stays live without its own timer
-  document.getElementById('lock-clock').textContent = document.getElementById('clock').textContent;
-  document.getElementById('lock-date').textContent  = document.getElementById('date-str').textContent;
+  lockClockEl.textContent = clockText;
+  lockDateEl.textContent  = dateText;
 
   // Re-evaluate auto theme every minute
   if (now.getSeconds() === 0) applyTheme();
@@ -1157,9 +1169,16 @@ async function fetchWeather() {
     const feelsF = (hiF != null && hiF !== tempF) ? hiF
                  : (chiF != null && chiF !== tempF) ? chiF
                  : null;
-    const desc  = p.textDescription || 'Unknown';
+    // NWS sometimes reports a station observation with every numeric field
+    // present but textDescription as "" (not missing — genuinely blank).
+    // Falling back to the literal word "Unknown" there reads like an error;
+    // leaving it blank is more honest. The icon similarly shouldn't fall to
+    // the thermometer (that's reserved for "no station data at all" below) —
+    // a plain day/night icon reads better when we just lack a text label.
+    const desc = p.textDescription || '';
 
-    document.getElementById('wx-icon').textContent  = nwsIcon(desc, isCurrentlyDay());
+    document.getElementById('wx-icon').textContent  =
+      desc ? nwsIcon(desc, isCurrentlyDay()) : (isCurrentlyDay() ? '☀️' : '🌙');
     document.getElementById('wx-temp').textContent  = (tempF != null ? tempF : '--') + '°';
     document.getElementById('wx-feels').textContent = feelsF != null ? `Feels ${feelsF}°` : '';
     document.getElementById('wx-desc').textContent  = desc;
@@ -1370,6 +1389,17 @@ zipSelect.addEventListener('change', () => {
 });
 
 const nightDimFields = document.getElementById('night-dim-fields');
+
+/* ══════════════════════════════════════════════════════════
+   APP VERSION (Settings footer)
+   Fetched once — package.json version + git commit don't change while
+   the server process is running, so there's no reason to re-fetch it
+   every time the Settings modal is opened.
+   ══════════════════════════════════════════════════════════ */
+fetch('/api/version').then(r => r.json()).then(({ version, commit }) => {
+  document.getElementById('app-version').textContent =
+    'v' + version + (commit ? ` · ${commit}` : '');
+}).catch(() => {});
 
 document.getElementById('settings-btn').addEventListener('click', () => {
   zipSelect.value = getActiveZip().zip;

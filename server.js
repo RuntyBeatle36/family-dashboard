@@ -2,11 +2,22 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Computed once at startup (not per-request) — shelling out to git on every
+// hit of a tiny corner-of-settings display would be wasteful, and neither
+// value can change while this process is running.
+const APP_VERSION = require('./package.json').version;
+let GIT_COMMIT = null;
+try {
+  GIT_COMMIT = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+    cwd: __dirname, encoding: 'utf8', timeout: 1000,
+  }).trim();
+} catch { /* not a git checkout (e.g. archive deploy) — version-only display */ }
 
 const dbDir = path.join(__dirname, 'db');
 fs.mkdirSync(dbDir, { recursive: true });
@@ -59,55 +70,104 @@ for (const stmt of [
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── Prepared statements ──────────────────────────────────────────
+// node:sqlite's db.prepare() compiles the SQL text into a plan; doing that
+// fresh on every request (as before) re-parses/re-plans identical SQL on
+// every single API call. Statement objects are stateless w.r.t. bound
+// values (params are passed per-call to .run()/.get()/.all()), so they're
+// safe to prepare once here and reuse for the life of the process.
+const stmt = {
+  todoList:       db.prepare('SELECT * FROM todo_items ORDER BY done ASC, created_at DESC'),
+  todoDeleteDone: db.prepare('DELETE FROM todo_items WHERE done = 1'),
+  todoInsert:     db.prepare('INSERT INTO todo_items (text) VALUES (?)'),
+  todoGet:        db.prepare('SELECT * FROM todo_items WHERE id = ?'),
+  todoSetDone:    db.prepare('UPDATE todo_items SET done = ? WHERE id = ?'),
+  todoDelete:     db.prepare('DELETE FROM todo_items WHERE id = ?'),
+
+  bulletinList:   db.prepare('SELECT * FROM bulletin_posts ORDER BY created_at DESC LIMIT 20'),
+  bulletinInsert: db.prepare('INSERT INTO bulletin_posts (author, message) VALUES (?, ?)'),
+  bulletinGet:    db.prepare('SELECT * FROM bulletin_posts WHERE id = ?'),
+  bulletinDelete: db.prepare('DELETE FROM bulletin_posts WHERE id = ?'),
+
+  calendarRange:  db.prepare(`
+    SELECT * FROM calendar_events
+    WHERE (
+      (recurrence = 'none' AND event_date >= ? AND event_date <= ?)
+      OR
+      (recurrence != 'none' AND event_date <= ?
+        AND (recurrence_until IS NULL OR recurrence_until >= ?))
+    )
+    ORDER BY event_date ASC,
+      CASE WHEN start_time IS NULL THEN 0 ELSE 1 END ASC,
+      start_time ASC
+  `),
+  calendarInsert: db.prepare(`
+    INSERT INTO calendar_events
+      (title, description, person, color, event_date, start_time, end_time, all_day,
+       recurrence, recurrence_interval, recurrence_until, is_private)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `),
+  calendarGet: db.prepare('SELECT * FROM calendar_events WHERE id = ?'),
+  calendarUpdate: db.prepare(`
+    UPDATE calendar_events SET
+      title = ?, description = ?, person = ?, color = ?, event_date = ?,
+      start_time = ?, end_time = ?, all_day = ?,
+      recurrence = ?, recurrence_interval = ?, recurrence_until = ?, is_private = ?
+    WHERE id = ?
+  `),
+  calendarSetExcluded: db.prepare('UPDATE calendar_events SET excluded_dates = ? WHERE id = ?'),
+  calendarDelete: db.prepare('DELETE FROM calendar_events WHERE id = ?'),
+};
+
 // ── Todo ──────────────────────────────────────────────────────
 app.get('/api/todo', (req, res) => {
-  res.json(db.prepare('SELECT * FROM todo_items ORDER BY done ASC, created_at DESC').all());
+  res.json(stmt.todoList.all());
 });
 
 // Specific routes before parameterized to avoid /:id conflicts
 app.delete('/api/todo/done/all', (req, res) => {
-  db.prepare('DELETE FROM todo_items WHERE done = 1').run();
+  stmt.todoDeleteDone.run();
   res.json({ ok: true });
 });
 
 app.post('/api/todo', (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ error: 'Text required' });
-  const info = db.prepare('INSERT INTO todo_items (text) VALUES (?)').run(text.trim().slice(0, 200));
-  res.json(db.prepare('SELECT * FROM todo_items WHERE id = ?').get(info.lastInsertRowid));
+  const info = stmt.todoInsert.run(text.trim().slice(0, 200));
+  res.json(stmt.todoGet.get(info.lastInsertRowid));
 });
 
 app.patch('/api/todo/:id', (req, res) => {
   const { done } = req.body;
-  db.prepare('UPDATE todo_items SET done = ? WHERE id = ?').run(done ? 1 : 0, req.params.id);
-  const item = db.prepare('SELECT * FROM todo_items WHERE id = ?').get(req.params.id);
+  stmt.todoSetDone.run(done ? 1 : 0, req.params.id);
+  const item = stmt.todoGet.get(req.params.id);
   if (!item) return res.status(404).json({ error: 'Not found' });
   res.json(item);
 });
 
 app.delete('/api/todo/:id', (req, res) => {
-  const info = db.prepare('DELETE FROM todo_items WHERE id = ?').run(req.params.id);
+  const info = stmt.todoDelete.run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
 });
 
 // ── Bulletin ──────────────────────────────────────────────────
 app.get('/api/bulletin', (req, res) => {
-  res.json(db.prepare('SELECT * FROM bulletin_posts ORDER BY created_at DESC LIMIT 20').all());
+  res.json(stmt.bulletinList.all());
 });
 
 app.post('/api/bulletin', (req, res) => {
   const { author, message } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
-  const info = db.prepare('INSERT INTO bulletin_posts (author, message) VALUES (?, ?)').run(
+  const info = stmt.bulletinInsert.run(
     (author || 'Anonymous').trim().slice(0, 40),
     message.trim().slice(0, 300)
   );
-  res.json(db.prepare('SELECT * FROM bulletin_posts WHERE id = ?').get(info.lastInsertRowid));
+  res.json(stmt.bulletinGet.get(info.lastInsertRowid));
 });
 
 app.delete('/api/bulletin/:id', (req, res) => {
-  const info = db.prepare('DELETE FROM bulletin_posts WHERE id = ?').run(req.params.id);
+  const info = stmt.bulletinDelete.run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
 });
@@ -122,18 +182,7 @@ app.get('/api/calendar', (req, res) => {
   const weekStart = localDate(start);
   const weekEnd   = localDate(end);
 
-  const rows = db.prepare(`
-    SELECT * FROM calendar_events
-    WHERE (
-      (recurrence = 'none' AND event_date >= ? AND event_date <= ?)
-      OR
-      (recurrence != 'none' AND event_date <= ?
-        AND (recurrence_until IS NULL OR recurrence_until >= ?))
-    )
-    ORDER BY event_date ASC,
-      CASE WHEN start_time IS NULL THEN 0 ELSE 1 END ASC,
-      start_time ASC
-  `).all(start, end, end, start);
+  const rows = stmt.calendarRange.all(start, end, end, start);
 
   const out = [];
   for (const ev of rows) out.push(...expandEvent(ev, weekStart, weekEnd));
@@ -154,12 +203,7 @@ app.post('/api/calendar', (req, res) => {
     ? recurrence : 'none';
   const safeInterval = Math.min(99, Math.max(1, parseInt(recurrence_interval, 10) || 1));
 
-  const info = db.prepare(`
-    INSERT INTO calendar_events
-      (title, description, person, color, event_date, start_time, end_time, all_day,
-       recurrence, recurrence_interval, recurrence_until, is_private)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(
+  const info = stmt.calendarInsert.run(
     title.trim().slice(0, 120),
     (description || '').trim().slice(0, 500),
     (person || '').trim().slice(0, 40),
@@ -174,14 +218,14 @@ app.post('/api/calendar', (req, res) => {
     is_private ? 1 : 0
   );
 
-  res.json(db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(info.lastInsertRowid));
+  res.json(stmt.calendarGet.get(info.lastInsertRowid));
 });
 
 // PATCH /api/calendar/:id — edit an event. Always applies to the whole
 // series for a recurring event (no per-occurrence edit, unlike delete);
 // existing excluded_dates are left as-is.
 app.patch('/api/calendar/:id', (req, res) => {
-  const existing = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
+  const existing = stmt.calendarGet.get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   const {
@@ -196,13 +240,7 @@ app.patch('/api/calendar/:id', (req, res) => {
     ? recurrence : 'none';
   const safeInterval = Math.min(99, Math.max(1, parseInt(recurrence_interval, 10) || 1));
 
-  db.prepare(`
-    UPDATE calendar_events SET
-      title = ?, description = ?, person = ?, color = ?, event_date = ?,
-      start_time = ?, end_time = ?, all_day = ?,
-      recurrence = ?, recurrence_interval = ?, recurrence_until = ?, is_private = ?
-    WHERE id = ?
-  `).run(
+  stmt.calendarUpdate.run(
     title.trim().slice(0, 120),
     (description || '').trim().slice(0, 500),
     (person || '').trim().slice(0, 40),
@@ -218,7 +256,7 @@ app.patch('/api/calendar/:id', (req, res) => {
     req.params.id
   );
 
-  res.json(db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id));
+  res.json(stmt.calendarGet.get(req.params.id));
 });
 
 // DELETE /api/calendar/:id            — delete the event (all occurrences, if recurring)
@@ -232,22 +270,21 @@ app.delete('/api/calendar/:id', (req, res) => {
   if (date) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date' });
 
-    const ev = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
+    const ev = stmt.calendarGet.get(req.params.id);
     if (!ev) return res.status(404).json({ error: 'Not found' });
 
     if (ev.recurrence === 'none') {
-      db.prepare('DELETE FROM calendar_events WHERE id = ?').run(req.params.id);
+      stmt.calendarDelete.run(req.params.id);
       return res.json({ ok: true });
     }
 
     const excluded = new Set((ev.excluded_dates || '').split(',').filter(Boolean));
     excluded.add(date);
-    db.prepare('UPDATE calendar_events SET excluded_dates = ? WHERE id = ?')
-      .run([...excluded].join(','), req.params.id);
+    stmt.calendarSetExcluded.run([...excluded].join(','), req.params.id);
     return res.json({ ok: true });
   }
 
-  const info = db.prepare('DELETE FROM calendar_events WHERE id = ?').run(req.params.id);
+  const info = stmt.calendarDelete.run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
 });
@@ -316,22 +353,32 @@ app.post('/api/tts', (req, res) => {
   const text = (req.body?.text || '').toString().trim().slice(0, 500);
   if (!text) return res.status(400).json({ error: 'text required' });
 
-  try {
+  // execFile (not execFileSync): synthesis can take a couple of seconds for
+  // longer alert text, and this is a single-threaded server — a synchronous
+  // call would freeze every other client's request (calendar/todo polling,
+  // sysstats, etc.) for the whole duration. execFile lets the event loop
+  // keep serving other requests while espeak-ng runs in its own process.
+  execFile('espeak-ng',
     // Defaults (en male, ~175wpm) read as flat/robotic and run words together.
     // en-us+f3 is a noticeably less harsh voice; slower speed (150wpm) and a
     // touch of extra word-gap both trade a little naturalness for clarity.
-    const wav = execFileSync('espeak-ng',
-      ['-v', 'en-us+f3', '-s', '150', '-p', '48', '-g', '3', '--stdout', text],
-      { maxBuffer: 10 * 1024 * 1024, timeout: 10000 }
-    );
-    res.set('Content-Type', 'audio/wav');
-    res.send(wav);
-  } catch (err) {
-    res.status(500).json({
-      error: 'espeak-ng unavailable or failed',
-      detail: err.message,
-    });
-  }
+    ['-v', 'en-us+f3', '-s', '150', '-p', '48', '-g', '3', '--stdout', text],
+    { maxBuffer: 10 * 1024 * 1024, timeout: 10000, encoding: 'buffer' },
+    (err, stdout) => {
+      if (err) {
+        return res.status(500).json({
+          error: 'espeak-ng unavailable or failed',
+          detail: err.message,
+        });
+      }
+      res.set('Content-Type', 'audio/wav');
+      res.send(stdout);
+    }
+  );
+});
+
+app.get('/api/version', (req, res) => {
+  res.json({ version: APP_VERSION, commit: GIT_COMMIT });
 });
 
 app.get('/api/sysstats', (req, res) => {

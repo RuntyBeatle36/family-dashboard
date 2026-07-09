@@ -394,10 +394,18 @@ body {
   letter-spacing: 0.05em;
 }
 
-.lock-agenda-item, .lock-agenda-empty {
+.lock-agenda-empty {
   font-size: 1rem;
   color: var(--text-dim);
   padding: 0.3rem 0;
+}
+
+.lock-agenda-item {
+  font-size: 1rem;
+  color: #fff;
+  padding: 0.3rem 0.65rem;
+  margin: 0.3rem 0;
+  border-radius: 6px;
 }
 
 .lock-hint {
@@ -1309,6 +1317,14 @@ select {
   margin-top: 0.5rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--glass-border2);
+}
+
+.app-version {
+  margin-right: auto;
+  align-self: center;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  opacity: 0.55;
 }
 
 /* Event detail modal: Close kept clearly apart from the destructive actions,
