@@ -1197,10 +1197,9 @@ async function fetchWeather() {
   }
 
   // Mirror into the Lock Screen too, so it stays live without its own fetch
-  document.getElementById('lock-wx-icon').textContent  = document.getElementById('wx-icon').textContent;
-  document.getElementById('lock-wx-temp').textContent  = document.getElementById('wx-temp').textContent;
-  document.getElementById('lock-wx-feels').textContent = document.getElementById('wx-feels').textContent;
-  document.getElementById('lock-wx-desc').textContent  = document.getElementById('wx-desc').textContent;
+  document.getElementById('lock-wx-icon').textContent = document.getElementById('wx-icon').textContent;
+  document.getElementById('lock-wx-temp').textContent = document.getElementById('wx-temp').textContent;
+  document.getElementById('lock-wx-desc').textContent = document.getElementById('wx-desc').textContent;
 
   // ── Forecast from Open-Meteo (hi/lo, rain chart) ──
   if (omResult.status === 'fulfilled') {

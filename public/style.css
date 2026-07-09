@@ -373,11 +373,6 @@ body {
   color: var(--text);
 }
 
-.lock-wx-feels {
-  font-size: 0.55em;
-  color: var(--text-dim);
-}
-
 .lock-agenda {
   display: flex;
   gap: 3rem;
