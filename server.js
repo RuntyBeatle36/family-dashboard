@@ -345,36 +345,56 @@ function getGpuInfo() {
 // ── Server-side TTS ─────────────────────────────────────────────
 // Chromium's built-in speechSynthesis has been unreliable on Raspberry Pi OS
 // (depends on Chromium's Linux TTS platform support + speech-dispatcher
-// wiring, both of which are inconsistent across builds). Synthesizing with
-// espeak-ng directly on the server and handing back a plain WAV file
-// sidesteps that entire fragile chain — the browser just plays audio,
-// which is far more universally supported than Web Speech API on Linux.
+// wiring, both of which are inconsistent across builds). Synthesizing on the
+// server and handing back a plain WAV file sidesteps that entire fragile
+// chain — the browser's job shrinks to "play this audio", which is far more
+// universally supported than the Web Speech API on Linux.
+//
+// Piper (not espeak-ng — swapped after espeak's voice proved too warbly to
+// reliably understand): a neural TTS engine, still fully local/offline, but
+// far more natural. Overridable via env vars since install location varies:
+//   PIPER_BIN   — path to the piper binary (default: assumes it's on PATH)
+//   PIPER_MODEL — path to the voice .onnx model file
+// Piper takes text on stdin and writes a WAV file to --output_file; there's
+// no documented way to have it stream to stdout, so we go through a temp
+// file instead (unique per request, cleaned up after).
+const PIPER_BIN   = process.env.PIPER_BIN   || 'piper';
+const PIPER_MODEL = process.env.PIPER_MODEL || path.join(__dirname, 'piper', 'en_US-lessac-medium.onnx');
+
 app.post('/api/tts', (req, res) => {
   const text = (req.body?.text || '').toString().trim().slice(0, 500);
   if (!text) return res.status(400).json({ error: 'text required' });
+
+  const tmpFile = path.join(os.tmpdir(), `dashboard-tts-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
 
   // execFile (not execFileSync): synthesis can take a couple of seconds for
   // longer alert text, and this is a single-threaded server — a synchronous
   // call would freeze every other client's request (calendar/todo polling,
   // sysstats, etc.) for the whole duration. execFile lets the event loop
-  // keep serving other requests while espeak-ng runs in its own process.
-  execFile('espeak-ng',
-    // Defaults (en male, ~175wpm) read as flat/robotic and run words together.
-    // en-us+f3 is a noticeably less harsh voice; slower speed (150wpm) and a
-    // touch of extra word-gap both trade a little naturalness for clarity.
-    ['-v', 'en-us+f3', '-s', '150', '-p', '48', '-g', '3', '--stdout', text],
-    { maxBuffer: 10 * 1024 * 1024, timeout: 10000, encoding: 'buffer' },
-    (err, stdout) => {
+  // keep serving other requests while piper runs in its own process.
+  const child = execFile(PIPER_BIN,
+    ['--model', PIPER_MODEL, '--output_file', tmpFile],
+    { maxBuffer: 10 * 1024 * 1024, timeout: 10000 },
+    (err) => {
       if (err) {
+        fs.unlink(tmpFile, () => {});
         return res.status(500).json({
-          error: 'espeak-ng unavailable or failed',
+          error: 'piper unavailable or failed',
           detail: err.message,
         });
       }
-      res.set('Content-Type', 'audio/wav');
-      res.send(stdout);
+      fs.readFile(tmpFile, (readErr, wav) => {
+        fs.unlink(tmpFile, () => {});
+        if (readErr) {
+          return res.status(500).json({ error: 'piper produced no output file', detail: readErr.message });
+        }
+        res.set('Content-Type', 'audio/wav');
+        res.send(wav);
+      });
     }
   );
+  child.stdin.write(text);
+  child.stdin.end();
 });
 
 app.get('/api/version', (req, res) => {

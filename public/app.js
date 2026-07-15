@@ -905,45 +905,55 @@ function playBootChime() {
   } catch { /* AudioContext unavailable */ }
 }
 
-// Server-side TTS (/api/tts, espeak-ng) instead of the browser's own
+// Server-side TTS (/api/tts, Piper) instead of the browser's own
 // speechSynthesis — Chromium's Linux TTS platform support has proven
-// unreliable across builds/distros, whereas espeak-ng running directly is
-// deterministic. The browser's job shrinks to "play this audio file",
-// which is far more universally supported than the Web Speech API.
-// Utterances are queued and played one at a time, same as speechSynthesis
-// did natively — a plain <audio> element has no such built-in queue.
-let ttsQueue        = [];
-let ttsPlaying      = false;
-let currentTtsAudio = null;
+// unreliable across builds/distros, whereas running a real engine directly
+// on the server is deterministic. The browser's job shrinks to "play this
+// audio", which is far more universally supported than the Web Speech API.
+//
+// Played through the same AudioContext the alert beeps use (decoded via
+// decodeAudioData, not a separate <audio> element) rather than two
+// independent audio pathways — on Pi audio setups without a software mixer
+// (no PulseAudio/PipeWire), a Web Audio API stream and an HTML5 <audio>
+// stream compete for exclusive access to the device, and whichever opens
+// second fails silently. One shared AudioContext means one stream.
+let ttsQueue         = [];
+let ttsPlaying       = false;
+let currentTtsSource = null;
 
 function cancelTts() {
-  ttsQueue.forEach(item => URL.revokeObjectURL(item.url));
   ttsQueue = [];
-  if (currentTtsAudio) { currentTtsAudio.pause(); currentTtsAudio = null; }
+  if (currentTtsSource) { try { currentTtsSource.stop(); } catch { /* already stopped */ } currentTtsSource = null; }
   ttsPlaying = false;
 }
 
-// Speed/clarity is tuned server-side via espeak-ng's own -s flag now (see
+// Speed/clarity is tuned server-side via Piper's own settings now (see
 // /api/tts) — deliberately no client-side playbackRate here. Time-stretching
-// an already-synthetic voice via playbackRate introduces its own warble on
-// top of espeak's, compounding into something worse than either alone.
+// an already-synthesized voice via playbackRate reintroduces warble on top
+// of whatever the engine already produced.
 const TTS_GAP_MS = 300; // brief pause between queued utterances, for clarity
 
 function processTtsQueue() {
   if (ttsPlaying || ttsQueue.length === 0) return;
   ttsPlaying = true;
-  const { url, onerror, onsuccess } = ttsQueue.shift();
-  const audio = new Audio(url);
-  currentTtsAudio = audio;
+  const { arrayBuffer, onerror, onsuccess } = ttsQueue.shift();
+  const ctx = getAudioCtx();
   const done = () => {
-    URL.revokeObjectURL(url);
-    currentTtsAudio = null;
+    currentTtsSource = null;
     ttsPlaying = false;
     setTimeout(processTtsQueue, TTS_GAP_MS);
   };
-  audio.onended = done;
-  audio.onerror = () => { onerror?.('Audio playback failed.'); done(); };
-  audio.play().then(() => onsuccess?.()).catch(err => { onerror?.('Playback blocked: ' + err.message); done(); });
+  ctx.decodeAudioData(arrayBuffer)
+    .then(buffer => {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.onended = done;
+      currentTtsSource = source;
+      source.start();
+      onsuccess?.();
+    })
+    .catch(err => { onerror?.('Audio decoding failed: ' + err.message); done(); });
 }
 
 async function speakText(text, onerror, onsuccess) {
@@ -959,8 +969,8 @@ async function speakText(text, onerror, onsuccess) {
       onerror?.('Text-to-speech engine unavailable on this device.');
       return;
     }
-    const url = URL.createObjectURL(await res.blob());
-    ttsQueue.push({ url, onerror, onsuccess });
+    const arrayBuffer = await res.arrayBuffer();
+    ttsQueue.push({ arrayBuffer, onerror, onsuccess });
     processTtsQueue();
   } catch (err) {
     onerror?.('Could not reach the dashboard server for text-to-speech.');
@@ -1391,6 +1401,135 @@ zipSelect.addEventListener('change', () => {
 const nightDimFields = document.getElementById('night-dim-fields');
 
 /* ══════════════════════════════════════════════════════════
+   ON-SCREEN KEYBOARD (Settings > On-Screen Keyboard)
+   For the Pi's own touchscreen, which has no physical keyboard and no OS-
+   level virtual keyboard in kiosk Chromium. Off by default — every setting
+   in this app is already per-device via localStorage, so a phone/tablet
+   loading the same dashboard over the LAN keeps its own native keyboard
+   and never sees this one; it only has to be turned on once, on the Pi.
+   ══════════════════════════════════════════════════════════ */
+const getOskEnabled = () => localStorage.getItem('oskEnabled') === 'true';
+
+// No symbols layer — the only free-text fields in this app are names,
+// short messages, and event titles/descriptions, all covered by letters,
+// digits, and basic punctuation.
+const OSK_ROWS = [
+  ['1','2','3','4','5','6','7','8','9','0'],
+  ['q','w','e','r','t','y','u','i','o','p'],
+  ['a','s','d','f','g','h','j','k','l'],
+  ['⇧','z','x','c','v','b','n','m','⌫'],
+  [',','␣','.','⏎'],
+];
+
+const osk = document.getElementById('osk');
+let oskTarget = null;
+let oskShift  = false;
+
+function oskIsTextField(el) {
+  if (!el) return false;
+  if (el.tagName === 'TEXTAREA') return true;
+  if (el.tagName !== 'INPUT') return false;
+  return ['text', 'search', 'email', 'number'].includes(el.type);
+}
+
+function buildOsk() {
+  // A dedicated dismiss key, not just Enter — Enter on a textarea inserts a
+  // newline rather than closing anything, so without this, the keyboard
+  // could sit over a modal's Save/Cancel row with no way to reach it.
+  osk.innerHTML =
+    '<div class="osk-row osk-dismiss-row"><button type="button" class="osk-key osk-dismiss" data-key="dismiss">⌄ Hide keyboard</button></div>' +
+    OSK_ROWS.map(row => '<div class="osk-row">' + row.map(k => {
+    if (k === '⇧') return `<button type="button" class="osk-key osk-shift${oskShift ? ' active' : ''}" data-key="shift">⇧</button>`;
+    if (k === '⌫') return `<button type="button" class="osk-key osk-backspace" data-key="backspace">⌫</button>`;
+    if (k === '⏎') return `<button type="button" class="osk-key osk-enter" data-key="enter">⏎</button>`;
+    if (k === '␣') return `<button type="button" class="osk-key osk-space" data-key="space"> </button>`;
+    const label = /[a-z]/.test(k) && oskShift ? k.toUpperCase() : k;
+    return `<button type="button" class="osk-key" data-key="char" data-char="${label}">${label}</button>`;
+  }).join('') + '</div>').join('');
+}
+buildOsk();
+
+function oskInsert(text) {
+  if (!oskTarget) return;
+  const start  = oskTarget.selectionStart ?? oskTarget.value.length;
+  const end    = oskTarget.selectionEnd   ?? oskTarget.value.length;
+  const val    = oskTarget.value;
+  const maxLen = oskTarget.maxLength; // -1 when unset
+  if (maxLen >= 0 && val.length - (end - start) + text.length > maxLen) return;
+  oskTarget.value = val.slice(0, start) + text + val.slice(end);
+  const pos = start + text.length;
+  oskTarget.setSelectionRange(pos, pos);
+  oskTarget.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function oskBackspace() {
+  if (!oskTarget) return;
+  const start = oskTarget.selectionStart ?? oskTarget.value.length;
+  const end   = oskTarget.selectionEnd   ?? oskTarget.value.length;
+  const val   = oskTarget.value;
+  if (start === end) {
+    if (start === 0) return;
+    oskTarget.value = val.slice(0, start - 1) + val.slice(end);
+    oskTarget.setSelectionRange(start - 1, start - 1);
+  } else {
+    oskTarget.value = val.slice(0, start) + val.slice(end);
+    oskTarget.setSelectionRange(start, start);
+  }
+  oskTarget.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function oskEnter() {
+  if (!oskTarget) return;
+  if (oskTarget.tagName === 'TEXTAREA') {
+    oskInsert('\n');
+    return;
+  }
+  // Matches native behavior: Enter in a single-line input submits its form.
+  oskTarget.form?.requestSubmit();
+  oskTarget.blur();
+}
+
+osk.addEventListener('pointerdown', e => {
+  const btn = e.target.closest('.osk-key');
+  if (!btn) return;
+  const key = btn.dataset.key;
+  if (key === 'dismiss') { oskTarget?.blur(); hideOsk(); return; } // let this one blur normally
+  e.preventDefault(); // keep focus on oskTarget — a real click would blur it first
+  if (key === 'char') { oskInsert(btn.dataset.char); if (oskShift) { oskShift = false; buildOsk(); } }
+  else if (key === 'space') oskInsert(' ');
+  else if (key === 'backspace') oskBackspace();
+  else if (key === 'enter') oskEnter();
+  else if (key === 'shift') { oskShift = !oskShift; buildOsk(); }
+});
+
+function showOsk(target) {
+  oskTarget = target;
+  osk.hidden = false;
+  document.documentElement.style.setProperty('--osk-h', osk.offsetHeight + 'px');
+  document.body.classList.add('osk-open');
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function hideOsk() {
+  oskTarget = null;
+  osk.hidden = true;
+  document.body.classList.remove('osk-open');
+}
+
+document.addEventListener('focusin', e => {
+  if (!getOskEnabled()) return;
+  if (oskIsTextField(e.target)) showOsk(e.target);
+});
+document.addEventListener('focusout', e => {
+  if (!getOskEnabled()) return;
+  // A key tap prevents the default blur (see pointerdown above), so if
+  // focus is actually leaving, it's genuinely moving elsewhere — hide.
+  setTimeout(() => {
+    if (!oskIsTextField(document.activeElement)) hideOsk();
+  }, 0);
+});
+
+/* ══════════════════════════════════════════════════════════
    APP VERSION (Settings footer)
    Fetched once — package.json version + git commit don't change while
    the server process is running, so there's no reason to re-fetch it
@@ -1418,6 +1557,7 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('toggle-lock-screen').checked = getLockScreenEnabled();
   document.getElementById('lock-reveal-secs').value     = getLockRevealSecs();
   document.getElementById('toggle-lock-agenda').checked = getLockAgendaEnabled();
+  document.getElementById('toggle-osk').checked = getOskEnabled();
   settingsModal.hidden = false;
 });
 
@@ -1468,6 +1608,10 @@ document.getElementById('lock-reveal-secs').addEventListener('change', e => {
 document.getElementById('toggle-lock-agenda').addEventListener('change', e => {
   localStorage.setItem('lockAgendaEnabled', e.target.checked);
   if (!document.getElementById('lock-screen').hidden) renderLockScreen();
+});
+document.getElementById('toggle-osk').addEventListener('change', e => {
+  localStorage.setItem('oskEnabled', e.target.checked);
+  if (!e.target.checked) hideOsk();
 });
 
 document.getElementById('debug-wx-grid').addEventListener('click', e => {

@@ -285,6 +285,19 @@
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">⌨️ On-Screen Keyboard</div>
+      <p class="settings-desc">
+        For touchscreens with no physical keyboard attached (like the Pi's own
+        display). Leave off on phones/tablets/laptops — they already show
+        their own keyboard when you tap a text field.
+      </p>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-osk">
+        Show on-screen keyboard for text fields (default: off)
+      </label>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">🔆 Display Brightness</div>
       <p class="settings-desc">
         Dims the screen with an overlay — works on any display, but (unlike real
@@ -556,6 +569,10 @@
 
 <!-- ── Error toast ────────────────────────────────────────────── -->
 <div id="error-toast" class="error-toast" hidden></div>
+
+<!-- ── On-screen keyboard (Settings > On-Screen Keyboard) ────────
+     Rows are built by JS from a layout table — see OSK_ROWS in app.js. -->
+<div id="osk" class="osk" hidden></div>
 
 <script src="/app.js"></script>
 </body>
