@@ -1501,9 +1501,13 @@ select {
   flex-direction: column;
   gap: 0.4rem;
   padding: 0.6rem 0.5rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
-  background: var(--glass-2);
-  backdrop-filter: var(--blur-strong);
-  -webkit-backdrop-filter: var(--blur-strong);
+  /* Solid, not the usual translucent --glass-2 — this panel exists to be
+     typed on, and content scrolling/animating behind it (calendar, weather
+     canvas) made the keys hard to read. Same --glass-solid-2 used for
+     Settings > Graphics > Glass Blur "Off", applied unconditionally here
+     regardless of that setting. No backdrop-filter needed at ~97% opacity,
+     which also saves the blur's GPU cost. */
+  background: var(--glass-solid-2);
   border-top: 1px solid var(--glass-border);
 }
 .osk[hidden] { display: none; }
@@ -1529,7 +1533,7 @@ select {
 .osk-key:active { background: var(--glass-border); }
 
 .osk-shift.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.osk-backspace, .osk-enter { max-width: 68px; color: var(--text-dim); }
+.osk-backspace, .osk-enter, .osk-mode { max-width: 68px; color: var(--text-dim); font-size: 0.85rem; }
 .osk-space { flex: 6; max-width: none; }
 
 .osk-dismiss-row { margin-bottom: 0.1rem; }

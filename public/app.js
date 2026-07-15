@@ -1410,20 +1410,34 @@ const nightDimFields = document.getElementById('night-dim-fields');
    ══════════════════════════════════════════════════════════ */
 const getOskEnabled = () => localStorage.getItem('oskEnabled') === 'true';
 
-// No symbols layer — the only free-text fields in this app are names,
-// short messages, and event titles/descriptions, all covered by letters,
-// digits, and basic punctuation.
-const OSK_ROWS = [
-  ['1','2','3','4','5','6','7','8','9','0'],
-  ['q','w','e','r','t','y','u','i','o','p'],
-  ['a','s','d','f','g','h','j','k','l'],
-  ['⇧','z','x','c','v','b','n','m','⌫'],
-  [',','␣','.','⏎'],
-];
+// Three modes, same shape as iOS's own keyboard: letters, then 123 (numbers
+// + common punctuation), then #+= (the rest of the symbol set). Switching
+// fields resets back to letters, same as iOS.
+const OSK_LAYOUTS = {
+  letters: [
+    ['q','w','e','r','t','y','u','i','o','p'],
+    ['a','s','d','f','g','h','j','k','l'],
+    ['⇧','z','x','c','v','b','n','m','⌫'],
+    ['123',',','␣','.','⏎'],
+  ],
+  numbers: [
+    ['1','2','3','4','5','6','7','8','9','0'],
+    ['-','/',':',';','(',')','$','&','@','"'],
+    ['#+=','.',',','?','!','\'','⌫'],
+    ['ABC',',','␣','.','⏎'],
+  ],
+  symbols: [
+    ['[',']','{','}','#','%','^','*','+','='],
+    ['_','\\','|','~','<','>','€','£','¥','•'],
+    ['123','.',',','?','!','\'','⌫'],
+    ['ABC',',','␣','.','⏎'],
+  ],
+};
 
 const osk = document.getElementById('osk');
 let oskTarget = null;
 let oskShift  = false;
+let oskMode   = 'letters'; // 'letters' | 'numbers' | 'symbols'
 
 function oskIsTextField(el) {
   if (!el) return false;
@@ -1432,18 +1446,26 @@ function oskIsTextField(el) {
   return ['text', 'search', 'email', 'number'].includes(el.type);
 }
 
+// Key labels double as both the visible glyph and the data-char attribute
+// value below — this covers both spots against the punctuation keys that
+// are themselves HTML-significant (" < & etc.).
+const oskEsc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
 function buildOsk() {
+  const MODE_KEYS = { '123': 'mode-numbers', '#+=': 'mode-symbols', 'ABC': 'mode-letters' };
   // A dedicated dismiss key, not just Enter — Enter on a textarea inserts a
   // newline rather than closing anything, so without this, the keyboard
   // could sit over a modal's Save/Cancel row with no way to reach it.
   osk.innerHTML =
     '<div class="osk-row osk-dismiss-row"><button type="button" class="osk-key osk-dismiss" data-key="dismiss">⌄ Hide keyboard</button></div>' +
-    OSK_ROWS.map(row => '<div class="osk-row">' + row.map(k => {
+    OSK_LAYOUTS[oskMode].map(row => '<div class="osk-row">' + row.map(k => {
     if (k === '⇧') return `<button type="button" class="osk-key osk-shift${oskShift ? ' active' : ''}" data-key="shift">⇧</button>`;
     if (k === '⌫') return `<button type="button" class="osk-key osk-backspace" data-key="backspace">⌫</button>`;
     if (k === '⏎') return `<button type="button" class="osk-key osk-enter" data-key="enter">⏎</button>`;
     if (k === '␣') return `<button type="button" class="osk-key osk-space" data-key="space"> </button>`;
-    const label = /[a-z]/.test(k) && oskShift ? k.toUpperCase() : k;
+    if (MODE_KEYS[k]) return `<button type="button" class="osk-key osk-mode" data-key="${MODE_KEYS[k]}">${k}</button>`;
+    const raw   = /[a-z]/.test(k) && oskShift && oskMode === 'letters' ? k.toUpperCase() : k;
+    const label = oskEsc(raw);
     return `<button type="button" class="osk-key" data-key="char" data-char="${label}">${label}</button>`;
   }).join('') + '</div>').join('');
 }
@@ -1500,10 +1522,17 @@ osk.addEventListener('pointerdown', e => {
   else if (key === 'backspace') oskBackspace();
   else if (key === 'enter') oskEnter();
   else if (key === 'shift') { oskShift = !oskShift; buildOsk(); }
+  else if (key === 'mode-numbers') { oskMode = 'numbers'; buildOsk(); }
+  else if (key === 'mode-symbols') { oskMode = 'symbols'; buildOsk(); }
+  else if (key === 'mode-letters') { oskMode = 'letters'; oskShift = false; buildOsk(); }
+  document.documentElement.style.setProperty('--osk-h', osk.offsetHeight + 'px'); // row count changes between modes
 });
 
 function showOsk(target) {
   oskTarget = target;
+  oskMode  = 'letters'; // reset each time a field is focused, same as iOS
+  oskShift = false;
+  buildOsk();
   osk.hidden = false;
   document.documentElement.style.setProperty('--osk-h', osk.offsetHeight + 'px');
   document.body.classList.add('osk-open');
