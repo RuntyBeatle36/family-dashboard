@@ -1410,9 +1410,10 @@ const nightDimFields = document.getElementById('night-dim-fields');
    ══════════════════════════════════════════════════════════ */
 const getOskEnabled = () => localStorage.getItem('oskEnabled') === 'true';
 
-// Three modes, same shape as iOS's own keyboard: letters, then 123 (numbers
-// + common punctuation), then #+= (the rest of the symbol set). Switching
-// fields resets back to letters, same as iOS.
+// Two modes — letters, and everything else in one page (iOS splits digits/
+// punctuation across two separate screens, 123 then #+=, but that nested
+// second tap was the one that was misbehaving; one flat symbols page removes
+// that step entirely while still covering the same full character set).
 const OSK_LAYOUTS = {
   letters: [
     ['q','w','e','r','t','y','u','i','o','p'],
@@ -1420,24 +1421,19 @@ const OSK_LAYOUTS = {
     ['⇧','z','x','c','v','b','n','m','⌫'],
     ['123',',','␣','.','⏎'],
   ],
-  numbers: [
+  symbols: [
     ['1','2','3','4','5','6','7','8','9','0'],
     ['-','/',':',';','(',')','$','&','@','"'],
-    ['#+=','.',',','?','!','\'','⌫'],
-    ['ABC',',','␣','.','⏎'],
-  ],
-  symbols: [
     ['[',']','{','}','#','%','^','*','+','='],
-    ['_','\\','|','~','<','>','€','£','¥','•'],
-    ['123','.',',','?','!','\'','⌫'],
-    ['ABC',',','␣','.','⏎'],
+    ['_','\\','|','~','<','>','.',',','⌫'],
+    ['ABC','?','␣','!','\'','⏎'],
   ],
 };
 
 const osk = document.getElementById('osk');
 let oskTarget = null;
 let oskShift  = false;
-let oskMode   = 'letters'; // 'letters' | 'numbers' | 'symbols'
+let oskMode   = 'letters'; // 'letters' | 'symbols'
 
 function oskIsTextField(el) {
   if (!el) return false;
@@ -1452,7 +1448,7 @@ function oskIsTextField(el) {
 const oskEsc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 function buildOsk() {
-  const MODE_KEYS = { '123': 'mode-numbers', '#+=': 'mode-symbols', 'ABC': 'mode-letters' };
+  const MODE_KEYS = { '123': 'mode-symbols', 'ABC': 'mode-letters' };
   // A dedicated dismiss key, not just Enter — Enter on a textarea inserts a
   // newline rather than closing anything, so without this, the keyboard
   // could sit over a modal's Save/Cancel row with no way to reach it.
@@ -1522,7 +1518,6 @@ osk.addEventListener('pointerdown', e => {
   else if (key === 'backspace') oskBackspace();
   else if (key === 'enter') oskEnter();
   else if (key === 'shift') { oskShift = !oskShift; buildOsk(); }
-  else if (key === 'mode-numbers') { oskMode = 'numbers'; buildOsk(); }
   else if (key === 'mode-symbols') { oskMode = 'symbols'; buildOsk(); }
   else if (key === 'mode-letters') { oskMode = 'letters'; oskShift = false; buildOsk(); }
   document.documentElement.style.setProperty('--osk-h', osk.offsetHeight + 'px'); // row count changes between modes
