@@ -1523,13 +1523,13 @@ select {
 
 .osk-key {
   flex: 1;
-  max-width: 52px;
-  min-height: 44px;
+  max-width: 60px;
+  min-height: 54px;
   border: 1px solid var(--glass-border);
   border-radius: 10px;
   background: linear-gradient(180deg, var(--glass-2), var(--glass));
   color: var(--text);
-  font-size: 1rem;
+  font-size: 1.15rem;
   font-weight: 600;
   box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 2px 4px rgba(0,0,0,0.18);
   cursor: pointer;
@@ -1542,9 +1542,13 @@ select {
 }
 
 .osk-shift.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.osk-backspace, .osk-enter, .osk-mode { max-width: 68px; color: var(--text-dim); font-size: 0.85rem; }
+.osk-backspace, .osk-enter, .osk-mode { max-width: 78px; color: var(--text-dim); font-size: 0.9rem; }
 .osk-enter { background: var(--accent); color: #fff; border-color: var(--accent); }
-.osk-space { flex: 6; max-width: none; }
+/* max-width:none let this eat nearly the whole row's leftover space on a
+   real (narrower) touchscreen, shoving 123/comma to the far left and
+   ./enter to the far right instead of a normal keyboard-shaped bottom
+   row. Capped so it's still clearly the widest key, without dominating. */
+.osk-space { flex: 4; max-width: 320px; }
 
 .osk-dismiss-row { margin-bottom: 0.1rem; justify-content: center; }
 .osk-dismiss {
@@ -1565,3 +1569,11 @@ select {
    keys are sized in rem. */
 body.osk-open .modal-overlay { padding-bottom: var(--osk-h, 0px); }
 body.osk-open .modal { max-height: calc(90vh - var(--osk-h, 0px)); }
+
+/* Fields outside a modal — todo/bulletin in the sidebar — have no such
+   shrink-to-fit mechanism. The sidebar's own content is often short enough
+   to have no scrollable overflow at all in its normal state, so there's
+   nothing for scrollIntoView (or the manual correction in showOsk()) to
+   scroll to — padding-bottom manufactures that room; scroll-padding-bottom
+   then keeps the browser from scrolling straight through it. */
+body.osk-open .sidebar { padding-bottom: var(--osk-h, 0px); scroll-padding-bottom: var(--osk-h, 0px); }

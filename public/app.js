@@ -1508,11 +1508,16 @@ function oskEnter() {
 }
 
 osk.addEventListener('pointerdown', e => {
+  // Any tap inside the keyboard panel, not just one that lands on an actual
+  // key — a tap in the gap between keys otherwise falls through to the
+  // browser's default behavior (clicking anything that isn't the focused
+  // input blurs it, even a plain non-interactive gap), closing the whole
+  // keyboard on what should've been a harmless near-miss.
+  e.preventDefault();
   const btn = e.target.closest('.osk-key');
   if (!btn) return;
   const key = btn.dataset.key;
-  if (key === 'dismiss') { oskTarget?.blur(); hideOsk(); return; } // let this one blur normally
-  e.preventDefault(); // keep focus on oskTarget — a real click would blur it first
+  if (key === 'dismiss') { oskTarget?.blur(); hideOsk(); return; }
   if (key === 'char') { oskInsert(btn.dataset.char); if (oskShift) { oskShift = false; buildOsk(); } }
   else if (key === 'space') oskInsert(' ');
   else if (key === 'backspace') oskBackspace();
@@ -1529,9 +1534,24 @@ function showOsk(target) {
   oskShift = false;
   buildOsk();
   osk.hidden = false;
-  document.documentElement.style.setProperty('--osk-h', osk.offsetHeight + 'px');
+  const oskHeight = osk.offsetHeight;
+  document.documentElement.style.setProperty('--osk-h', oskHeight + 'px');
   document.body.classList.add('osk-open');
-  target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+  // scrollIntoView({block:'center'}) centers the target in the *whole*
+  // viewport — it has no idea a fixed-position panel is now covering the
+  // bottom of it, so a field near the bottom of the sidebar (todo/bulletin,
+  // which isn't inside a modal and gets no shrink-to-fit treatment) can
+  // still end up scrolled to right behind the keyboard. Measure after the
+  // fact and nudge the actual scroll container further if it's still
+  // covered, rather than trusting the browser got it right.
+  target.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const rect = target.getBoundingClientRect();
+  const visibleBottom = window.innerHeight - oskHeight;
+  if (rect.bottom > visibleBottom) {
+    const scrollParent = target.closest('.sidebar, .modal') || document.scrollingElement;
+    scrollParent.scrollTop += (rect.bottom - visibleBottom) + 16; // +16px breathing room
+  }
 }
 
 function hideOsk() {
