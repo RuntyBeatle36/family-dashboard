@@ -1584,6 +1584,63 @@ fetch('/api/version').then(r => r.json()).then(({ version, commit }) => {
     'v' + version + (commit ? ` · ${commit}` : '');
 }).catch(() => {});
 
+/* ══════════════════════════════════════════════════════════
+   SELF-UPDATE
+   Checks GitHub once shortly after load and then every 12h — not more
+   often than that, since it's a real network call to GitHub each time and
+   updates to a family calendar app aren't remotely time-sensitive. Shows a
+   small badge (top bar) rather than anything that interrupts; the actual
+   update only happens if the badge is tapped and "Update Now" is pressed
+   in Settings — never automatic.
+   ══════════════════════════════════════════════════════════ */
+async function checkForUpdate() {
+  try {
+    const r = await api('GET', '/api/update-check');
+    document.getElementById('update-badge').hidden = !r.updateAvailable;
+    document.getElementById('update-section').hidden = !r.updateAvailable;
+    if (r.updateAvailable) {
+      document.getElementById('update-desc').textContent =
+        `${r.behindBy} commit${r.behindBy === 1 ? '' : 's'} behind — latest: "${r.latestSummary}" (${r.latestCommit})`;
+    }
+  } catch { /* GitHub unreachable, etc. — stay quiet, try again next interval */ }
+}
+setTimeout(checkForUpdate, 30000); // let critical startup fetches (weather, calendar) go first
+setInterval(checkForUpdate, 12 * 60 * 60 * 1000);
+
+document.getElementById('update-badge').addEventListener('click', () => {
+  document.getElementById('settings-btn').click();
+});
+
+document.getElementById('update-now-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('update-now-btn');
+  const progress = document.getElementById('update-progress');
+  btn.disabled = true;
+  progress.textContent = 'Pulling the latest version…';
+  try {
+    await api('POST', '/api/update-apply');
+  } catch (err) {
+    progress.textContent = 'Update failed: ' + err.message;
+    btn.disabled = false;
+    return;
+  }
+  // The server exits right after responding (systemd brings it back up on
+  // the new code) — poll for it to come back rather than guessing how long
+  // that takes, then reload to pick up the new client-side files too.
+  progress.textContent = 'Restarting the dashboard…';
+  const start = Date.now();
+  const poll = setInterval(async () => {
+    if (Date.now() - start > 60000) {
+      clearInterval(poll);
+      progress.textContent = 'Taking longer than expected — refresh the page manually in a moment.';
+      return;
+    }
+    try {
+      const r = await fetch('/api/version');
+      if (r.ok) { clearInterval(poll); location.reload(); }
+    } catch { /* still restarting — keep polling */ }
+  }, 2000);
+});
+
 document.getElementById('settings-btn').addEventListener('click', () => {
   zipSelect.value = getActiveZip().zip;
   updateZipCoords();

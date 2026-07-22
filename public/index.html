@@ -81,6 +81,7 @@
   </div>
 
   <span id="connectivity-badge" class="connectivity-badge" hidden></span>
+  <button id="update-badge" class="update-badge" hidden>🔄 Update available</button>
 
   <button class="btn btn-icon settings-btn" id="settings-btn" title="Settings">⚙️</button>
 
@@ -264,6 +265,13 @@
 <div id="settings-modal" class="modal-overlay" hidden>
   <div class="modal">
     <h3 class="modal-title">⚙️ Settings</h3>
+
+    <div class="settings-section" id="update-section" hidden>
+      <div class="settings-section-title">🔄 Update Available</div>
+      <p class="settings-desc" id="update-desc"></p>
+      <button class="btn btn-accent" id="update-now-btn">Update Now</button>
+      <p class="settings-desc" id="update-progress" style="margin-top:0.5rem"></p>
+    </div>
 
     <div class="settings-section">
       <div class="settings-section-title">Theme</div>

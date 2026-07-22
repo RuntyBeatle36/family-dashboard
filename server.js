@@ -401,6 +401,53 @@ app.get('/api/version', (req, res) => {
   res.json({ version: APP_VERSION, commit: GIT_COMMIT });
 });
 
+// ── Self-update ───────────────────────────────────────────────
+// Requires the systemd unit to be Restart=always (not the default
+// on-failure) — see dashboard.service. A clean process.exit(0) after a
+// successful pull is not a "failure" as far as systemd is concerned, so
+// on-failure would just leave the dashboard off until someone noticed.
+const execFileP = require('util').promisify(execFile);
+const GIT_OPTS = { cwd: __dirname, timeout: 15000 };
+
+app.get('/api/update-check', async (req, res) => {
+  if (!GIT_COMMIT) return res.json({ updateAvailable: false }); // not a git checkout
+
+  try {
+    await execFileP('git', ['fetch', 'origin', 'main'], GIT_OPTS);
+    const { stdout: local }  = await execFileP('git', ['rev-parse', 'HEAD'], GIT_OPTS);
+    const { stdout: remote } = await execFileP('git', ['rev-parse', 'origin/main'], GIT_OPTS);
+    if (local.trim() === remote.trim()) return res.json({ updateAvailable: false });
+
+    const { stdout: countOut } = await execFileP('git',
+      ['rev-list', '--count', 'HEAD..origin/main'], GIT_OPTS);
+    const { stdout: summaryOut } = await execFileP('git',
+      ['log', '-1', '--format=%s', 'origin/main'], GIT_OPTS);
+
+    res.json({
+      updateAvailable: true,
+      behindBy: parseInt(countOut.trim(), 10) || 0,
+      latestCommit: remote.trim().slice(0, 7),
+      latestSummary: summaryOut.trim(),
+    });
+  } catch (err) {
+    // Offline, GitHub unreachable, etc. — same "can't tell right now" shape
+    // as no update, rather than surfacing a scary error for what's usually
+    // just a transient network hiccup.
+    res.json({ updateAvailable: false, checkFailed: true });
+  }
+});
+
+app.post('/api/update-apply', async (req, res) => {
+  try {
+    await execFileP('git', ['pull', '--ff-only'], GIT_OPTS);
+    await execFileP('npm', ['install', '--omit=dev'], GIT_OPTS); // in case a new commit added a dependency
+  } catch (err) {
+    return res.status(500).json({ error: 'update failed', detail: err.message });
+  }
+  res.json({ ok: true });
+  res.on('finish', () => process.exit(0)); // wait for the response to actually go out before restarting
+});
+
 app.get('/api/sysstats', (req, res) => {
   const totalMem = os.totalmem();
   const freeMem  = os.freemem();
