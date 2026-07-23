@@ -1051,6 +1051,25 @@ body {
 .settings-desc { font-size: 0.85rem; color: var(--text-dim); }
 .zip-coords    { font-size: 0.75rem; color: var(--text-dimmer); font-family: monospace; }
 
+.wx-zip-row { display: flex; gap: 0.5rem; }
+.wx-zip-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+}
+.wx-zip-row .btn { flex-shrink: 0; }
+
+#wx-use-location-btn { margin-bottom: 0.6rem; width: 100%; }
+
+.wx-location-status { font-size: 0.8rem; min-height: 1.1em; }
+.wx-location-status.success { color: var(--success, #4caf7d); }
+.wx-location-status.error   { color: var(--danger); }
+
 .debug-wx-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

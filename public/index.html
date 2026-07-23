@@ -66,7 +66,7 @@
         <span id="wx-feels" class="wx-feels">Feels --°</span>
       </div>
       <div class="wx-meta">
-        <span class="wx-city">Corpus Christi</span>
+        <span id="wx-city" class="wx-city">Corpus Christi</span>
         <span id="wx-neighborhood" class="wx-neighborhood">--</span>
         <span id="wx-desc">Loading weather...</span>
         <span id="wx-hi-lo">Hi --° / Lo --°</span>
@@ -360,10 +360,15 @@
 
     <div class="settings-section">
       <div class="settings-section-title">Weather Location</div>
-      <p class="settings-desc">Choose your neighborhood for hyperlocal weather.</p>
-      <label class="field-label">Corpus Christi Area Zip Code
-        <select id="zip-select"></select>
-      </label>
+      <p class="settings-desc">Detect where this dashboard is now, or enter any US zip code for hyperlocal weather.</p>
+      <button id="wx-use-location-btn" class="btn btn-ghost" type="button">📍 Use My Location</button>
+      <form id="wx-zip-form" class="field-label">Zip Code
+        <div class="wx-zip-row">
+          <input id="wx-zip-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="e.g. 78414">
+          <button id="wx-zip-submit-btn" class="btn btn-ghost" type="submit">Set</button>
+        </div>
+      </form>
+      <p id="wx-location-status" class="wx-location-status"></p>
       <p id="zip-coords" class="zip-coords"></p>
     </div>
 
@@ -508,9 +513,32 @@
         <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="cloudy-day">⛅ Cloudy Day</button>
         <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="cloudy-night">🌥️ Cloudy Night</button>
         <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="overcast">☁️ Overcast</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow">❄️ Snow</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain">🌧️ Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="fog">🌫️ Fog</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="windy-day">💨 Windy Day</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="windy-night">💨 Windy Night</button>
+
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="light">🌦️ Light Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="moderate">🌧️ Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="heavy">🌧️ Heavy Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="light">🌨️ Light Snow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="moderate">❄️ Snow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="heavy">❄️ Heavy Snow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="sleet">🧊 Sleet / Ice</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="hail">🧊 Hail</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="blizzard" style="grid-column:span 2">🌬️❄️ Blizzard</button>
+
         <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="storm">⛈️ Storm</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="storm-severe">⛈️ Severe Storm</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="thundersnow">⛈️ Thundersnow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="hurricane">🌀 Hurricane</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="tornado">🌪️ Tornado</button>
+
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="dust">💨 Dust</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="smoke">🌫️ Smoke</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="extreme-heat">🥵 Extreme Heat</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="extreme-cold">🥶 Extreme Cold</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="eclipse" style="grid-column:span 2">🌑 Eclipse</button>
+
         <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="none" style="grid-column:span 2">✕ Reset</button>
       </div>
     </div>

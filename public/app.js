@@ -8,10 +8,12 @@ const CAL_END    = 24;      // 24 rows (hours 0–23)
 const HOUR_PX    = 64;      // pixels per hour
 const REFRESH_MS = 15000;
 
-/* ── Corpus Christi zip code directory ────────────────────── */
-// Coordinates are the approximate geographic center of each ZIP.
-// Weather differences within Corpus Christi metro are minimal,
-// but this gives the most locally accurate reading per neighborhood.
+/* ── Weather location ─────────────────────────────────────── */
+// Corpus Christi neighborhood zips get a fast, no-network lookup (this app
+// was built for a Corpus Christi household); any other US zip or a
+// geolocation fix is resolved on demand via geocodeZip()/detectGeolocation()
+// + resolveNwsStation() below. Coordinates are the approximate geographic
+// center of each ZIP.
 const ZIP_CODES = [
   { zip: '78401', name: 'Downtown',              lat: 27.8006, lon: -97.3964 },
   { zip: '78404', name: 'Uptown / Central',      lat: 27.8014, lon: -97.4162 },
@@ -29,9 +31,87 @@ const ZIP_CODES = [
   { zip: '78419', name: 'NAS Corpus Christi',    lat: 27.6908, lon: -97.2906 },
 ];
 
-function getActiveZip() {
-  const saved = localStorage.getItem('wx_zip') || '78414';
-  return ZIP_CODES.find(z => z.zip === saved) || ZIP_CODES.find(z => z.zip === '78414');
+// All Corpus Christi zips share one station (KCRP, the local airport) —
+// hardcoded here so the common case (nobody ever opens Weather Location
+// settings) resolves instantly with zero network round-trip, matching the
+// app's original behavior exactly.
+const DEFAULT_LOCATION = (() => {
+  const z = ZIP_CODES.find(z => z.zip === '78414');
+  return { lat: z.lat, lon: z.lon, zip: z.zip, city: 'Corpus Christi', detail: `${z.name} · ${z.zip}`, stationId: 'KCRP' };
+})();
+
+function getActiveLocation() {
+  const saved = localStorage.getItem('wx_location');
+  if (saved) {
+    try {
+      const loc = JSON.parse(saved);
+      if (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number') return loc;
+    } catch { /* fall through to defaults below */ }
+  }
+  // Back-compat: earlier versions only stored a Corpus Christi zip.
+  const oldZip = localStorage.getItem('wx_zip');
+  const z = oldZip && ZIP_CODES.find(z => z.zip === oldZip);
+  if (z) return { lat: z.lat, lon: z.lon, zip: z.zip, city: 'Corpus Christi', detail: `${z.name} · ${z.zip}`, stationId: 'KCRP' };
+  return DEFAULT_LOCATION;
+}
+
+function setActiveLocation(loc) {
+  localStorage.setItem('wx_location', JSON.stringify(loc));
+  localStorage.removeItem('wx_zip'); // superseded by wx_location
+}
+
+// Resolves any US lat/lon to its nearest NWS observation station plus a
+// human-readable "City, ST" label — this is what lets current-conditions
+// data work anywhere in the US, not just at the hardcoded KCRP station this
+// app originally shipped with.
+async function resolveNwsStation(lat, lon) {
+  const pr = await fetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`, {
+    headers: { 'User-Agent': 'FamilyDashboard/1.0' }, signal: AbortSignal.timeout(8000),
+  });
+  if (!pr.ok) throw new Error('Location not recognized by the National Weather Service');
+  const pd  = await pr.json();
+  const rel = pd.properties?.relativeLocation?.properties;
+  const label = rel?.city && rel?.state ? `${rel.city}, ${rel.state}` : null;
+
+  const sr = await fetch(pd.properties.observationStations, {
+    headers: { 'User-Agent': 'FamilyDashboard/1.0' }, signal: AbortSignal.timeout(8000),
+  });
+  if (!sr.ok) throw new Error('Could not find a nearby weather station');
+  const sd = await sr.json();
+  const stationId = sd.features?.[0]?.properties?.stationIdentifier || null;
+
+  return { stationId, label };
+}
+
+// Zip → {lat, lon, city, detail}. Corpus Christi zips resolve locally
+// (no network); anything else goes through Zippopotam.us (free, no API key).
+async function geocodeZip(zip) {
+  const local = ZIP_CODES.find(z => z.zip === zip);
+  if (local) return { lat: local.lat, lon: local.lon, zip: local.zip, city: 'Corpus Christi', detail: `${local.name} · ${local.zip}` };
+
+  const r = await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`, { signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error('Zip code not found');
+  const d = await r.json();
+  const place = d.places?.[0];
+  if (!place) throw new Error('Zip code not found');
+  return {
+    lat: parseFloat(place.latitude),
+    lon: parseFloat(place.longitude),
+    zip,
+    city: `${place['place name']}, ${place['state abbreviation']}`,
+    detail: zip,
+  };
+}
+
+function detectGeolocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Geolocation is not supported by this browser')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      err => reject(new Error(err.message || 'Location access denied')),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 }
+    );
+  });
 }
 
 /* ── Event colors ─────────────────────────────────────────── */
@@ -173,8 +253,18 @@ function applyTheme() {
       // No actual ambient light sensor on this hardware — current weather
       // condition (already tracked for the animated sky) is the closest
       // available proxy for "it's dim outside," and switches to dark mode
-      // even during nominal daylight hours under heavy cloud cover.
-      const heavyCloudCover = ['overcast', 'storm', 'rain', 'snow'].includes(wxMode);
+      // even during nominal daylight hours under genuinely dark conditions.
+      // Rain/snow only count at heavy intensity — light rain/light snow
+      // can absolutely still be bright out, and shouldn't force dark mode
+      // just because there's some precipitation. Extreme heat/cold and
+      // windy are excluded on purpose: none of those inherently mean dim
+      // light (arctic air and desert wind are often the opposite — bright).
+      const ALWAYS_DARK_MODES = [
+        'overcast', 'storm', 'storm-severe', 'hurricane', 'tornado',
+        'thundersnow', 'dust', 'smoke', 'eclipse', 'sleet', 'hail', 'blizzard',
+      ];
+      const heavyCloudCover = ALWAYS_DARK_MODES.includes(wxMode) ||
+        ((wxMode === 'rain' || wxMode === 'snow') && wxIntensity === 'heavy');
       mode = (isDaytime && !heavyCloudCover) ? 'light' : 'dark';
     } else {
       // Fallback to system preference before first weather fetch
@@ -206,7 +296,7 @@ function updateThemeStatus(activeMode) {
   const now  = new Date();
   const nowM = now.getHours() * 60 + now.getMinutes();
   const isDaytime = nowM >= sunriseMins && nowM < sunsetMins;
-  const cloudNote = (activeMode === 'dark' && isDaytime) ? ' (cloudy)' : '';
+  const cloudNote = (activeMode === 'dark' && isDaytime) ? ` (${wxMode.replace('-', ' ')})` : '';
   el.textContent = `Now ${activeMode}${cloudNote} · Sunrise ${fmt12hHM(riseH, riseM)} · Sunset ${fmt12hHM(setH, setM)}`;
 }
 
@@ -332,14 +422,29 @@ setInterval(updateClock, 1000);
    ══════════════════════════════════════════════════════════ */
 const wxCanvas = document.getElementById('wx-canvas');
 const wxCtx    = wxCanvas.getContext('2d');
-let wxDrops  = [];
-let wxStars  = [];
-let wxClouds = [];
-let wxFlakes = [];
-let wxAnimId = null;
-let wxMode   = 'none';
-let daySkyOC = null;  // OffscreenCanvas for pre-rendered day sky, invalidated on resize
-let skyGrads = {};    // cached per-mode gradient objects, keyed by name, invalidated on resize
+let wxDrops   = [];
+let wxStars   = [];
+let wxClouds  = [];
+let wxFlakes  = [];
+let wxSleet   = [];
+let wxHail    = [];
+let wxStreaks = []; // wind-blown motion lines (windy/hurricane)
+let wxAnimId  = null;
+let wxMode    = 'none';
+// 'light' | 'moderate' | 'heavy' — applies to rain/snow (drizzle is just
+// rain at 'light'). Independent of wxMode so the same drawRain()/drawSnow()
+// scale by however hard it's actually coming down.
+let wxIntensity = 'moderate';
+let daySkyOC  = null;  // OffscreenCanvas for pre-rendered day sky, invalidated on resize
+let skyGrads  = {};    // cached per-mode gradient objects, keyed by name, invalidated on resize
+
+// Multiplies particle count/speed/opacity for rain and snow. 'moderate' is
+// 1.0 across the board — the original tuning — light/heavy scale from there.
+const INTENSITY_SCALE = {
+  light:    { count: 0.45, speed: 0.65, opac: 0.65 },
+  moderate: { count: 1,    speed: 1,    opac: 1    },
+  heavy:    { count: 1.7,  speed: 1.4,  opac: 1.25 },
+};
 
 // Graphics setting (Settings > Graphics > Weather Animation): 'off' | 'reduced' | 'full'
 // Defaults to the lowest tier — this runs on a wide range of Pi hardware
@@ -359,27 +464,36 @@ function resizeWxCanvas() {
 }
 
 /* ── Rain drops ───────────────────────────────────────────── */
-const LEAN = 0.22;
+// Wind-driven horizontal lean — steeper for hurricane's near-sideways rain
+// than a normal rain/storm's gentle slant.
+function currentLean() {
+  return wxMode === 'hurricane' ? 0.55 : 0.22;
+}
 
 function mkDrop() {
+  const s = INTENSITY_SCALE[wxIntensity];
   return {
     x:     Math.random() * wxCanvas.width * 1.3 - wxCanvas.width * 0.15,
     y:     Math.random() * wxCanvas.height - wxCanvas.height,
-    len:   12 + Math.random() * 20,
-    speed:  8 + Math.random() * 14,
-    opac:  0.12 + Math.random() * 0.26,
+    len:   (12 + Math.random() * 20) * (0.85 + s.speed * 0.15),
+    speed: (8 + Math.random() * 14) * s.speed,
+    opac:  (0.12 + Math.random() * 0.26) * s.opac,
   };
 }
 
 function initDrops() {
-  wxDrops = Array.from({ length: qCount(wxMode === 'storm' ? 170 : 100) }, mkDrop);
+  const base =
+    wxMode === 'hurricane' ? 240 :
+    wxMode === 'storm' || wxMode === 'storm-severe' || wxMode === 'thundersnow' ? 170 : 100;
+  wxDrops = Array.from({ length: qCount(Math.round(base * INTENSITY_SCALE[wxIntensity].count)) }, mkDrop);
 }
 
 function resetDrop(d) {
-  d.len   = 12 + Math.random() * 20;
+  const s = INTENSITY_SCALE[wxIntensity];
+  d.len   = (12 + Math.random() * 20) * (0.85 + s.speed * 0.15);
   d.x     = Math.random() * wxCanvas.width * 1.3 - wxCanvas.width * 0.15;
-  d.speed = 8 + Math.random() * 14;
-  d.opac  = 0.12 + Math.random() * 0.26;
+  d.speed = (8 + Math.random() * 14) * s.speed;
+  d.opac  = (0.12 + Math.random() * 0.26) * s.opac;
   d.y     = -d.len;
 }
 
@@ -506,6 +620,120 @@ function drawRainSky() {
   wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
 }
 
+// Storm-severe/hurricane — darker and flatter than regular storm's rain
+// sky, since neither has much sunlight getting through at all.
+function drawStormDarkSky() {
+  wxCtx.fillStyle = getSkyGrad('storm-dark', [
+    [0, 'rgba(8,  11, 28, 0.92)'],
+    [1, 'rgba(16, 22, 40, 0.68)'],
+  ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+}
+
+// Tornado sky — the real-world greenish-gray "hail green" cast, distinct
+// from a plain storm so it reads as its own (rarer, scarier) thing.
+function drawTornadoSky() {
+  wxCtx.fillStyle = getSkyGrad('tornado', [
+    [0, 'rgba(24, 32, 26, 0.90)'],
+    [1, 'rgba(46, 58, 44, 0.62)'],
+  ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+}
+
+// Shared "uniform haze" look for fog/dust/smoke — same structure (flat
+// tinted fill + a couple of very slow, very soft drifting highlights),
+// just different coloring, since all three are fundamentally "reduced
+// visibility, hazy air" rather than distinct cloud shapes or precipitation.
+function drawHazeSky(key, baseStops, highlightRgba) {
+  wxCtx.fillStyle = getSkyGrad(key, baseStops);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const t = performance.now() * 0.00004;
+  [[0.25, 0.4], [0.7, 0.55]].forEach(([cfx, cfy], i) => {
+    const x = W * (cfx + Math.sin(t + i * 2) * 0.08);
+    const y = H * cfy;
+    const g = wxCtx.createRadialGradient(x, y, 0, x, y, W * 0.32);
+    g.addColorStop(0, highlightRgba);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    wxCtx.fillStyle = g;
+    wxCtx.fillRect(0, 0, W, H);
+  });
+}
+function drawFogSky()   { drawHazeSky('fog',   [[0,'rgba(150,158,168,0.72)'],[1,'rgba(170,178,186,0.55)']], 'rgba(255,255,255,0.10)'); }
+function drawDustSky()  { drawHazeSky('dust',  [[0,'rgba(150,110, 62,0.68)'],[1,'rgba(178,140, 88,0.50)']], 'rgba(255,214,150,0.12)'); }
+function drawSmokeSky() { drawHazeSky('smoke', [[0,'rgba(90,  86, 82,0.74)'],[1,'rgba(120,114,108,0.55)']], 'rgba(200,196,190,0.10)'); }
+
+// Extreme heat — day sky pushed warmer/more saturated, with a brighter
+// "haze shimmer" band near the ground implying rising heat.
+function drawHeatSky() {
+  wxCtx.fillStyle = getSkyGrad('heat', [
+    [0,    'rgba(20, 90, 170, 0.90)'],
+    [0.55, 'rgba(235, 150, 40, 0.35)'],
+    [1,    'rgba(255, 190, 90, 0.30)'],
+  ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+}
+function drawHeatShimmer(ts) {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const bandY = H * 0.86, bandH = H * 0.14;
+  wxCtx.save();
+  wxCtx.globalAlpha = 0.10;
+  wxCtx.fillStyle = '#fff3d6';
+  for (let i = 0; i < 5; i++) {
+    const yy = bandY + (bandH / 5) * i + Math.sin(ts * 0.003 + i) * 3;
+    wxCtx.fillRect(0, yy, W, 2);
+  }
+  wxCtx.restore();
+}
+
+// Extreme cold — cold white-blue cast, with sparse twinkling frost
+// specks across the whole sky (reuses the star-twinkle math, not just the
+// upper band, and whiter/tighter than night stars).
+function drawColdSky() {
+  wxCtx.fillStyle = getSkyGrad('cold', [
+    [0, 'rgba(150, 185, 220, 0.55)'],
+    [1, 'rgba(190, 210, 230, 0.40)'],
+  ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+}
+function drawFrostSparkle(ts) {
+  wxCtx.fillStyle = '#ffffff';
+  for (const s of wxStars) {
+    wxCtx.globalAlpha = (s.base * 0.6) * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
+    wxCtx.beginPath();
+    wxCtx.arc(s.x, s.y, s.r * 0.8, 0, Math.PI * 2);
+    wxCtx.fill();
+  }
+  wxCtx.globalAlpha = 1;
+}
+
+// Eclipse — day sky darkened toward twilight, sun mostly occluded by a
+// dark disc with a glowing corona ring; stars peek through like totality.
+function drawEclipseSky(ts) {
+  wxCtx.fillStyle = getSkyGrad('eclipse', [
+    [0, 'rgba(6,  8, 22, 0.94)'],
+    [1, 'rgba(18, 22, 44, 0.75)'],
+  ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+  drawStars(ts);
+  const W = wxCanvas.width, H = wxCanvas.height;
+  // Off-center, like a sun/moon actually sitting in the sky — dead-center
+  // read as an artificial, staged logo rather than a natural sky position.
+  const cx = W * 0.7, cy = H * 0.2, r = Math.min(W, H) * 0.07;
+  const corona = wxCtx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 2.6);
+  corona.addColorStop(0,   'rgba(255,244,214,0.85)');
+  corona.addColorStop(0.4, 'rgba(255,230,180,0.30)');
+  corona.addColorStop(1,   'rgba(255,230,180,0)');
+  wxCtx.fillStyle = corona;
+  wxCtx.beginPath();
+  wxCtx.arc(cx, cy, r * 2.6, 0, Math.PI * 2);
+  wxCtx.fill();
+  wxCtx.fillStyle = '#050608'; // the moon, fully occluding the disc
+  wxCtx.beginPath();
+  wxCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  wxCtx.fill();
+}
+
 function drawStars(ts) {
   wxCtx.fillStyle = '#ffffff';
   for (const s of wxStars) {
@@ -535,16 +763,17 @@ function drawClouds(dt = 1) {
 
 function drawRain(dt = 1) {
   const H = wxCanvas.height;
+  const lean = currentLean();
   wxCtx.strokeStyle = '#a8d8ff';
   wxCtx.lineWidth = 1;
   for (const d of wxDrops) {
     wxCtx.globalAlpha = d.opac;
     wxCtx.beginPath();
     wxCtx.moveTo(d.x, d.y);
-    wxCtx.lineTo(d.x + LEAN * d.len, d.y + d.len);
+    wxCtx.lineTo(d.x + lean * d.len, d.y + d.len);
     wxCtx.stroke();
     d.y += d.speed * dt;
-    d.x += LEAN * d.speed * 0.28 * dt;
+    d.x += lean * d.speed * 0.28 * dt;
     if (d.y > H + d.len) resetDrop(d);
   }
   wxCtx.globalAlpha = 1;
@@ -552,20 +781,23 @@ function drawRain(dt = 1) {
 
 /* ── Snowflakes ───────────────────────────────────────────── */
 function mkFlake() {
+  const s = INTENSITY_SCALE[wxIntensity];
   return {
     x:         Math.random() * wxCanvas.width,
     y:         Math.random() * wxCanvas.height,
     r:         1.5 + Math.random() * 3.2,
-    speed:     1.4 + Math.random() * 2.8,
+    speed:     (1.4 + Math.random() * 2.8) * s.speed,
     swayPhase: Math.random() * Math.PI * 2,
     swayFreq:  0.0008 + Math.random() * 0.0012,
-    swayAmp:   18 + Math.random() * 28,
-    opac:      0.55 + Math.random() * 0.40,
+    // Heavy snow blows more sideways (less lazy drift, more wind-driven);
+    // light snow sways gently.
+    swayAmp:   (18 + Math.random() * 28) * (wxIntensity === 'heavy' ? 0.5 : 1),
+    opac:      (0.55 + Math.random() * 0.40) * s.opac,
   };
 }
 
 function initFlakes() {
-  wxFlakes = Array.from({ length: qCount(120) }, mkFlake);
+  wxFlakes = Array.from({ length: qCount(Math.round(120 * INTENSITY_SCALE[wxIntensity].count)) }, mkFlake);
 }
 
 function drawSnowSky() {
@@ -593,6 +825,214 @@ function drawSnow(ts, dt = 1) {
     }
   }
   wxCtx.globalAlpha = 1;
+}
+
+// Blizzard — reuses the snowflake pool (always at heavy intensity, forced
+// in applyWxMode) but drives it with a strong constant wind lean instead of
+// the gentle sway used for plain snow, plus wind streaks and a washed-out,
+// low-contrast sky standing in for near-zero whiteout visibility.
+function drawBlizzardSky() {
+  wxCtx.fillStyle = getSkyGrad('blizzard', [
+    [0,   'rgba(150, 160, 172, 0.85)'],
+    [0.5, 'rgba(196, 204, 212, 0.72)'],
+    [1,   'rgba(224, 228, 232, 0.55)'],
+  ]);
+  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+}
+function drawBlizzard(dt = 1) {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const lean = 1.1; // near-horizontal — wind-driven snow, not falling snow
+  wxCtx.fillStyle = '#ffffff';
+  for (const f of wxFlakes) {
+    wxCtx.globalAlpha = f.opac;
+    wxCtx.beginPath();
+    wxCtx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+    wxCtx.fill();
+    f.y += f.speed * dt;
+    f.x += f.speed * lean * dt;
+    if (f.y > H + f.r || f.x > W + f.r) {
+      f.x = -f.r - Math.random() * W * 0.3;
+      f.y = Math.random() * H - H * 0.3;
+    }
+  }
+  wxCtx.globalAlpha = 1;
+}
+
+/* ── Sleet / freezing rain / ice pellets ──────────────────────
+   Small, hard, fast, near-vertical — visually between rain (streaked) and
+   snow (soft), which is exactly the point: ice, not water or fluff. */
+function mkSleet() {
+  return {
+    x: Math.random() * wxCanvas.width,
+    y: Math.random() * wxCanvas.height - wxCanvas.height,
+    len: 5 + Math.random() * 5,
+    speed: 14 + Math.random() * 8,
+    opac: 0.35 + Math.random() * 0.35,
+  };
+}
+function initSleet() {
+  wxSleet = Array.from({ length: qCount(90) }, mkSleet);
+}
+function drawSleet(dt = 1) {
+  const H = wxCanvas.height;
+  wxCtx.strokeStyle = '#dceeff';
+  wxCtx.lineWidth = 1.4;
+  for (const p of wxSleet) {
+    wxCtx.globalAlpha = p.opac;
+    wxCtx.beginPath();
+    wxCtx.moveTo(p.x, p.y);
+    wxCtx.lineTo(p.x + 0.06 * p.len, p.y + p.len);
+    wxCtx.stroke();
+    p.y += p.speed * dt;
+    if (p.y > H + p.len) { p.x = Math.random() * wxCanvas.width; p.y = -p.len; }
+  }
+  wxCtx.globalAlpha = 1;
+}
+
+/* ── Hail ──────────────────────────────────────────────────────
+   Round, fast-falling, with a slight horizontal jitter to suggest bounce/
+   scatter rather than rain's clean streak. */
+function mkHail() {
+  return {
+    x: Math.random() * wxCanvas.width,
+    y: Math.random() * wxCanvas.height - wxCanvas.height,
+    r: 1.5 + Math.random() * 2.2,
+    speed: 16 + Math.random() * 9,
+    jitterPhase: Math.random() * Math.PI * 2,
+    opac: 0.55 + Math.random() * 0.35,
+  };
+}
+function initHail() {
+  wxHail = Array.from({ length: qCount(70) }, mkHail);
+}
+function drawHail(ts, dt = 1) {
+  const H = wxCanvas.height;
+  wxCtx.fillStyle = '#eef6ff';
+  for (const p of wxHail) {
+    const jitter = Math.sin(ts * 0.02 + p.jitterPhase) * 2;
+    wxCtx.globalAlpha = p.opac;
+    wxCtx.beginPath();
+    wxCtx.arc(p.x + jitter, p.y, p.r, 0, Math.PI * 2);
+    wxCtx.fill();
+    p.y += p.speed * dt;
+    if (p.y > H + p.r) { p.x = Math.random() * wxCanvas.width; p.y = -p.r; }
+  }
+  wxCtx.globalAlpha = 1;
+}
+
+/* ── Wind streaks (windy / hurricane) ─────────────────────────
+   Sparse, fast, near-horizontal motion lines — a cheap but legible way to
+   show "wind" specifically, distinct from any form of precipitation. */
+function mkStreak() {
+  return {
+    x: Math.random() * wxCanvas.width * 1.4 - wxCanvas.width * 0.2,
+    y: Math.random() * wxCanvas.height,
+    len: 40 + Math.random() * 70,
+    speed: 9 + Math.random() * 10,
+    opac: 0.08 + Math.random() * 0.14,
+  };
+}
+function initStreaks(count = 26) {
+  wxStreaks = Array.from({ length: qCount(count) }, mkStreak);
+}
+function drawStreaks(dt = 1) {
+  const W = wxCanvas.width;
+  wxCtx.strokeStyle = '#ffffff';
+  wxCtx.lineWidth = 1;
+  for (const s of wxStreaks) {
+    wxCtx.globalAlpha = s.opac;
+    wxCtx.beginPath();
+    wxCtx.moveTo(s.x, s.y);
+    wxCtx.lineTo(s.x + s.len, s.y + s.len * 0.10);
+    wxCtx.stroke();
+    s.x += s.speed * dt;
+    if (s.x > W + s.len) { s.x = -s.len; s.y = Math.random() * wxCanvas.height; }
+  }
+  wxCtx.globalAlpha = 1;
+}
+
+/* ── Funnel cloud (tornado) ───────────────────────────────────
+   Redrawn procedurally every frame (not pre-rendered — the whole point is
+   that it writhes and never holds a fixed silhouette like a real funnel).
+   Each height band gets its own sway phase/amplitude, layered from two
+   sine waves at different frequencies, so the funnel curves and twists
+   independently top-to-bottom instead of swinging as one rigid triangle.
+   Wide where it meets the storm cloud at top, tapering to a narrow point
+   at the ground — and the whole thing drifts slowly across the screen
+   like a tracking storm, not just wobbling in place.
+   A jittering debris cloud at the ground-contact point sells the touchdown. */
+function funnelWobble(t, ts) {
+  return Math.sin(ts * 0.0011 + t * 3.2) * (4 + t * 22) +
+         Math.sin(ts * 0.0023 + t * 6.1 + 1.7) * (2 + t * 8);
+}
+
+// Continuous horizontal drift, wrapping around once fully off-screen —
+// same "exit one side, re-enter the other" convention as clouds/streaks.
+function funnelDriftX(ts, W, margin) {
+  const span = W + margin * 2;
+  return ((ts * 0.018) % span) - margin;
+}
+
+function drawFunnel(ts) {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const topY = H * 0.03, botY = H * 0.97; // stretches nearly the full canvas height
+  const topHalf = Math.min(95, W * 0.12), botHalf = 4; // wide at the cloud base, narrow at the ground
+  const N = 22;
+  const driftX = funnelDriftX(ts, W, topHalf + 60);
+
+  wxCtx.save();
+  wxCtx.globalAlpha = 0.86;
+
+  const edge = (t, widthMul) => {
+    const y    = topY + (botY - topY) * t;
+    const half = (topHalf + (botHalf - topHalf) * Math.pow(t, 1.6)) * widthMul;
+    const x    = driftX + funnelWobble(t, ts);
+    return [x, y, half];
+  };
+
+  // Outer funnel body
+  wxCtx.fillStyle = 'rgba(68,72,84,0.88)';
+  wxCtx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const [x, y, half] = edge(i / N, 1);
+    i === 0 ? wxCtx.moveTo(x - half, y) : wxCtx.lineTo(x - half, y);
+  }
+  for (let i = N; i >= 0; i--) {
+    const [x, y, half] = edge(i / N, 1);
+    wxCtx.lineTo(x + half, y);
+  }
+  wxCtx.closePath();
+  wxCtx.fill();
+
+  // Darker inner core strip, for a sense of rotation/volume rather than a flat wedge
+  wxCtx.fillStyle = 'rgba(28,30,38,0.28)';
+  wxCtx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const [x, y, half] = edge(i / N, 0.28);
+    i === 0 ? wxCtx.moveTo(x - half, y) : wxCtx.lineTo(x - half, y);
+  }
+  for (let i = N; i >= 0; i--) {
+    const [x, y, half] = edge(i / N, 0.28);
+    wxCtx.lineTo(x + half, y);
+  }
+  wxCtx.closePath();
+  wxCtx.fill();
+
+  // Debris cloud kicked up at the ground-contact point
+  const baseX = driftX + funnelWobble(1, ts);
+  const debrisSpread = 34;
+  wxCtx.fillStyle = 'rgba(94,84,66,0.30)';
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + ts * 0.0015;
+    const r = debrisSpread * (0.5 + 0.5 * Math.sin(ts * 0.002 + i * 1.7));
+    const dx = Math.cos(a) * r * 1.1;
+    const dy = Math.sin(a) * r * 0.28;
+    wxCtx.beginPath();
+    wxCtx.ellipse(baseX + dx, botY + dy, 14 + (i % 3) * 6, 8 + (i % 3) * 3, 0, 0, Math.PI * 2);
+    wxCtx.fill();
+  }
+
+  wxCtx.restore();
 }
 
 /* ── Bolt (jagged line via midpoint displacement) ─────────── */
@@ -679,10 +1119,62 @@ function drawFrame(ts = 0) {
       drawClouds(dt);
       break;
 
+    case 'fog':
+      drawFogSky();
+      break;
+
+    case 'dust':
+      drawDustSky();
+      break;
+
+    case 'smoke':
+      drawSmokeSky();
+      break;
+
+    case 'windy-day':
+      drawDaySky();
+      drawClouds(dt);
+      drawStreaks(dt);
+      break;
+
+    case 'windy-night':
+      drawNightSky();
+      drawStars(ts);
+      drawClouds(dt);
+      drawStreaks(dt);
+      break;
+
     case 'rain':
     case 'storm':
       drawRainSky();
       drawRain(dt);
+      break;
+
+    case 'storm-severe':
+      drawStormDarkSky();
+      drawRain(dt);
+      break;
+
+    case 'hurricane':
+      drawStormDarkSky();
+      drawRain(dt);
+      drawStreaks(dt);
+      break;
+
+    case 'tornado':
+      drawTornadoSky();
+      drawRain(dt);
+      drawFunnel(ts);
+      break;
+
+    case 'sleet':
+      drawSnowSky();
+      drawSleet(dt);
+      break;
+
+    case 'hail':
+      drawStormDarkSky();
+      drawHail(ts, dt);
       break;
 
     case 'snow':
@@ -690,12 +1182,38 @@ function drawFrame(ts = 0) {
       drawSnow(ts, dt);
       break;
 
+    case 'thundersnow':
+      drawSnowSky();
+      drawSnow(ts, dt);
+      break;
+
+    case 'blizzard':
+      drawBlizzardSky();
+      drawStreaks(dt);
+      drawBlizzard(dt);
+      break;
+
+    case 'extreme-heat':
+      drawHeatSky();
+      drawHeatShimmer(ts);
+      break;
+
+    case 'extreme-cold':
+      drawColdSky();
+      drawFrostSparkle(ts);
+      break;
+
+    case 'eclipse':
+      drawEclipseSky(ts);
+      break;
+
     default:
       wxAnimId = null;
       return;
   }
 
-  // Bolt overlays everything (storm mode only); JS controls boltAlpha
+  // Bolt overlays everything (any mode with lightning scheduled — storm,
+  // storm-severe, thundersnow, hurricane); JS controls boltAlpha
   if (boltOC && boltAlpha > 0) {
     wxCtx.globalAlpha = boltAlpha;
     wxCtx.drawImage(boltOC, 0, 0);
@@ -766,10 +1284,21 @@ function triggerStrike() {
 
 const getLightningEnabled = () => localStorage.getItem('gfxLightning') !== 'false';
 
+// Per-mode strike interval [min, span] in ms — how "active" the lightning
+// feels varies by severity, not just on/off.
+const LIGHTNING_INTERVALS = {
+  storm:         [5000, 13000],
+  'storm-severe':[2500,  7000], // most frequent — this is the "severe" part
+  hurricane:     [6000, 14000],
+  thundersnow:   [8000, 15000], // rarer phenomenon in reality, kept sparser
+  tornado:       [3500,  9000],
+};
+
 function scheduleLightning() {
   clearTimeout(lightTimer);
-  if (wxMode !== 'storm' || !getLightningEnabled()) return;
-  lightTimer = setTimeout(() => { triggerStrike(); scheduleLightning(); }, 5000 + Math.random() * 13000);
+  const range = LIGHTNING_INTERVALS[wxMode];
+  if (!range || !getLightningEnabled()) return;
+  lightTimer = setTimeout(() => { triggerStrike(); scheduleLightning(); }, range[0] + Math.random() * range[1]);
 }
 
 /* ── Apply mode ───────────────────────────────────────────── */
@@ -793,41 +1322,123 @@ function applyWxMode(mode) {
     mode === 'clear-night'  ? '0.90' :
     mode === 'cloudy-day'   ? '1.00' :
     mode === 'cloudy-night' ? '0.90' :
+    mode === 'windy-day'    ? '1.00' :
+    mode === 'windy-night'  ? '0.90' :
     mode === 'overcast'     ? '0.82' :
-    mode === 'snow'         ? '0.88' : '0.72';
+    mode === 'fog'          ? '0.85' :
+    mode === 'dust'         ? '0.80' :
+    mode === 'smoke'        ? '0.80' :
+    mode === 'snow'         ? '0.88' :
+    mode === 'sleet'        ? '0.85' :
+    mode === 'thundersnow'  ? '0.88' :
+    mode === 'blizzard'     ? '0.90' :
+    mode === 'hail'         ? '0.78' :
+    mode === 'storm-severe' ? '0.78' :
+    mode === 'hurricane'    ? '0.85' :
+    mode === 'tornado'      ? '0.85' :
+    mode === 'extreme-heat' ? '1.00' :
+    mode === 'extreme-cold' ? '0.85' :
+    mode === 'eclipse'      ? '0.90' : '0.72';
 
   if (mode === 'none') return;
 
-  if (mode === 'clear-night' || mode === 'cloudy-night') initStars();
-  if (mode === 'cloudy-day'  || mode === 'cloudy-night' || mode === 'overcast') initClouds();
-  if (mode === 'rain'        || mode === 'storm') initDrops();
-  if (mode === 'snow') initFlakes();
+  // Blizzard is an NWS threshold event (sustained wind + near-zero
+  // visibility), not a matter of degree like rain/snow — always the max.
+  if (mode === 'blizzard') wxIntensity = 'heavy';
+
+  if (['clear-night', 'cloudy-night', 'windy-night', 'extreme-cold', 'eclipse'].includes(mode)) initStars();
+  if (['cloudy-day', 'cloudy-night', 'overcast', 'windy-day', 'windy-night'].includes(mode)) initClouds();
+  if (['rain', 'storm', 'storm-severe', 'hurricane', 'tornado'].includes(mode)) initDrops();
+  if (['snow', 'thundersnow', 'blizzard'].includes(mode)) initFlakes();
+  if (mode === 'sleet') initSleet();
+  if (mode === 'hail') initHail();
+  if (mode === 'windy-day' || mode === 'windy-night') initStreaks(26);
+  if (mode === 'hurricane') initStreaks(55);
+  if (mode === 'blizzard') initStreaks(40);
 
   startAnim();
-  if (mode === 'storm') scheduleLightning();
+  scheduleLightning(); // no-ops for modes not in LIGHTNING_INTERVALS
 }
 
 /* ── Map NWS description → canvas mode ───────────────────── */
+// \blight\b (word boundary), not .includes('light') — "Lightning" contains
+// "light" as a substring and would otherwise false-match as an intensity.
+function detectIntensity(d) {
+  if (/\blight\b|slight|flurr/.test(d)) return 'light';
+  if (/\bheavy\b|excessive|violent/.test(d)) return 'heavy';
+  return 'moderate';
+}
+
 function setWxMode(desc) {
   const day = isCurrentlyDay();
   if (!desc) return applyWxMode(day ? 'clear-day' : 'clear-night');
   const d = desc.toLowerCase();
-  if (d.includes('thunder') || d.includes('funnel'))
+
+  // Most specific/severe conditions first — thundersnow before either
+  // "thunder" or "snow" alone would claim it; tornado/hurricane before
+  // the generic thunderstorm check; hail before generic storm.
+  if (d.includes('thundersnow') || (d.includes('thunder') && d.includes('snow'))) {
+    wxIntensity = 'heavy';
+    return applyWxMode('thundersnow');
+  }
+  if (d.includes('tornado') || d.includes('funnel') || d.includes('waterspout'))
+    return applyWxMode('tornado');
+  if (d.includes('hurricane') || d.includes('typhoon') || d.includes('tropical storm') ||
+      d.includes('tropical depression'))
+    return applyWxMode('hurricane');
+  if (d.includes('small hail') || d.includes('hail'))
+    return applyWxMode('hail');
+  if (d.includes('severe thunderstorm') || d.includes('violent thunderstorm'))
+    return applyWxMode('storm-severe');
+  if (d.includes('thunder'))
     return applyWxMode('storm');
-  // Snow check BEFORE rain — "Snow Showers" contains "shower" and would false-match rain
-  if (d.includes('snow') || d.includes('flurr') || d.includes('sleet') ||
-      d.includes('blizzard') || d.includes('wintry') || d.includes('ice pellet') ||
-      d.includes('ice crystal') || d.includes('ice storm'))
+
+  if (d.includes('eclipse'))
+    return applyWxMode('eclipse');
+
+  if (d.includes('extreme heat') || d.includes('excessive heat') || d.includes('heat warning'))
+    return applyWxMode('extreme-heat');
+  if (d.includes('extreme cold') || d.includes('bitter cold') || d.includes('arctic') ||
+      d.includes('wind chill warning') || d.includes('dangerous cold'))
+    return applyWxMode('extreme-cold');
+
+  // Ice — sleet/freezing rain/ice pellets are their own hard-particle look,
+  // distinct from fluffy snow, checked before the generic snow match below.
+  if (d.includes('sleet') || d.includes('ice pellet') || d.includes('freezing rain') ||
+      d.includes('freezing drizzle') || d.includes('ice storm') || d.includes('ice crystal'))
+    return applyWxMode('sleet');
+
+  // Blizzard is its own look (wind-driven whiteout), checked before the
+  // generic snow match below so it doesn't get absorbed into plain snow.
+  if (d.includes('blizzard'))
+    return applyWxMode('blizzard');
+
+  // Snow before rain — "Snow Showers" contains "shower" and would
+  // false-match rain otherwise.
+  if (d.includes('snow') || d.includes('flurr') || d.includes('wintry')) {
+    wxIntensity = detectIntensity(d);
     return applyWxMode('snow');
-  if (d.includes('rain') || d.includes('shower') || d.includes('drizzle'))
+  }
+  if (d.includes('rain') || d.includes('shower') || d.includes('drizzle')) {
+    wxIntensity = detectIntensity(d);
     return applyWxMode('rain');
-  if (d.includes('overcast') || d.includes('fog') || d.includes('mist') ||
-      d.includes('smoke') || d.includes('haze') || d.includes('dust') ||
-      d.includes('sand') || d.includes('ash') || d.includes('spray') ||
-      d.includes('mostly cloudy') || d.includes('considerable'))
+  }
+
+  if (d.includes('fog') || d.includes('mist'))
+    return applyWxMode('fog');
+  if (d.includes('dust') || d.includes('sand'))
+    return applyWxMode('dust');
+  if (d.includes('smoke') || d.includes('haze') || d.includes('ash') || d.includes('spray'))
+    return applyWxMode('smoke');
+  if (d.includes('overcast') || d.includes('mostly cloudy') || d.includes('considerable'))
     return applyWxMode('overcast');
+
+  if (d.includes('windy') || d.includes('breezy') || d.includes('blustery') || d.includes('gusty'))
+    return applyWxMode(day ? 'windy-day' : 'windy-night');
+
   if (d.includes('cloud') || d.includes('partly') || d.includes('few') || d.includes('scattered'))
     return applyWxMode(day ? 'cloudy-day' : 'cloudy-night');
+
   applyWxMode(day ? 'clear-day' : 'clear-night');
 }
 
@@ -1106,10 +1717,10 @@ function renderAlerts(features) {
 }
 
 async function fetchAlerts() {
-  const z = getActiveZip();
+  const loc = getActiveLocation();
   try {
     const r = await fetch(
-      `https://api.weather.gov/alerts/active?point=${z.lat},${z.lon}`,
+      `https://api.weather.gov/alerts/active?point=${loc.lat},${loc.lon}`,
       { headers: { 'User-Agent': 'FamilyDashboard/1.0' }, signal: AbortSignal.timeout(8000) }
     );
     if (!r.ok) return;
@@ -1137,10 +1748,6 @@ function makeWxUrl(lat, lon) {
   );
 }
 
-// NWS KCRP = Corpus Christi International Airport weather station.
-// This is actual sensor data — temperature, humidity, sky conditions — not a model.
-const NWS_OBS_URL = 'https://api.weather.gov/stations/KCRP/observations/latest';
-
 function cToF(c) {
   return (c != null && isFinite(c)) ? Math.round(c * 9 / 5 + 32) : null;
 }
@@ -1149,12 +1756,22 @@ function cToF(c) {
 function nwsIcon(desc, isDay) {
   if (!desc) return '🌡️';
   const d = desc.toLowerCase();
+  if (d.includes('eclipse'))                                    return '🌑';
+  if (d.includes('tornado') || d.includes('funnel') || d.includes('waterspout')) return '🌪️';
+  if (d.includes('hurricane') || d.includes('typhoon') || d.includes('tropical')) return '🌀';
+  if (d.includes('hail'))                                       return '🧊';
   if (d.includes('thunder'))                                    return '⛈️';
-  if (d.includes('freezing rain') || d.includes('ice pellet')) return '🌨️';
+  if (d.includes('freezing rain') || d.includes('ice pellet') || d.includes('sleet')) return '🌨️';
+  if (d.includes('extreme heat') || d.includes('excessive heat')) return '🥵';
+  if (d.includes('extreme cold') || d.includes('arctic') || d.includes('bitter cold')) return '🥶';
+  if (d.includes('blizzard'))                                   return '🌬️❄️';
   if (d.includes('rain') || d.includes('shower') || d.includes('drizzle')) return '🌧️';
-  if (d.includes('snow') || d.includes('sleet'))               return '❄️';
-  if (d.includes('fog') || d.includes('mist') || d.includes('haze')) return '🌫️';
+  if (d.includes('snow'))                                       return '❄️';
+  if (d.includes('dust') || d.includes('sand'))                 return '💨';
+  if (d.includes('fog') || d.includes('mist') || d.includes('haze') ||
+      d.includes('smoke') || d.includes('ash'))                 return '🌫️';
   if (d.includes('overcast') || d.includes('mostly cloudy'))   return '☁️';
+  if (d.includes('windy') || d.includes('breezy') || d.includes('blustery') || d.includes('gusty')) return '💨';
   if (d.includes('partly') || d.includes('partly sunny'))      return isDay ? '⛅' : '☁️';
   if (d.includes('mostly clear') || d.includes('mostly sunny'))return isDay ? '🌤️' : '🌙';
   if (d.includes('clear') || d.includes('sunny') || d.includes('fair')) return isDay ? '☀️' : '🌙';
@@ -1178,18 +1795,21 @@ function isCurrentlyDay() {
 }
 
 async function fetchWeather() {
-  const zipData = getActiveZip();
-  document.getElementById('wx-neighborhood').textContent = `${zipData.name} · ${zipData.zip}`;
+  const loc = getActiveLocation();
+  document.getElementById('wx-city').textContent = loc.city;
+  document.getElementById('wx-neighborhood').textContent = loc.detail;
 
   // Run both requests in parallel.
-  // NWS = real sensor at Corpus Christi airport; OM = model forecast for rain + hi/lo + sun times.
+  // NWS = real sensor at the nearest resolved station; OM = model forecast for rain + hi/lo + sun times.
   const [nwsResult, omResult] = await Promise.allSettled([
-    fetch(NWS_OBS_URL, {
-      headers: { 'User-Agent': 'FamilyDashboard/1.0' },
-      signal: AbortSignal.timeout(10000),
-    }).then(r => r.ok ? r.json() : Promise.reject(new Error('NWS ' + r.status))),
+    loc.stationId
+      ? fetch(`https://api.weather.gov/stations/${loc.stationId}/observations/latest`, {
+          headers: { 'User-Agent': 'FamilyDashboard/1.0' },
+          signal: AbortSignal.timeout(10000),
+        }).then(r => r.ok ? r.json() : Promise.reject(new Error('NWS ' + r.status)))
+      : Promise.reject(new Error('No weather station resolved for this location')),
 
-    fetch(makeWxUrl(zipData.lat, zipData.lon), {
+    fetch(makeWxUrl(loc.lat, loc.lon), {
       signal: AbortSignal.timeout(10000),
     }).then(r => r.ok ? r.json() : Promise.reject(new Error('OM ' + r.status))),
   ]);
@@ -1242,7 +1862,7 @@ async function fetchWeather() {
     if (p.timestamp) {
       const t = new Date(p.timestamp).toLocaleTimeString('en-US',
         { hour: 'numeric', minute: '2-digit' });
-      document.getElementById('wx-updated').textContent = `obs. ${t} · KCRP`;
+      document.getElementById('wx-updated').textContent = `obs. ${t} · ${loc.stationId}`;
     }
   } else {
     document.getElementById('wx-icon').textContent   = '🌡️';
@@ -1417,29 +2037,85 @@ setInterval(applyBrightness, 60000); // re-check the night window every minute
 /* ══════════════════════════════════════════════════════════
    SETTINGS PANEL
    ══════════════════════════════════════════════════════════ */
-const settingsModal = document.getElementById('settings-modal');
-const zipSelect     = document.getElementById('zip-select');
+const settingsModal  = document.getElementById('settings-modal');
+const wxUseLocBtn    = document.getElementById('wx-use-location-btn');
+const wxZipInput     = document.getElementById('wx-zip-input');
+const wxZipSubmitBtn = document.getElementById('wx-zip-submit-btn');
+const wxLocStatus    = document.getElementById('wx-location-status');
 
-ZIP_CODES.forEach(z => {
-  const opt = document.createElement('option');
-  opt.value = z.zip;
-  opt.textContent = `${z.zip}, ${z.name}`;
-  zipSelect.appendChild(opt);
-});
-zipSelect.value = getActiveZip().zip;
-updateZipCoords();
+function renderActiveLocation() {
+  const loc = getActiveLocation();
+  document.getElementById('zip-coords').textContent = loc.stationId
+    ? `Currently: ${loc.city} (${loc.detail}) · station ${loc.stationId}`
+    : `Currently: ${loc.city} (${loc.detail})`;
+}
+renderActiveLocation();
 
-function updateZipCoords() {
-  const z = getActiveZip();
-  document.getElementById('zip-coords').textContent =
-    `${z.lat.toFixed(4)}°N · ${Math.abs(z.lon).toFixed(4)}°W`;
+// Shared by both "Use My Location" and manual zip entry — resolves the
+// nearest NWS station for the given coordinates, persists the result, and
+// re-fetches weather/alerts against it.
+async function applyNewLocation(partial) {
+  wxLocStatus.textContent = 'Looking up weather station…';
+  wxLocStatus.className = 'wx-location-status';
+  wxUseLocBtn.disabled = true;
+  wxZipSubmitBtn.disabled = true;
+  try {
+    const station = await resolveNwsStation(partial.lat, partial.lon);
+    const loc = {
+      lat: partial.lat,
+      lon: partial.lon,
+      zip: partial.zip ?? null,
+      city: partial.city || station.label || 'Unknown location',
+      detail: partial.detail || 'Detected location',
+      stationId: station.stationId,
+    };
+    setActiveLocation(loc);
+    renderActiveLocation();
+    wxLocStatus.textContent = `Location set to ${loc.city}.`;
+    wxLocStatus.className = 'wx-location-status success';
+    fetchWeather();
+    fetchAlerts();
+  } catch (err) {
+    wxLocStatus.textContent = err.message || 'Could not set that location.';
+    wxLocStatus.className = 'wx-location-status error';
+  } finally {
+    wxUseLocBtn.disabled = false;
+    wxZipSubmitBtn.disabled = false;
+  }
 }
 
-zipSelect.addEventListener('change', () => {
-  localStorage.setItem('wx_zip', zipSelect.value);
-  updateZipCoords();
-  fetchWeather();
-  fetchAlerts();
+wxUseLocBtn.addEventListener('click', async () => {
+  wxLocStatus.textContent = 'Detecting your location…';
+  wxLocStatus.className = 'wx-location-status';
+  try {
+    const { lat, lon } = await detectGeolocation();
+    await applyNewLocation({ lat, lon });
+  } catch (err) {
+    wxLocStatus.textContent = err.message || 'Could not detect your location.';
+    wxLocStatus.className = 'wx-location-status error';
+  }
+});
+
+async function submitZip() {
+  const zip = wxZipInput.value.trim();
+  if (!/^\d{5}$/.test(zip)) {
+    wxLocStatus.textContent = 'Enter a valid 5-digit zip code.';
+    wxLocStatus.className = 'wx-location-status error';
+    return;
+  }
+  wxLocStatus.textContent = 'Looking up zip code…';
+  wxLocStatus.className = 'wx-location-status';
+  try {
+    const g = await geocodeZip(zip);
+    await applyNewLocation(g);
+  } catch (err) {
+    wxLocStatus.textContent = err.message || 'Could not find that zip code.';
+    wxLocStatus.className = 'wx-location-status error';
+  }
+}
+document.getElementById('wx-zip-form').addEventListener('submit', e => {
+  e.preventDefault();
+  submitZip();
 });
 
 const nightDimFields = document.getElementById('night-dim-fields');
@@ -1574,7 +2250,11 @@ osk.addEventListener('pointerdown', e => {
 
 function showOsk(target) {
   oskTarget = target;
-  oskMode  = 'letters'; // reset each time a field is focused, same as iOS
+  // Reset each time a field is focused, same as iOS — except a field that's
+  // declared itself numeric-only (inputmode="numeric", e.g. the zip code
+  // input) opens straight to the digits page instead of making the user
+  // hunt for "123" first.
+  oskMode  = target?.inputMode === 'numeric' ? 'symbols' : 'letters';
   oskShift = false;
   buildOsk();
   osk.hidden = false;
@@ -1746,8 +2426,7 @@ document.getElementById('update-now-btn').addEventListener('click', async () => 
 });
 
 document.getElementById('settings-btn').addEventListener('click', () => {
-  zipSelect.value = getActiveZip().zip;
-  updateZipCoords();
+  renderActiveLocation();
   applyTheme();
   document.getElementById('toggle-boot-sound').checked  = getBootSoundEnabled();
   document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
@@ -1819,12 +2498,46 @@ document.getElementById('toggle-osk').addEventListener('change', e => {
   if (!e.target.checked) hideOsk();
 });
 
+// Representative NWS-style text per debug mode, fed through the same
+// nwsIcon()/wx-desc path real weather uses — so previewing a mode also
+// previews the icon + description a family member would actually see next
+// to the temperature, not just the canvas animation.
+const DEBUG_MODE_DESC = {
+  'clear-day': 'Clear', 'clear-night': 'Clear',
+  'cloudy-day': 'Partly Cloudy', 'cloudy-night': 'Mostly Cloudy',
+  'overcast': 'Overcast', 'fog': 'Fog',
+  'windy-day': 'Windy', 'windy-night': 'Windy',
+  'rain': 'Rain', 'snow': 'Snow',
+  'sleet': 'Freezing Rain', 'hail': 'Hail',
+  'storm': 'Thunderstorm', 'storm-severe': 'Severe Thunderstorm',
+  'thundersnow': 'Thundersnow', 'hurricane': 'Hurricane', 'tornado': 'Tornado',
+  'blizzard': 'Blizzard',
+  'dust': 'Dust', 'smoke': 'Smoke',
+  'extreme-heat': 'Extreme Heat', 'extreme-cold': 'Extreme Cold',
+  'eclipse': 'Eclipse',
+};
+
 document.getElementById('debug-wx-grid').addEventListener('click', e => {
   const btn = e.target.closest('.debug-wx-btn');
   if (!btn) return;
+  if (btn.dataset.intensity) wxIntensity = btn.dataset.intensity;
   applyWxMode(btn.dataset.mode);
+
+  if (btn.dataset.mode === 'none') {
+    fetchWeather(); // restore real icon/desc/temp instead of leaving the last simulated ones
+  } else {
+    const desc  = DEBUG_MODE_DESC[btn.dataset.mode] || '';
+    const isDay = btn.dataset.mode.includes('night') ? false
+                : btn.dataset.mode.includes('day')   ? true
+                : isCurrentlyDay();
+    document.getElementById('wx-icon').textContent = nwsIcon(desc, isDay);
+    document.getElementById('wx-desc').textContent = desc;
+    document.getElementById('lock-wx-icon').textContent = document.getElementById('wx-icon').textContent;
+    document.getElementById('lock-wx-desc').textContent = document.getElementById('wx-desc').textContent;
+  }
+
   document.querySelectorAll('.debug-wx-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.mode === btn.dataset.mode));
+    b.classList.toggle('active', b === btn));
 });
 
 document.getElementById('debug-alert-grid').addEventListener('click', e => {
