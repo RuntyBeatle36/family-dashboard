@@ -1,0 +1,14 @@
+# /etc/systemd/system/dashboard.service
+[Unit]
+Description=Family Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/home/user/family-dashboard
+ExecStart=/usr/bin/node server.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+# apt packages needed on the Pi, one per line. Blank lines and lines
+# starting with # are ignored. Installed by scripts/system-update.sh on
+# every update (a no-op if everything listed is already present).
+#
+# Nothing needed yet — Piper (TTS) is installed manually as a standalone
+# binary + voice model, not an apt package. Add entries here for future
+# needs (e.g. Bluetooth/audio packages).

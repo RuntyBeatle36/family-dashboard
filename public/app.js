@@ -1012,6 +1012,30 @@ document.getElementById('debug-test-tts').addEventListener('click', () => {
   );
 });
 
+// Two taps required (arms on the first, fires on the second within 4s) —
+// this closes the entire graphical session, not just the dashboard, so a
+// stray tap shouldn't be able to trigger it by accident.
+let exitKioskArmed = false;
+let exitKioskArmTimer = null;
+document.getElementById('exit-kiosk-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('exit-kiosk-btn');
+  if (!exitKioskArmed) {
+    exitKioskArmed = true;
+    btn.textContent = 'Tap again to confirm. This closes everything.';
+    exitKioskArmTimer = setTimeout(() => {
+      exitKioskArmed = false;
+      btn.textContent = 'Exit to Terminal';
+    }, 4000);
+    return;
+  }
+  clearTimeout(exitKioskArmTimer);
+  btn.textContent = 'Exiting...';
+  try { await api('POST', '/api/exit-kiosk'); }
+  catch (err) { showError('Exit failed: ' + err.message); btn.textContent = 'Exit to Terminal'; exitKioskArmed = false; }
+  // On success there's nothing further to do client-side — the X session
+  // (and this page along with it) is about to disappear.
+});
+
 /* ── Render alert banner (scrolling ticker) ───────────────── */
 let lastAlertKey = '';
 
@@ -1379,7 +1403,7 @@ const zipSelect     = document.getElementById('zip-select');
 ZIP_CODES.forEach(z => {
   const opt = document.createElement('option');
   opt.value = z.zip;
-  opt.textContent = `${z.zip} — ${z.name}`;
+  opt.textContent = `${z.zip}, ${z.name}`;
   zipSelect.appendChild(opt);
 });
 zipSelect.value = getActiveZip().zip;
@@ -1575,32 +1599,69 @@ document.addEventListener('focusout', e => {
 
 /* ══════════════════════════════════════════════════════════
    APP VERSION (Settings footer)
-   Fetched once — package.json version + git commit don't change while
-   the server process is running, so there's no reason to re-fetch it
-   every time the Settings modal is opened.
+   Build number is the commit count (see server.js) rather than
+   package.json's version field, so it actually changes with every update
+   instead of sitting frozen. Fetched once — neither value changes while
+   the server process is running, so no reason to re-fetch per open.
    ══════════════════════════════════════════════════════════ */
-fetch('/api/version').then(r => r.json()).then(({ version, commit }) => {
+fetch('/api/version').then(r => r.json()).then(({ build, commit }) => {
   document.getElementById('app-version').textContent =
-    'v' + version + (commit ? ` · ${commit}` : '');
+    (build ? `Build ${build}` : '') + (commit ? ` · ${commit}` : '');
 }).catch(() => {});
+
+// Debug Options is hidden by default (kids/guests shouldn't stumble into
+// weather/alert simulation tools) — tapping the version text 7 times in a
+// row reveals it, same "developer options" convention Android uses. Stored
+// in localStorage so it stays unlocked across reloads once found; taps
+// more than 2s apart don't count toward the streak.
+let debugTapCount = 0;
+let debugTapTimer = null;
+if (localStorage.getItem('debugUnlocked') === 'true') {
+  document.getElementById('debug-section').hidden = false;
+}
+document.getElementById('app-version').addEventListener('click', () => {
+  clearTimeout(debugTapTimer);
+  debugTapCount++;
+  if (debugTapCount >= 7) {
+    debugTapCount = 0;
+    localStorage.setItem('debugUnlocked', 'true');
+    document.getElementById('debug-section').hidden = false;
+    showToast('Debug Options unlocked.', 'success');
+  } else {
+    debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 2000);
+  }
+});
 
 /* ══════════════════════════════════════════════════════════
    SELF-UPDATE
-   Checks GitHub once shortly after load and then every 12h — not more
+   Checks GitHub once shortly after load and then every 12h, not more
    often than that, since it's a real network call to GitHub each time and
    updates to a family calendar app aren't remotely time-sensitive. Shows a
    small badge (top bar) rather than anything that interrupts; the actual
    update only happens if the badge is tapped and "Update Now" is pressed
-   in Settings — never automatic.
+   in Settings, never automatic.
    ══════════════════════════════════════════════════════════ */
+// Commit subjects already read reasonably plainly (this repo's own
+// convention) once the "feat:"/"fix:" etc. prefix is stripped — good
+// enough for a friendly summary without needing real language processing.
+function friendlyCommitSubject(subject) {
+  const stripped = subject.replace(/^(feat|fix|perf|polish|revert|docs|chore|refactor)(\([^)]*\))?:\s*/i, '');
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
+let lastUpdateCommits = [];
+
 async function checkForUpdate() {
   try {
     const r = await api('GET', '/api/update-check');
     document.getElementById('update-badge').hidden = !r.updateAvailable;
     document.getElementById('update-section').hidden = !r.updateAvailable;
     if (r.updateAvailable) {
-      document.getElementById('update-desc').textContent =
-        `${r.behindBy} commit${r.behindBy === 1 ? '' : 's'} behind — latest: "${r.latestSummary}" (${r.latestCommit})`;
+      lastUpdateCommits = r.commits;
+      document.getElementById('update-list').innerHTML = r.commits
+        .map(c => `<li>${escHtml(friendlyCommitSubject(c.subject))}</li>`).join('');
+      document.getElementById('update-technical').hidden = true;
+      document.getElementById('update-see-more-btn').textContent = 'See exactly what changed';
     }
   } catch { /* GitHub unreachable, etc. — stay quiet, try again next interval */ }
 }
@@ -1611,11 +1672,23 @@ document.getElementById('update-badge').addEventListener('click', () => {
   document.getElementById('settings-btn').click();
 });
 
+document.getElementById('update-see-more-btn').addEventListener('click', () => {
+  const el = document.getElementById('update-technical');
+  const btn = document.getElementById('update-see-more-btn');
+  el.hidden = !el.hidden;
+  btn.textContent = el.hidden ? 'See exactly what changed' : 'Hide technical detail';
+  if (!el.hidden) {
+    el.textContent = lastUpdateCommits
+      .map(c => `${c.hash}  ${c.subject}${c.body ? '\n' + c.body.split('\n').map(l => '  ' + l).join('\n') : ''}`)
+      .join('\n\n');
+  }
+});
+
 document.getElementById('update-now-btn').addEventListener('click', async () => {
   const btn = document.getElementById('update-now-btn');
   const progress = document.getElementById('update-progress');
   btn.disabled = true;
-  progress.textContent = 'Pulling the latest version…';
+  progress.textContent = 'Pulling the latest version...';
   try {
     await api('POST', '/api/update-apply');
   } catch (err) {
@@ -1626,12 +1699,12 @@ document.getElementById('update-now-btn').addEventListener('click', async () => 
   // The server exits right after responding (systemd brings it back up on
   // the new code) — poll for it to come back rather than guessing how long
   // that takes, then reload to pick up the new client-side files too.
-  progress.textContent = 'Restarting the dashboard…';
+  progress.textContent = 'Restarting the dashboard...';
   const start = Date.now();
   const poll = setInterval(async () => {
     if (Date.now() - start > 60000) {
       clearInterval(poll);
-      progress.textContent = 'Taking longer than expected — refresh the page manually in a moment.';
+      progress.textContent = 'Taking longer than expected. Refresh the page manually in a moment.';
       return;
     }
     try {
@@ -2492,7 +2565,7 @@ function showEventDetail(ev) {
     info += `<strong>Time:</strong> All day<br>`;
   }
   if (ev.person) info += `<strong>Person:</strong> ${escHtml(ev.person)}<br>`;
-  if (ev.is_private) info += `<strong>🔒 Private</strong> — shows as "Busy" until tapped<br>`;
+  if (ev.is_private) info += `<strong>🔒 Private</strong> (shows as "Busy" until tapped)<br>`;
 
   const isRecurring = ev.recurrence && ev.recurrence !== 'none';
   const occBtn = document.getElementById('detail-delete-occurrence');
@@ -2554,7 +2627,7 @@ function renderTodo(items) {
   todoList.innerHTML = '';
   clearDoneBtn.style.display = items.some(i => i.done) ? 'block' : 'none';
   if (!items.length) {
-    todoList.innerHTML = '<li class="empty">Nothing here yet — add a task above</li>';
+    todoList.innerHTML = '<li class="empty">Nothing here yet. Add a task above</li>';
     return;
   }
   items.forEach(item => {

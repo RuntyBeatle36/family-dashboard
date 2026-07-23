@@ -455,6 +455,36 @@ body {
 .update-badge[hidden] { display: none; }
 .update-badge:hover { filter: brightness(1.15); }
 
+.update-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+}
+.update-list li {
+  padding: 0.2rem 0 0.2rem 1.1rem;
+  position: relative;
+}
+.update-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0.2rem;
+  color: var(--accent);
+}
+
+.update-technical {
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.update-technical[hidden] { display: none; }
+
 /* ── Weather block ────────────────────────────────────────── */
 .weather-block {
   display: flex;

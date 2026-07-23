@@ -1,0 +1,12 @@
+xrandr --output HDMI-1 --mode 1920x1080 --rate 60.00 &
+# Disable screen blanking
+xset s off
+xset s noblank
+xset -dpms
+
+# Hide cursor when idle
+unclutter -idle 0.5 -root &
+
+# Launch Chromium in kiosk mode
+chromium --noerrdialogs --disable-infobars --kiosk --disable-dev-shm-usage --disable-gpu-sandbox --enable-gpu-rasterization --enable-zero-copy --disable-software-rasterizer --autoplay-policy=no-user-gesture-required http://localhost:3000 &
+amixer cset numid=3 2 &

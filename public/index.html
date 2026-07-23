@@ -199,7 +199,7 @@
 
       <label class="field-label allday-row">
         <input id="ev-private" type="checkbox" />
-        🔒 Private — shows as "Busy" on the wall display until someone taps the screen
+        🔒 Private (shows as "Busy" on the wall display until someone taps the screen)
       </label>
 
       <div id="ev-time-fields" class="modal-row">
@@ -217,8 +217,8 @@
             <option value="none">Does not repeat</option>
             <option value="daily">Day(s)</option>
             <option value="weekly">Week(s)</option>
-            <option value="monthly">Month(s) — same date</option>
-            <option value="monthly_weekday">Month(s) — same weekday</option>
+            <option value="monthly">Month(s), same date</option>
+            <option value="monthly_weekday">Month(s), same weekday</option>
             <option value="yearly">Year(s)</option>
           </select>
         </label>
@@ -268,8 +268,10 @@
 
     <div class="settings-section" id="update-section" hidden>
       <div class="settings-section-title">🔄 Update Available</div>
-      <p class="settings-desc" id="update-desc"></p>
-      <button class="btn btn-accent" id="update-now-btn">Update Now</button>
+      <ul class="settings-desc update-list" id="update-list"></ul>
+      <button class="btn btn-ghost-sm" id="update-see-more-btn">See exactly what changed</button>
+      <div class="update-technical" id="update-technical" hidden></div>
+      <button class="btn btn-accent" id="update-now-btn" style="margin-top:0.6rem">Update Now</button>
       <p class="settings-desc" id="update-progress" style="margin-top:0.5rem"></p>
     </div>
 
@@ -296,7 +298,7 @@
       <div class="settings-section-title">⌨️ On-Screen Keyboard</div>
       <p class="settings-desc">
         For touchscreens with no physical keyboard attached (like the Pi's own
-        display). Leave off on phones/tablets/laptops — they already show
+        display). Leave off on phones/tablets/laptops, since they already show
         their own keyboard when you tap a text field.
       </p>
       <label class="settings-toggle">
@@ -308,7 +310,7 @@
     <div class="settings-section">
       <div class="settings-section-title">🔆 Display Brightness</div>
       <p class="settings-desc">
-        Dims the screen with an overlay — works on any display, but (unlike real
+        Dims the screen with an overlay. Works on any display, but (unlike real
         hardware brightness) doesn't reduce actual power draw or screen wear.
       </p>
       <label class="field-label">Brightness
@@ -337,7 +339,7 @@
     <div class="settings-section">
       <div class="settings-section-title">🔒 Lock Screen</div>
       <p class="settings-desc">
-        An ambient screen — just the clock, weather, and a simple agenda — shown
+        An ambient screen, just the clock, weather, and a simple agenda, shown
         by default instead of the full calendar. Tap anywhere to open the full
         dashboard; it returns to the Lock Screen after the time below.
         Private events always show as "Private event" here, regardless of
@@ -379,21 +381,21 @@
       <p class="settings-desc">Both default off. Requires a speaker connected to the Pi.</p>
       <label class="settings-toggle">
         <input type="checkbox" id="toggle-alert-sound">
-        Alert Sound — 3 beeps when a new alert is issued
+        Alert Sound: 3 beeps when a new alert is issued
       </label>
       <label class="settings-toggle">
         <input type="checkbox" id="toggle-alert-tts">
-        Read Aloud — text-to-speech reads the alert type, counties, and headline
+        Read Aloud: text-to-speech reads the alert type, counties, and headline
       </label>
     </div>
 
     <div class="settings-section">
       <div class="settings-section-title">🎨 Graphics</div>
-      <p class="settings-desc">Visual quality vs. performance — useful on a Raspberry Pi.</p>
+      <p class="settings-desc">Visual quality vs. performance, useful on a Raspberry Pi.</p>
       <button class="btn btn-ghost btn-sm" id="graphics-open-btn">Open Graphics Options ›</button>
     </div>
 
-    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
+    <div class="settings-section" id="debug-section" style="margin-bottom:0;border-bottom:none" hidden>
       <div class="settings-section-title">🧪 Debug Options</div>
       <p class="settings-desc">Simulate weather visuals and alert banners for testing.</p>
       <button class="btn btn-ghost btn-sm" id="debug-open-btn">Open Debug Options ›</button>
@@ -416,9 +418,9 @@
       <p class="settings-desc">
         The frosted-glass look on the top bar, calendar, and popups.
         <strong>Performance:</strong> this is one of the single most GPU-intensive
-        effects in the app on Raspberry Pi — every blurred panel has to re-blur
+        effects in the app on Raspberry Pi. Every blurred panel has to re-blur
         whatever's behind it (including the animated weather), every frame it
-        changes. <em>Reduced</em> uses a much cheaper blur radius — most of the
+        changes. <em>Reduced</em> uses a much cheaper blur radius, most of the
         savings, still frosted. <em>Off</em> removes the cost almost entirely;
         panels switch to a solid color instead of frosted glass, since without
         any blur the usual near-transparent panels are too see-through to stay
@@ -435,7 +437,7 @@
       <div class="settings-section-title">Weather Animation</div>
       <p class="settings-desc">
         Controls the animated sky behind the dashboard (rain, snow, clouds, stars).
-        <strong>Performance:</strong> <em>Off</em> stops the animation loop entirely —
+        <strong>Performance:</strong> <em>Off</em> stops the animation loop entirely,
         the biggest possible saving. <em>Reduced</em> keeps the effect at roughly
         half the particle count. <em>Full</em> is the default look.
       </p>
@@ -451,7 +453,7 @@
       <p class="settings-desc">
         The screen-flash-and-bolt effect during Storm weather.
         <strong>Performance:</strong> each strike re-renders a jagged bolt shape
-        with several glow layers — a real but brief spike, only during storms.
+        with several glow layers, a real but brief spike, only during storms.
         Disabling it keeps the rain and dark sky, minus the flash.
       </p>
       <label class="settings-toggle">
@@ -483,8 +485,8 @@
     <div class="settings-section">
       <div class="settings-section-title">🔊 Debug: Test Audio</div>
       <p class="settings-desc">
-        Plays/speaks immediately, ignoring the Alert Sound / Read Aloud toggles above —
-        use this to check the Pi's audio output itself, separate from alert settings.
+        Plays/speaks immediately, ignoring the Alert Sound / Read Aloud toggles above.
+        Use this to check the Pi's audio output itself, separate from alert settings.
       </p>
       <div class="debug-wx-grid">
         <button class="btn btn-ghost btn-sm" id="debug-test-beep">🔔 Test Alert Beep</button>
@@ -508,7 +510,7 @@
       </div>
     </div>
 
-    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
+    <div class="settings-section">
       <div class="settings-section-title">🚨 Debug: Simulate Alerts</div>
       <p class="settings-desc">Show a fake alert banner to preview each severity level. Clears on next alert refresh.</p>
       <div class="debug-wx-grid" id="debug-alert-grid">
@@ -567,6 +569,16 @@
         <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="multi" style="grid-column:span 2">🔀 Multi-Alert Test (Svr Thunderstorm Warning + Flash Flood Watch)</button>
         <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="none"  style="grid-column:span 2">✕ Clear Alerts</button>
       </div>
+    </div>
+
+    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
+      <div class="settings-section-title">🖥️ Exit to Terminal</div>
+      <p class="settings-desc">
+        Closes Chromium and the whole graphical session, dropping straight to a
+        plain console login on this screen. Personal use only, for the rare
+        case SSH isn't reachable. A reboot brings the dashboard back normally.
+      </p>
+      <button class="btn btn-ghost btn-sm" id="exit-kiosk-btn">Exit to Terminal</button>
     </div>
 
     <div class="modal-actions">

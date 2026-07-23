@@ -11,10 +11,19 @@ const PORT = process.env.PORT || 3000;
 // Computed once at startup (not per-request) — shelling out to git on every
 // hit of a tiny corner-of-settings display would be wasteful, and neither
 // value can change while this process is running.
-const APP_VERSION = require('./package.json').version;
+//
+// Build number is the commit count, not package.json's version field —
+// that field was never bumped and always read "1.0.0" regardless of how
+// many updates had actually been applied, which is exactly backwards for
+// "does the version actually change." Commit count strictly increases
+// with every real update, no manual bumping required.
 let GIT_COMMIT = null;
+let GIT_BUILD  = null;
 try {
   GIT_COMMIT = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+    cwd: __dirname, encoding: 'utf8', timeout: 1000,
+  }).trim();
+  GIT_BUILD = execFileSync('git', ['rev-list', '--count', 'HEAD'], {
     cwd: __dirname, encoding: 'utf8', timeout: 1000,
   }).trim();
 } catch { /* not a git checkout (e.g. archive deploy) — version-only display */ }
@@ -398,7 +407,7 @@ app.post('/api/tts', (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
-  res.json({ version: APP_VERSION, commit: GIT_COMMIT });
+  res.json({ build: GIT_BUILD, commit: GIT_COMMIT });
 });
 
 // ── Self-update ───────────────────────────────────────────────
@@ -418,16 +427,24 @@ app.get('/api/update-check', async (req, res) => {
     const { stdout: remote } = await execFileP('git', ['rev-parse', 'origin/main'], GIT_OPTS);
     if (local.trim() === remote.trim()) return res.json({ updateAvailable: false });
 
-    const { stdout: countOut } = await execFileP('git',
-      ['rev-list', '--count', 'HEAD..origin/main'], GIT_OPTS);
-    const { stdout: summaryOut } = await execFileP('git',
-      ['log', '-1', '--format=%s', 'origin/main'], GIT_OPTS);
+    // Full subject + body per commit, not just the latest one-line summary
+    // — the client builds a plain-language "what this adds" list from the
+    // subjects, and the full text (with body) backs a "see more" for the
+    // exact technical detail. %x1f/%x1e (unit/record separator control
+    // characters) delimit fields safely since commit text can otherwise
+    // contain almost anything.
+    const { stdout: logOut } = await execFileP('git',
+      ['log', '--format=%h%x1f%s%x1f%b%x1e', 'HEAD..origin/main'], GIT_OPTS);
+    const commits = logOut.split('\x1e').filter(s => s.trim()).map(rec => {
+      const [hash, subject, body] = rec.replace(/^\n/, '').split('\x1f');
+      return { hash, subject: (subject || '').trim(), body: (body || '').trim() };
+    });
 
     res.json({
       updateAvailable: true,
-      behindBy: parseInt(countOut.trim(), 10) || 0,
+      behindBy: commits.length,
       latestCommit: remote.trim().slice(0, 7),
-      latestSummary: summaryOut.trim(),
+      commits,
     });
   } catch (err) {
     // Offline, GitHub unreachable, etc. — same "can't tell right now" shape
@@ -444,8 +461,40 @@ app.post('/api/update-apply', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: 'update failed', detail: err.message });
   }
+
+  // System-level changes (packages, the service file, kiosk autostart) —
+  // optional and best-effort. A failure here shouldn't strand a family
+  // without their dashboard just because e.g. an apt mirror hiccupped; the
+  // app-level update above already succeeded and still gets applied. Output
+  // goes to the systemd journal (journalctl -u dashboard) for later review,
+  // not back to the client — nobody's watching this happen in real time.
+  const systemUpdateScript = path.join(__dirname, 'scripts', 'system-update.sh');
+  if (fs.existsSync(systemUpdateScript)) {
+    try {
+      const { stdout, stderr } = await execFileP('bash', [systemUpdateScript],
+        { cwd: __dirname, timeout: 120000 });
+      console.log(stdout);
+      if (stderr) console.error(stderr);
+    } catch (err) {
+      console.error('system-update.sh failed:', err.message);
+    }
+  }
+
   res.json({ ok: true });
   res.on('finish', () => process.exit(0)); // wait for the response to actually go out before restarting
+});
+
+// ── Exit to terminal (debug) ─────────────────────────────────────
+// Kills the X server (not just Chromium) so the Pi drops to the plain
+// tty1 console — a personal safety net for "SSH isn't working" scenarios,
+// not a normal-use feature. The autologin + startx chain in ~/.profile is
+// a one-shot guarded check (not a loop), so this doesn't relaunch itself;
+// a reboot brings the kiosk back the normal way.
+app.post('/api/exit-kiosk', (req, res) => {
+  execFile('sudo', ['/usr/bin/pkill', '-f', '/usr/lib/xorg/Xorg'], { timeout: 5000 }, (err) => {
+    if (err) return res.status(500).json({ error: 'failed', detail: err.message });
+    res.json({ ok: true });
+  });
 });
 
 app.get('/api/sysstats', (req, res) => {
