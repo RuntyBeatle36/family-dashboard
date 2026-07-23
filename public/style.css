@@ -46,43 +46,47 @@
 
 /* ── Light theme ──────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg:          #afc4e0;
-  --bg-gradient: linear-gradient(155deg, #bed2ef 0%, #aabfdf 55%, #b5ccec 100%);
+  --bg:          #96b2dc;
+  --bg-gradient: linear-gradient(155deg, #a3c0e8 0%, #88a6d6 55%, #93b8e2 100%);
 
-  /* Bumped up from the original 0.52/0.70 — at that opacity, panels barely
-     read as distinct surfaces against the animated sky canvas (especially
-     clear-day's bright blue gradient) and the whole UI blurred into one
-     pale wash. More opaque glass = less of the busy background showing
-     through, which is what actually fixes "washed out," not just a color
-     tweak. Pure white at this opacity read as stark/clinical, so the fill
-     is a soft neutral gray instead — the border stays closer to white,
-     simulating a glossy edge catching light, which pure gray-on-gray lost. */
-  --glass:         rgba(225,229,235,0.76);
-  --glass-2:       rgba(235,238,242,0.88);
-  --glass-border:  rgba(255,255,255,0.75);
-  --glass-border2: rgba(210,215,222,0.55);
-  --glass-solid:   rgba(228,232,238,0.95);
-  --glass-solid-2: rgba(238,241,245,0.98);
+  /* The physical display is a TN panel — contrast and color visibly shift
+     with viewing angle, a hardware trait no CSS can truly correct. What
+     helps in practice: near-solid panels instead of relying on subtle
+     alpha blending (transparency is exactly what degrades worst off-axis),
+     strong hard-edge borders/shadows instead of soft blended separation,
+     and higher text contrast margins so text survives some amount of
+     washout and still reads. Every value below is pushed further than a
+     "normal monitor" design would need, on purpose. */
+  --glass:         rgba(225,229,235,0.90);
+  --glass-2:       rgba(235,238,242,0.97);
+  --glass-border:  rgba(255,255,255,0.85);
+  --glass-border2: rgba(200,206,214,0.70);
+  --glass-solid:   rgba(228,232,238,0.97);
+  --glass-solid-2: rgba(238,241,245,0.99);
 
-  --accent:   #2878e8;
-  --danger:   #d43030;
-  --success:  #2aaa6c;
+  --accent:   #1c68e0;
+  --danger:   #c22525;
+  --success:  #1f9d5c;
 
-  --text:        rgba(8,18,52,0.92);
-  --text-dim:    rgba(8,18,52,0.62);
-  --text-dimmer: rgba(8,18,52,0.34);
+  --text:        rgba(6,14,42,0.95);
+  --text-dim:    rgba(6,14,42,0.74);
+  --text-dimmer: rgba(6,14,42,0.48);
 
-  /* Grid lines were 0.07-0.08 — nearly invisible against a pale background,
-     which is why the calendar read as one flat surface with no visible
-     cell separation. */
-  --today-bg:   rgba(40,120,232,0.10);
-  --hour-line:  rgba(8,18,52,0.16);
-  --day-border: rgba(8,18,52,0.20);
-  --half-line:  rgba(8,18,52,0.09);
+  /* Grid lines were 0.07-0.08 originally — nearly invisible against a pale
+     background, which is why the calendar read as one flat surface with
+     no visible cell separation. Pushed further still for the TN panel. */
+  --today-bg:   rgba(28,104,224,0.16);
+  --hour-line:  rgba(6,14,42,0.24);
+  --day-border: rgba(6,14,42,0.32);
+  --half-line:  rgba(6,14,42,0.15);
 
-  --clock-col: rgba(8,18,52,0.92);
-  --shadow:    0 8px 40px rgba(0,20,80,0.15);
-  --shadow-sm: 0 2px 16px rgba(0,20,80,0.10);
+  --clock-col: rgba(6,14,42,0.95);
+  /* Bigger, darker shadows than a normal monitor would want — a strong hard
+     drop shadow reads as "this panel is on top of that background" even
+     when the panel's own color contrast against the background gets
+     compromised by viewing angle; subtle shadows just disappear. */
+  --shadow:    0 10px 34px rgba(0,16,64,0.32);
+  --shadow-sm: 0 3px 14px rgba(0,16,64,0.22);
 
   --label-glow: 0 1px 3px rgba(255,255,255,0.85), 0 0 9px rgba(255,255,255,0.55);
 }

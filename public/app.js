@@ -445,11 +445,16 @@ function drawDaySky() {
   if (!daySkyOC || daySkyOC.width !== W || daySkyOC.height !== H) {
     daySkyOC = new OffscreenCanvas(W, H);
     const dc = daySkyOC.getContext('2d');
+    // Stops deepened + bumped in opacity from the original (was as low as
+    // 0.35 at the bottom) — on the TN panel this app runs on, pale/low-
+    // opacity color washes out further still at anything but a dead-on
+    // viewing angle, so the whole gradient reads punchier/more saturated
+    // than a "normal monitor" design would need.
     const g = dc.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0,    'rgba(10,  60, 160, 0.92)');
-    g.addColorStop(0.45, 'rgba(20, 110, 210, 0.80)');
-    g.addColorStop(0.80, 'rgba(50, 155, 230, 0.60)');
-    g.addColorStop(1,    'rgba(90, 190, 245, 0.35)');
+    g.addColorStop(0,    'rgba(8,   55, 155, 0.95)');
+    g.addColorStop(0.45, 'rgba(15, 100, 205, 0.85)');
+    g.addColorStop(0.80, 'rgba(40, 140, 225, 0.68)');
+    g.addColorStop(1,    'rgba(70, 170, 235, 0.48)');
     dc.fillStyle = g;
     dc.fillRect(0, 0, W, H);
     [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cfx,cfy]) => {
