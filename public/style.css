@@ -1019,6 +1019,11 @@ body {
   border-bottom: 1px solid var(--glass-border2);
   margin-bottom: 0.75rem;
 }
+/* Without this, [hidden]'s built-in `display:none` (browser default
+   stylesheet) loses the cascade tie to this class's own `display:flex`
+   above (equal specificity, author stylesheet wins) — any element with
+   both this class and the hidden attribute stayed visible regardless. */
+.settings-section[hidden] { display: none; }
 
 .settings-section-title {
   font-size: 0.78rem;
