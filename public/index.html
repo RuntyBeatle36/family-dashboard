@@ -389,9 +389,13 @@
       </label>
     </div>
 
-    <div class="settings-section">
+    <div class="settings-section" id="graphics-section" hidden>
       <div class="settings-section-title">🎨 Graphics</div>
-      <p class="settings-desc">Visual quality vs. performance, useful on a Raspberry Pi.</p>
+      <p class="settings-desc">
+        Visual quality vs. performance, useful on a Raspberry Pi. Hidden by
+        default since the higher tiers can make weaker hardware choppy —
+        unlock Debug Options above to reach this.
+      </p>
       <button class="btn btn-ghost btn-sm" id="graphics-open-btn">Open Graphics Options ›</button>
     </div>
 

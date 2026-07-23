@@ -169,7 +169,13 @@ function applyTheme() {
     const now = new Date();
     const nowM = now.getHours() * 60 + now.getMinutes();
     if (sunriseMins !== null && sunsetMins !== null) {
-      mode = (nowM >= sunriseMins && nowM < sunsetMins) ? 'light' : 'dark';
+      const isDaytime = nowM >= sunriseMins && nowM < sunsetMins;
+      // No actual ambient light sensor on this hardware — current weather
+      // condition (already tracked for the animated sky) is the closest
+      // available proxy for "it's dim outside," and switches to dark mode
+      // even during nominal daylight hours under heavy cloud cover.
+      const heavyCloudCover = ['overcast', 'storm', 'rain', 'snow'].includes(wxMode);
+      mode = (isDaytime && !heavyCloudCover) ? 'light' : 'dark';
     } else {
       // Fallback to system preference before first weather fetch
       mode = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
@@ -197,7 +203,11 @@ function updateThemeStatus(activeMode) {
   const fmt = m => fmt12h(Math.floor(m / 60) * 100 + (m % 60)); // hack-free fmt
   const riseH = Math.floor(sunriseMins / 60), riseM = sunriseMins % 60;
   const setH  = Math.floor(sunsetMins  / 60), setM  = sunsetMins  % 60;
-  el.textContent = `Now ${activeMode} · Sunrise ${fmt12hHM(riseH, riseM)} · Sunset ${fmt12hHM(setH, setM)}`;
+  const now  = new Date();
+  const nowM = now.getHours() * 60 + now.getMinutes();
+  const isDaytime = nowM >= sunriseMins && nowM < sunsetMins;
+  const cloudNote = (activeMode === 'dark' && isDaytime) ? ' (cloudy)' : '';
+  el.textContent = `Now ${activeMode}${cloudNote} · Sunrise ${fmt12hHM(riseH, riseM)} · Sunset ${fmt12hHM(setH, setM)}`;
 }
 
 // Theme button clicks
@@ -332,7 +342,11 @@ let daySkyOC = null;  // OffscreenCanvas for pre-rendered day sky, invalidated o
 let skyGrads = {};    // cached per-mode gradient objects, keyed by name, invalidated on resize
 
 // Graphics setting (Settings > Graphics > Weather Animation): 'off' | 'reduced' | 'full'
-const getWxQuality = () => localStorage.getItem('gfxWxQuality') || 'full';
+// Defaults to the lowest tier — this runs on a wide range of Pi hardware
+// (including much weaker boards than whatever it was originally tuned on),
+// so out-of-the-box it should never risk a choppy first impression. Anyone
+// whose hardware can handle more can opt up via Settings > Graphics.
+const getWxQuality = () => localStorage.getItem('gfxWxQuality') || 'off';
 // Scales a particle count by the current quality setting; 'off' is handled
 // separately in applyWxMode (skips animation entirely), not via a 0-count here.
 function qCount(base) {
@@ -765,6 +779,7 @@ function applyWxMode(mode) {
   clearStrike();
   wxMode = mode;
   document.body.dataset.wx = mode;
+  applyTheme(); // auto theme also reacts to cloud cover, not just sunrise/sunset — react promptly to a condition change rather than waiting for the next per-minute check
 
   // Graphics setting: Weather Animation = Off — skip the canvas entirely
   // (biggest possible saving: no RAF loop, no particle init, ever).
@@ -1614,15 +1629,18 @@ fetch('/api/version').then(r => r.json()).then(({ build, commit }) => {
     (build ? `Build ${build}` : '') + (commit ? ` · ${commit}` : '');
 }).catch(() => {});
 
-// Debug Options is hidden by default (kids/guests shouldn't stumble into
-// weather/alert simulation tools) — tapping the version text 7 times in a
-// row reveals it, same "developer options" convention Android uses. Stored
-// in localStorage so it stays unlocked across reloads once found; taps
-// more than 2s apart don't count toward the streak.
+// Debug Options AND Graphics are both hidden by default — Debug so kids/
+// guests don't stumble into weather/alert simulation tools, Graphics
+// because the higher quality tiers can make weaker Pi hardware choppy and
+// shouldn't be a casual accidental change. Tapping the version text 7
+// times in a row reveals both, same "developer options" convention
+// Android uses. Stored in localStorage so it stays unlocked across
+// reloads once found; taps more than 2s apart don't count toward the streak.
+const ADVANCED_SECTION_IDS = ['debug-section', 'graphics-section'];
 let debugTapCount = 0;
 let debugTapTimer = null;
 if (localStorage.getItem('debugUnlocked') === 'true') {
-  document.getElementById('debug-section').hidden = false;
+  ADVANCED_SECTION_IDS.forEach(id => { document.getElementById(id).hidden = false; });
 }
 document.getElementById('app-version').addEventListener('click', () => {
   clearTimeout(debugTapTimer);
@@ -1630,15 +1648,15 @@ document.getElementById('app-version').addEventListener('click', () => {
   if (debugTapCount >= 7) {
     debugTapCount = 0;
     localStorage.setItem('debugUnlocked', 'true');
-    document.getElementById('debug-section').hidden = false;
-    showToast('Debug Options unlocked.', 'success');
+    ADVANCED_SECTION_IDS.forEach(id => { document.getElementById(id).hidden = false; });
+    showToast('Debug Options and Graphics unlocked.', 'success');
   } else {
     debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 2000);
   }
 });
 document.getElementById('debug-lock-btn').addEventListener('click', () => {
   localStorage.removeItem('debugUnlocked');
-  document.getElementById('debug-section').hidden = true;
+  ADVANCED_SECTION_IDS.forEach(id => { document.getElementById(id).hidden = true; });
 });
 
 /* ══════════════════════════════════════════════════════════
@@ -1833,7 +1851,8 @@ settingsModal.addEventListener('click', e => { if (e.target === settingsModal) s
 
 /* ── Graphics submenu (opened from Settings) ──────────────── */
 const graphicsModal = document.getElementById('graphics-modal');
-const getGlassMode = () => localStorage.getItem('gfxGlass') || 'full';
+// Same reasoning as getWxQuality above — defaults to lowest, not full.
+const getGlassMode = () => localStorage.getItem('gfxGlass') || 'off';
 
 function applyGlassSetting() {
   document.documentElement.dataset.glass = getGlassMode();
