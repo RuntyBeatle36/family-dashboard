@@ -54,13 +54,15 @@
      clear-day's bright blue gradient) and the whole UI blurred into one
      pale wash. More opaque glass = less of the busy background showing
      through, which is what actually fixes "washed out," not just a color
-     tweak. */
-  --glass:         rgba(255,255,255,0.74);
-  --glass-2:       rgba(255,255,255,0.87);
-  --glass-border:  rgba(255,255,255,0.85);
-  --glass-border2: rgba(255,255,255,0.55);
-  --glass-solid:   rgba(240, 244, 250, 0.95);
-  --glass-solid-2: rgba(248, 250, 253, 0.98);
+     tweak. Pure white at this opacity read as stark/clinical, so the fill
+     is a soft neutral gray instead — the border stays closer to white,
+     simulating a glossy edge catching light, which pure gray-on-gray lost. */
+  --glass:         rgba(225,229,235,0.76);
+  --glass-2:       rgba(235,238,242,0.88);
+  --glass-border:  rgba(255,255,255,0.75);
+  --glass-border2: rgba(210,215,222,0.55);
+  --glass-solid:   rgba(228,232,238,0.95);
+  --glass-solid-2: rgba(238,241,245,0.98);
 
   --accent:   #2878e8;
   --danger:   #d43030;
