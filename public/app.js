@@ -1713,7 +1713,11 @@ document.getElementById('update-now-btn').addEventListener('click', async () => 
     }
     try {
       const r = await fetch('/api/version');
-      if (r.ok) { clearInterval(poll); location.reload(); }
+      if (r.ok) {
+        clearInterval(poll);
+        progress.textContent = 'Update complete. Reloading...';
+        setTimeout(() => location.reload(), 500); // let the message actually be readable for a beat
+      }
     } catch { /* still restarting — keep polling */ }
   }, 2000);
 });
