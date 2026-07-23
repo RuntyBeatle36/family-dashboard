@@ -49,10 +49,16 @@
   --bg:          #afc4e0;
   --bg-gradient: linear-gradient(155deg, #bed2ef 0%, #aabfdf 55%, #b5ccec 100%);
 
-  --glass:         rgba(255,255,255,0.52);
-  --glass-2:       rgba(255,255,255,0.70);
-  --glass-border:  rgba(255,255,255,0.78);
-  --glass-border2: rgba(255,255,255,0.45);
+  /* Bumped up from the original 0.52/0.70 — at that opacity, panels barely
+     read as distinct surfaces against the animated sky canvas (especially
+     clear-day's bright blue gradient) and the whole UI blurred into one
+     pale wash. More opaque glass = less of the busy background showing
+     through, which is what actually fixes "washed out," not just a color
+     tweak. */
+  --glass:         rgba(255,255,255,0.74);
+  --glass-2:       rgba(255,255,255,0.87);
+  --glass-border:  rgba(255,255,255,0.85);
+  --glass-border2: rgba(255,255,255,0.55);
   --glass-solid:   rgba(240, 244, 250, 0.95);
   --glass-solid-2: rgba(248, 250, 253, 0.98);
 
@@ -61,13 +67,16 @@
   --success:  #2aaa6c;
 
   --text:        rgba(8,18,52,0.92);
-  --text-dim:    rgba(8,18,52,0.48);
-  --text-dimmer: rgba(8,18,52,0.24);
+  --text-dim:    rgba(8,18,52,0.62);
+  --text-dimmer: rgba(8,18,52,0.34);
 
-  --today-bg:   rgba(40,120,232,0.09);
-  --hour-line:  rgba(8,18,52,0.07);
-  --day-border: rgba(8,18,52,0.08);
-  --half-line:  rgba(8,18,52,0.035);
+  /* Grid lines were 0.07-0.08 — nearly invisible against a pale background,
+     which is why the calendar read as one flat surface with no visible
+     cell separation. */
+  --today-bg:   rgba(40,120,232,0.10);
+  --hour-line:  rgba(8,18,52,0.16);
+  --day-border: rgba(8,18,52,0.20);
+  --half-line:  rgba(8,18,52,0.09);
 
   --clock-col: rgba(8,18,52,0.92);
   --shadow:    0 8px 40px rgba(0,20,80,0.15);

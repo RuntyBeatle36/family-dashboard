@@ -1631,6 +1631,10 @@ document.getElementById('app-version').addEventListener('click', () => {
     debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 2000);
   }
 });
+document.getElementById('debug-lock-btn').addEventListener('click', () => {
+  localStorage.removeItem('debugUnlocked');
+  document.getElementById('debug-section').hidden = true;
+});
 
 /* ══════════════════════════════════════════════════════════
    SELF-UPDATE
