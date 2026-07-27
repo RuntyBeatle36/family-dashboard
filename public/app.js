@@ -2414,7 +2414,14 @@ async function checkForUpdate() {
   } catch { /* GitHub unreachable, etc. — stay quiet, try again next interval */ }
 }
 setTimeout(checkForUpdate, 30000); // let critical startup fetches (weather, calendar) go first
-setInterval(checkForUpdate, 12 * 60 * 60 * 1000);
+// Every 5 minutes — was 12 hours, which meant waiting up to half a day to
+// see a just-pushed update reflected. /api/update-check is just a `git
+// fetch` + two `git rev-parse` calls (not a rate-limited GitHub API call),
+// so polling this often is cheap. Runs on a plain setInterval, which isn't
+// paused by the Lock Screen overlay (that's just a DOM/CSS state, not a
+// separate page) — it keeps checking in the background even while locked,
+// so the badge is already accurate the moment someone unlocks.
+setInterval(checkForUpdate, 5 * 60 * 1000);
 
 document.getElementById('update-badge').addEventListener('click', () => {
   document.getElementById('settings-btn').click();
