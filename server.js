@@ -369,10 +369,22 @@ function getGpuInfo() {
 // file instead (unique per request, cleaned up after).
 const PIPER_BIN   = process.env.PIPER_BIN   || 'piper';
 const PIPER_MODEL = process.env.PIPER_MODEL || path.join(__dirname, 'piper', 'en_US-lessac-medium.onnx');
+// Default length_scale (Piper's speed control — higher = slower/clearer,
+// lower = faster). 1.0 is the model's natural pace; slowed slightly by
+// default since a wall-mounted announcement needs to be parseable at a
+// glance-away distance, not just "correct." Overridable per-request (see
+// below) so it can be A/B tested live from Settings without a redeploy.
+const PIPER_DEFAULT_LENGTH_SCALE = parseFloat(process.env.PIPER_LENGTH_SCALE) || 1.15;
 
 app.post('/api/tts', (req, res) => {
   const text = (req.body?.text || '').toString().trim().slice(0, 500);
   if (!text) return res.status(400).json({ error: 'text required' });
+
+  // Clamped, not trusted blindly — this becomes a CLI arg to piper below.
+  const rateIn = parseFloat(req.body?.rate);
+  const lengthScale = Number.isFinite(rateIn)
+    ? Math.min(2.0, Math.max(0.6, rateIn))
+    : PIPER_DEFAULT_LENGTH_SCALE;
 
   const tmpFile = path.join(os.tmpdir(), `dashboard-tts-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
 
@@ -382,7 +394,7 @@ app.post('/api/tts', (req, res) => {
   // sysstats, etc.) for the whole duration. execFile lets the event loop
   // keep serving other requests while piper runs in its own process.
   const child = execFile(PIPER_BIN,
-    ['--model', PIPER_MODEL, '--output_file', tmpFile],
+    ['--model', PIPER_MODEL, '--length_scale', String(lengthScale), '--output_file', tmpFile],
     { maxBuffer: 10 * 1024 * 1024, timeout: 10000 },
     (err) => {
       if (err) {

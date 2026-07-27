@@ -392,6 +392,19 @@
         <input type="checkbox" id="toggle-alert-tts">
         Read Aloud: text-to-speech reads the alert type, counties, and headline
       </label>
+      <label class="field-label">Read Aloud Minimum Severity
+        <select id="tts-min-severity">
+          <option value="Minor">Minor and above (every alert)</option>
+          <option value="Moderate">Moderate and above</option>
+          <option value="Severe">Severe and above</option>
+          <option value="Extreme">Extreme only</option>
+        </select>
+      </label>
+      <p class="settings-desc">Alert Sound still beeps for every new alert regardless of this setting — only the spoken readout is filtered.</p>
+      <label class="field-label">Speech Rate (faster ↔ slower)
+        <input type="range" id="tts-rate-slider" min="0.8" max="1.6" step="0.05" value="1.15">
+      </label>
+      <button id="tts-rate-test-btn" class="btn btn-ghost btn-sm" type="button">🔊 Test Speech Rate</button>
     </div>
 
     <div class="settings-section" id="graphics-section" hidden>

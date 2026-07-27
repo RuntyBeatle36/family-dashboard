@@ -1465,6 +1465,16 @@ const ALERT_ICON = { Extreme: '🚨', Severe: '🚨', Moderate: '⚠️', Minor:
 const getSoundEnabled = () => localStorage.getItem('alertSound') === 'true';
 const getTtsEnabled   = () => localStorage.getItem('alertTts')   === 'true';
 const getBootSoundEnabled = () => localStorage.getItem('bootSound') !== 'false'; // default on
+// Piper length_scale — higher = slower/clearer. 1.15 (slightly slower than
+// the model's natural 1.0 pace) matches the server's own default; kept in
+// sync manually since this is sent explicitly on every request rather than
+// omitted, so the Settings slider and the server config can't drift apart
+// silently.
+const getTtsRate = () => parseFloat(localStorage.getItem('ttsRate')) || 1.15;
+// Defaults to 'Minor' (read every alert) so adding this setting doesn't
+// silently change behavior for anyone who already has Read Aloud on —
+// beeps are unaffected by this either way, only the spoken readout.
+const getTtsMinSeverity = () => localStorage.getItem('ttsMinSeverity') || 'Minor';
 
 let audioCtx = null;
 function getAudioCtx() {
@@ -1592,7 +1602,7 @@ async function speakText(text, onerror, onsuccess) {
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, rate: getTtsRate() }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -1608,21 +1618,52 @@ async function speakText(text, onerror, onsuccess) {
   }
 }
 
+// NWS headlines end with "...by NWS <office>" (e.g. "by NWS Corpus Christi
+// TX") — attribution that's meaningless to hear aloud (a Laredo listener
+// doesn't care which office issued it) and "NWS" as three clipped letters
+// tends to mumble together. Stripped before speaking; the full text still
+// shows in the visual ticker.
+function cleanupAlertHeadline(headline) {
+  if (!headline) return '';
+  return headline.replace(/\s+by NWS\b.*$/i, '').trim();
+}
+
+// A single broad advisory can list a dozen-plus counties (areaDesc uses
+// ";" as a separator) — reading all of them in a flat comma run-on isn't
+// actually parseable by ear. Capped with a natural "and N more areas"
+// instead; the full list remains visible in the ticker banner.
+function speakableAreaList(areaDesc, maxItems = 4) {
+  if (!areaDesc) return '';
+  const areas = areaDesc.split(';').map(s => s.trim()).filter(Boolean);
+  if (areas.length === 0) return '';
+  if (areas.length === 1) return areas[0];
+  if (areas.length <= maxItems)
+    return areas.slice(0, -1).join(', ') + ', and ' + areas[areas.length - 1];
+  const remaining = areas.length - maxItems;
+  return areas.slice(0, maxItems).join(', ') + `, and ${remaining} more ${remaining === 1 ? 'area' : 'areas'}`;
+}
+
 function speakAlerts(sorted) {
   if (!getTtsEnabled()) return;
+  // Lower ALERT_SEV rank = more severe (Extreme:0 ... Unknown:4) — "at
+  // least this severe" means rank <= the threshold's rank. Alert Sound
+  // (the beep) is unaffected — it fires for every new alert regardless;
+  // only the spoken readout is filtered here.
+  const minRank   = ALERT_SEV[getTtsMinSeverity()] ?? 3;
+  const speakable = sorted.filter(f => (ALERT_SEV[f.properties.severity] ?? 4) <= minRank);
+  if (!speakable.length) return;
   cancelTts();
   speakText(
     'The National Weather Service has issued the following alert' +
-    (sorted.length > 1 ? 's' : '') + '.'
+    (speakable.length > 1 ? 's' : '') + '.'
   );
-  for (const f of sorted) {
-    const p     = f.properties;
-    const areas = p.areaDesc
-      ? p.areaDesc.split(';').map(s => s.trim()).filter(Boolean).join(', ')
-      : '';
-    const text  = areas
-      ? `${p.event} for ${areas}. ${p.headline || ''}`
-      : `${p.event}. ${p.headline || ''}`;
+  for (const f of speakable) {
+    const p        = f.properties;
+    const areas    = speakableAreaList(p.areaDesc);
+    const headline = cleanupAlertHeadline(p.headline);
+    const text     = areas
+      ? `${p.event} for ${areas}. ${headline}`
+      : `${p.event}. ${headline}`;
     speakText(text);
   }
 }
@@ -2431,6 +2472,8 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('toggle-boot-sound').checked  = getBootSoundEnabled();
   document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
   document.getElementById('toggle-alert-tts').checked   = getTtsEnabled();
+  document.getElementById('tts-min-severity').value     = getTtsMinSeverity();
+  document.getElementById('tts-rate-slider').value      = getTtsRate();
   document.getElementById('text-scale-slider').value       = getTextScalePct();
   document.getElementById('brightness-slider').value       = getBrightnessPct();
   document.getElementById('toggle-night-dim').checked      = getNightDimEnabled();
@@ -2453,6 +2496,20 @@ document.getElementById('toggle-alert-sound').addEventListener('change', e => {
 });
 document.getElementById('toggle-alert-tts').addEventListener('change', e => {
   localStorage.setItem('alertTts', e.target.checked);
+});
+document.getElementById('tts-min-severity').addEventListener('change', e => {
+  localStorage.setItem('ttsMinSeverity', e.target.value);
+});
+document.getElementById('tts-rate-slider').addEventListener('input', e => {
+  localStorage.setItem('ttsRate', e.target.value);
+});
+document.getElementById('tts-rate-test-btn').addEventListener('click', () => {
+  cancelTts();
+  speakText(
+    'This is a test of the alert text to speech system at the current speech rate.',
+    showError,
+    () => showToast('Speaking now via server-side text to speech.', 'success')
+  );
 });
 
 document.getElementById('text-scale-slider').addEventListener('input', e => {

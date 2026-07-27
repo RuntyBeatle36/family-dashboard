@@ -178,6 +178,24 @@ Exec=xset s off -dpms
 
 ---
 
+## Text-to-speech (Piper)
+
+Alert Read-Aloud uses [Piper](https://github.com/rhasspy/piper) for local,
+offline TTS — installed manually on the Pi (not via `packages.txt`, since
+it's a standalone binary + voice model rather than an apt package):
+
+- `PIPER_BIN` (env var, default `piper`) — path to the binary, if not on `PATH`
+- `PIPER_MODEL` (env var, default `piper/en_US-lessac-medium.onnx`) — path to the voice model
+- `PIPER_LENGTH_SCALE` (env var, default `1.15`) — server-wide default speech rate; higher is slower/clearer, lower is faster. Overridden per-request by the **Speech Rate** slider in Settings ▸ Alert Notifications, which lets you A/B test on the Pi's actual speaker via the **Test Speech Rate** button — no redeploy needed.
+
+To try a different voice (clarity varies noticeably between voices, not
+just quality tiers), browse
+[huggingface.co/rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)
+for other `en_US-*` models, download the `.onnx` + `.onnx.json` pair onto
+the Pi, and point `PIPER_MODEL` at it.
+
+---
+
 ## PWA — Add to Home Screen
 
 1. Open `http://<PI_IP>:3000` in Chrome (Android) or Safari (iOS)
