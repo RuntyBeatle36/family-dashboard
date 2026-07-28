@@ -377,7 +377,10 @@ const PIPER_MODEL = process.env.PIPER_MODEL || path.join(__dirname, 'piper', 'en
 const PIPER_DEFAULT_LENGTH_SCALE = parseFloat(process.env.PIPER_LENGTH_SCALE) || 1.15;
 
 app.post('/api/tts', (req, res) => {
-  const text = (req.body?.text || '').toString().trim().slice(0, 500);
+  // Alerts are now read back verbatim (full NWS description + instruction,
+  // not a shortened summary) — a detailed bulletin easily runs past the
+  // old 500-char cap, which would silently truncate mid-sentence.
+  const text = (req.body?.text || '').toString().trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'text required' });
 
   // Clamped, not trusted blindly — this becomes a CLI arg to piper below.
@@ -393,9 +396,11 @@ app.post('/api/tts', (req, res) => {
   // call would freeze every other client's request (calendar/todo polling,
   // sysstats, etc.) for the whole duration. execFile lets the event loop
   // keep serving other requests while piper runs in its own process.
+  // 30s (was 10s) — a full bulletin at the up-to-4000-char cap takes
+  // meaningfully longer to synthesize than a short summary sentence did.
   const child = execFile(PIPER_BIN,
     ['--model', PIPER_MODEL, '--length_scale', String(lengthScale), '--output_file', tmpFile],
-    { maxBuffer: 10 * 1024 * 1024, timeout: 10000 },
+    { maxBuffer: 10 * 1024 * 1024, timeout: 30000 },
     (err) => {
       if (err) {
         fs.unlink(tmpFile, () => {});

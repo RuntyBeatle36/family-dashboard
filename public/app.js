@@ -1475,12 +1475,33 @@ const getTtsRate = () => parseFloat(localStorage.getItem('ttsRate')) || 1.15;
 // silently change behavior for anyone who already has Read Aloud on —
 // beeps are unaffected by this either way, only the spoken readout.
 const getTtsMinSeverity = () => localStorage.getItem('ttsMinSeverity') || 'Minor';
+// 0-100, default 100 (unchanged from before this setting existed). One
+// dial for all three dashboard sounds rather than three independent ones —
+// simplest to use, and matches how a TV/speaker's own volume control works.
+const getSoundVolume = () => {
+  const v = parseInt(localStorage.getItem('soundVolume'), 10);
+  return Number.isFinite(v) ? v : 100;
+};
 
-let audioCtx = null;
+let audioCtx       = null;
+let masterGainNode = null;
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
+}
+// Boot chime, alert beeps, and TTS playback all route through this one
+// shared gain node instead of straight to ctx.destination, so the Sound
+// Volume slider controls all three uniformly — nothing extra to wire up
+// each time a new sound is added.
+function getMasterGain() {
+  const ctx = getAudioCtx();
+  if (!masterGainNode) {
+    masterGainNode = ctx.createGain();
+    masterGainNode.connect(ctx.destination);
+  }
+  masterGainNode.gain.value = getSoundVolume() / 100;
+  return masterGainNode;
 }
 
 // 6 beeps, louder — was 3 beeps at 0.22 gain, which turned out to be too
@@ -1495,11 +1516,12 @@ const ALERT_BEEP_GAIN  = 0.75;  // 0-1; square wave, pushed close to clipping on
 const ALERT_BEEP_TOTAL_MS = Math.round(((ALERT_BEEP_COUNT - 1) * ALERT_BEEP_GAP + ALERT_BEEP_DUR) * 1000);
 
 function playBeepSequence(ctx) {
+  const out = getMasterGain();
   const beep = (freq, start, dur) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(out);
     osc.type = 'square';
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0, start);
@@ -1524,6 +1546,7 @@ function playAlertSound() {
 function playBootChime() {
   try {
     const ctx   = getAudioCtx();
+    const out   = getMasterGain();
     const notes = [523.25, 659.25, 783.99, 1046.50];
     const dur   = 0.5;
     const gap   = 0.14;
@@ -1534,7 +1557,7 @@ function playBootChime() {
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(out);
       osc.type = 'sine';
       osc.frequency.value = freq;
       gain.gain.setValueAtTime(0, start);
@@ -1588,7 +1611,7 @@ function processTtsQueue() {
     .then(buffer => {
       const source = ctx.createBufferSource();
       source.buffer = buffer;
-      source.connect(ctx.destination);
+      source.connect(getMasterGain());
       source.onended = done;
       currentTtsSource = source;
       source.start();
@@ -1618,31 +1641,6 @@ async function speakText(text, onerror, onsuccess) {
   }
 }
 
-// NWS headlines end with "...by NWS <office>" (e.g. "by NWS Corpus Christi
-// TX") — attribution that's meaningless to hear aloud (a Laredo listener
-// doesn't care which office issued it) and "NWS" as three clipped letters
-// tends to mumble together. Stripped before speaking; the full text still
-// shows in the visual ticker.
-function cleanupAlertHeadline(headline) {
-  if (!headline) return '';
-  return headline.replace(/\s+by NWS\b.*$/i, '').trim();
-}
-
-// A single broad advisory can list a dozen-plus counties (areaDesc uses
-// ";" as a separator) — reading all of them in a flat comma run-on isn't
-// actually parseable by ear. Capped with a natural "and N more areas"
-// instead; the full list remains visible in the ticker banner.
-function speakableAreaList(areaDesc, maxItems = 4) {
-  if (!areaDesc) return '';
-  const areas = areaDesc.split(';').map(s => s.trim()).filter(Boolean);
-  if (areas.length === 0) return '';
-  if (areas.length === 1) return areas[0];
-  if (areas.length <= maxItems)
-    return areas.slice(0, -1).join(', ') + ', and ' + areas[areas.length - 1];
-  const remaining = areas.length - maxItems;
-  return areas.slice(0, maxItems).join(', ') + `, and ${remaining} more ${remaining === 1 ? 'area' : 'areas'}`;
-}
-
 function speakAlerts(sorted) {
   if (!getTtsEnabled()) return;
   // Lower ALERT_SEV rank = more severe (Extreme:0 ... Unknown:4) — "at
@@ -1658,12 +1656,19 @@ function speakAlerts(sorted) {
     (speakable.length > 1 ? 's' : '') + '.'
   );
   for (const f of speakable) {
-    const p        = f.properties;
-    const areas    = speakableAreaList(p.areaDesc);
-    const headline = cleanupAlertHeadline(p.headline);
-    const text     = areas
-      ? `${p.event} for ${areas}. ${headline}`
-      : `${p.event}. ${headline}`;
+    const p     = f.properties;
+    const areas = p.areaDesc
+      ? p.areaDesc.split(';').map(s => s.trim()).filter(Boolean).join(', ')
+      : '';
+    // Read the alert exactly as NWS issued it — event, areas, headline,
+    // full description, and any instruction — like a TV EAS crawl reads
+    // the actual bulletin verbatim, not a shortened summary of it.
+    const text = [
+      areas ? `${p.event} for ${areas}.` : `${p.event}.`,
+      p.headline,
+      p.description,
+      p.instruction,
+    ].filter(Boolean).join(' ');
     speakText(text);
   }
 }
@@ -2476,6 +2481,7 @@ document.getElementById('update-now-btn').addEventListener('click', async () => 
 document.getElementById('settings-btn').addEventListener('click', () => {
   renderActiveLocation();
   applyTheme();
+  document.getElementById('sound-volume-slider').value  = getSoundVolume();
   document.getElementById('toggle-boot-sound').checked  = getBootSoundEnabled();
   document.getElementById('toggle-alert-sound').checked = getSoundEnabled();
   document.getElementById('toggle-alert-tts').checked   = getTtsEnabled();
@@ -2495,6 +2501,10 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   settingsModal.hidden = false;
 });
 
+document.getElementById('sound-volume-slider').addEventListener('input', e => {
+  localStorage.setItem('soundVolume', e.target.value);
+  if (masterGainNode) masterGainNode.gain.value = getSoundVolume() / 100; // live feedback while dragging
+});
 document.getElementById('toggle-boot-sound').addEventListener('change', e => {
   localStorage.setItem('bootSound', e.target.checked);
 });
