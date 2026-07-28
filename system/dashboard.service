@@ -7,6 +7,14 @@ After=network.target
 Type=simple
 User=user
 WorkingDirectory=/home/user/family-dashboard
+# Piper is a standalone binary + voice model, not an apt package (see
+# system/packages.txt) — installed into piper/ inside the repo working
+# directory rather than relying on it being on PATH, since a systemd
+# service gets a minimal default PATH that doesn't include wherever a
+# manually-installed binary might live (unlike an interactive login shell,
+# which is why this could silently work when testing via a terminal but
+# fail here).
+Environment=PIPER_BIN=/home/user/family-dashboard/piper/piper
 ExecStart=/usr/bin/node server.js
 Restart=always
 
