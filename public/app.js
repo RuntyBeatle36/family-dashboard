@@ -1584,9 +1584,11 @@ function playBootChime() {
 let ttsQueue         = [];
 let ttsPlaying       = false;
 let currentTtsSource = null;
+let ttsPrefetch      = null; // { item, promise } — the queue's front item, fetched ahead while the previous item was still playing
 
 function cancelTts() {
   ttsQueue = [];
+  ttsPrefetch = null;
   if (currentTtsSource) { try { currentTtsSource.stop(); } catch { /* already stopped */ } currentTtsSource = null; }
   ttsPlaying = false;
 }
@@ -1597,48 +1599,95 @@ function cancelTts() {
 // of whatever the engine already produced.
 const TTS_GAP_MS = 300; // brief pause between queued utterances, for clarity
 
-function processTtsQueue() {
+async function fetchTtsAudio(text) {
+  let res;
+  try {
+    res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, rate: getTtsRate() }),
+    });
+  } catch {
+    throw new Error('Could not reach the dashboard server for text-to-speech.');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    console.warn('TTS request failed:', body.detail || res.status);
+    throw new Error('Text-to-speech engine unavailable on this device.');
+  }
+  return res.arrayBuffer();
+}
+
+function speakText(text, onerror, onsuccess) {
+  ttsQueue.push({ text, onerror, onsuccess });
+  processTtsQueue();
+}
+
+async function processTtsQueue() {
   if (ttsPlaying || ttsQueue.length === 0) return;
   ttsPlaying = true;
-  const { arrayBuffer, onerror, onsuccess } = ttsQueue.shift();
-  const ctx = getAudioCtx();
+  const item = ttsQueue.shift();
   const done = () => {
     currentTtsSource = null;
     ttsPlaying = false;
     setTimeout(processTtsQueue, TTS_GAP_MS);
   };
-  ctx.decodeAudioData(arrayBuffer)
-    .then(buffer => {
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(getMasterGain());
-      source.onended = done;
-      currentTtsSource = source;
-      source.start();
-      onsuccess?.();
-    })
-    .catch(err => { onerror?.('Audio decoding failed: ' + err.message); done(); });
+  try {
+    // A multi-chunk alert (see chunkTextForSpeech below) used to only start
+    // fetching each chunk once it became the current item — meaning the
+    // synthesis time for chunk N+1 played out as an audible silent gap
+    // after chunk N finished. Reusing a prefetch kicked off while the
+    // previous item was still playing (below) closes that gap; falls back
+    // to fetching now for the very first item, or after cancelTts() cleared
+    // the queue mid-prefetch.
+    const audioPromise = (ttsPrefetch && ttsPrefetch.item === item) ? ttsPrefetch.promise : fetchTtsAudio(item.text);
+    ttsPrefetch = null;
+    const arrayBuffer = await audioPromise;
+
+    const ctx = getAudioCtx();
+    const buffer = await ctx.decodeAudioData(arrayBuffer);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(getMasterGain());
+    source.onended = done;
+    currentTtsSource = source;
+    source.start();
+    item.onsuccess?.();
+
+    // Start fetching the NEXT queued item now, overlapping with this one's
+    // playback — capped to a single item of look-ahead (not the whole
+    // remaining queue) so a long, many-chunk alert doesn't fire a burst of
+    // concurrent Piper processes at once on Pi-class hardware.
+    if (ttsQueue.length) {
+      const nextItem = ttsQueue[0];
+      const nextPromise = fetchTtsAudio(nextItem.text);
+      nextPromise.catch(() => {}); // real handling happens once this item is dequeued and actually awaited, above
+      ttsPrefetch = { item: nextItem, promise: nextPromise };
+    }
+  } catch (err) {
+    item.onerror?.(err.message || 'Text-to-speech failed.');
+    done();
+  }
 }
 
-async function speakText(text, onerror, onsuccess) {
-  try {
-    const res = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, rate: getTtsRate() }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      console.warn('TTS request failed:', body.detail || res.status);
-      onerror?.('Text-to-speech engine unavailable on this device.');
-      return;
-    }
-    const arrayBuffer = await res.arrayBuffer();
-    ttsQueue.push({ arrayBuffer, onerror, onsuccess });
-    processTtsQueue();
-  } catch (err) {
-    onerror?.('Could not reach the dashboard server for text-to-speech.');
-  }
+// NWS bulletins use formatting that reads fine on screen but trips up a
+// TTS frontend: "* WHEN...Until 430 PM CDT" glues a bare bullet, an
+// ellipsis, and a number-only time directly onto the next word with no
+// separating space — exactly the kind of thing that makes a synthesizer
+// slur or skip the phrase, which is often where the county/time detail
+// actually lives (the WHERE/WHEN bullets). This doesn't drop or reword
+// anything NWS said — every word survives — it just fixes spacing/
+// punctuation so the engine can actually pronounce it clearly, the same
+// way a TV announcer would naturally pause at these bullets rather than
+// reading the raw asterisks and dots aloud.
+function normalizeForSpeech(text) {
+  return text
+    .replace(/\*\s*([A-Z][A-Z ]*?)\.\.\./g, '$1: ')   // "* WHEN..." -> "WHEN: "
+    .replace(/\.{2,}/g, '. ')                          // any other "..." -> a clean pause
+    .replace(/\b(\d{1,2})(\d{2})\s*(AM|PM)\b/gi, '$1:$2 $3') // "430 PM" -> "4:30 PM"
+    .replace(/\b(\d{1,2}:\d{2})(AM|PM)\b/gi, '$1 $2')  // "11:08PM" -> "11:08 PM"
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Splits long text on sentence boundaries into chunks no larger than
@@ -1688,12 +1737,12 @@ function speakAlerts(sorted) {
     // Read the alert exactly as NWS issued it — event, areas, headline,
     // full description, and any instruction — like a TV EAS crawl reads
     // the actual bulletin verbatim, not a shortened summary of it.
-    const text = [
+    const text = normalizeForSpeech([
       areas ? `${p.event} for ${areas}.` : `${p.event}.`,
       p.headline,
       p.description,
       p.instruction,
-    ].filter(Boolean).join(' ');
+    ].filter(Boolean).join(' '));
     for (const chunk of chunkTextForSpeech(text)) speakText(chunk, showError);
   }
 }
