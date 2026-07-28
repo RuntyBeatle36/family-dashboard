@@ -1641,6 +1641,30 @@ async function speakText(text, onerror, onsuccess) {
   }
 }
 
+// Splits long text on sentence boundaries into chunks no larger than
+// maxLen, greedily packing as many whole sentences as fit. A full NWS
+// bulletin (description + instruction) easily runs past a thousand
+// characters — synthesizing that as a single /api/tts request risked the
+// request timing out on Pi-class hardware with nothing spoken at all (only
+// the short intro sentence played, then silence). Queuing several smaller
+// requests instead keeps each one fast regardless of how long the overall
+// alert text is.
+function chunkTextForSpeech(text, maxLen = 400) {
+  const sentences = text.replace(/\s*\n+\s*/g, ' ').split(/(?<=[.!?])\s+/);
+  const chunks = [];
+  let current = '';
+  for (const s of sentences) {
+    if (current && current.length + s.length + 1 > maxLen) {
+      chunks.push(current);
+      current = s;
+    } else {
+      current = current ? `${current} ${s}` : s;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 function speakAlerts(sorted) {
   if (!getTtsEnabled()) return;
   // Lower ALERT_SEV rank = more severe (Extreme:0 ... Unknown:4) — "at
@@ -1653,7 +1677,8 @@ function speakAlerts(sorted) {
   cancelTts();
   speakText(
     'The National Weather Service has issued the following alert' +
-    (speakable.length > 1 ? 's' : '') + '.'
+    (speakable.length > 1 ? 's' : '') + '.',
+    showError
   );
   for (const f of speakable) {
     const p     = f.properties;
@@ -1669,7 +1694,7 @@ function speakAlerts(sorted) {
       p.description,
       p.instruction,
     ].filter(Boolean).join(' ');
-    speakText(text);
+    for (const chunk of chunkTextForSpeech(text)) speakText(chunk, showError);
   }
 }
 
