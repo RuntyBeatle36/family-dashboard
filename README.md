@@ -33,158 +33,80 @@ Open `http://localhost:3000` in your browser.
 
 ## Deploy on Raspberry Pi
 
-### 1. Install Node.js (v22.5+ required — v24 LTS recommended)
-
-`node:sqlite` (used by `server.js`) doesn't exist before Node 22.5. Node 20
-will fail to start the server entirely.
+### New hardware — one script
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-sudo apt install -y nodejs
+curl -fsSL https://raw.githubusercontent.com/RuntyBeatle36/family-dashboard/main/scripts/provision-pi.sh | bash
+sudo reboot
 ```
 
-### 2. Clone and install
+Assumes a fresh Raspberry Pi OS install (desktop + Openbox) logged in as a
+user named `user`, matching `system/dashboard.service`'s `User=`/
+`WorkingDirectory=`. This installs Node.js, clones the repo to
+`~/family-dashboard`, installs Piper (TTS) + a default voice, sets up the
+`dashboard.service` systemd unit (auto-start on boot, auto-restart on
+crash), installs the sudoers rule the in-app self-update flow needs (see
+below), sets up the Openbox kiosk autostart, and configures the GPU/display
+settings covered in the rest of this section. Idempotent — safe to re-run
+on an already-provisioned Pi.
 
-```bash
-mkdir -p ~/git-projects
-cd ~/git-projects
-git clone <your-repo-url> family-dashboard
-cd family-dashboard
-npm install --omit=dev
-```
+`scripts/provision-pi.sh` is **not** part of the automatic self-update flow
+(that's `scripts/system-update.sh`, run after every `git pull` via the
+in-app updater) — it's a one-time bootstrap you run by hand on new
+hardware, and never runs itself.
 
-### 3. Find your Pi's local IP
+Find the Pi's local IP to reach it from a phone (`http://<PI_IP>:3000`):
 
 ```bash
 hostname -I
 ```
 
-Access the dashboard from any phone on your WiFi at `http://<PI_IP>:3000`.
+### What it sets up, in more detail
 
----
+**Systemd service** (auto-start on boot) — `system/dashboard.service`,
+installed to `/etc/systemd/system/`. Enabled + started once during
+provisioning; every later `git pull` reinstalls it automatically only if
+its content actually changed.
 
-## Systemd service (auto-start on boot)
+**Sudoers rule** — `system/dashboard-system-update.sudoers`, installed to
+`/etc/sudoers.d/dashboard-system-update`. Grants passwordless access to
+exactly the handful of system commands the self-update flow and "Exit to
+Terminal" need (installing packages, reinstalling the service file,
+`systemctl daemon-reload`, killing the X session) — nothing broader.
+Without it, those actions prompt for a password that nobody's there to type.
 
-Create the service file:
+**GPU acceleration** (Pi 4/5, 2GB+) — the dashboard leans on
+`backdrop-filter: blur()` (glass panels) and a full-screen animated canvas.
+Both are cheap *if* Chromium is actually GPU-compositing them, and very
+expensive if it silently falls back to software rendering — same look
+either way, very different performance.
 
-```bash
-sudo nano /etc/systemd/system/family-dashboard.service
-```
+- `dtoverlay=vc4-kms-v3d` in `/boot/firmware/config.txt` (full KMS driver)
+- `gpu_mem=128` (2GB Pi 4 defaults too low for a compositing-heavy page)
+- After it's running, open `chromium --kiosk chrome://gpu` once and check
+  rasterization/compositing say "Hardware accelerated" — if they say
+  "Software only", fix that before assuming the app itself is slow.
 
-Paste:
-
-```ini
-[Unit]
-Description=Family Dashboard
-After=network.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/git-projects/family-dashboard
-ExecStart=/usr/bin/node server.js
-Restart=on-failure
-RestartSec=5
-Environment=NODE_ENV=production PORT=3000
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable family-dashboard
-sudo systemctl start family-dashboard
-sudo systemctl status family-dashboard
-```
-
----
-
-## Chromium kiosk mode on Pi startup
-
-### GPU acceleration (do this first — Pi 4/5, 2GB+)
-
-The dashboard leans on `backdrop-filter: blur()` (glass panels) and a full-screen
-animated canvas. Both are cheap *if* Chromium is actually GPU-compositing them,
-and very expensive if it silently falls back to software rendering — same look
-either way, very different performance. Before tuning anything else:
-
-1. Confirm `/boot/firmware/config.txt` has the full KMS driver:
-   ```
-   dtoverlay=vc4-kms-v3d
-   ```
-2. Give the GPU more memory than the default split (2GB Pi 4 defaults too low
-   for a compositing-heavy page like this):
-   ```
-   gpu_mem=128
-   ```
-3. Add these flags to whichever `chromium-browser` launch line you use below:
-   `--enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required`
-4. After it's running, open `chromium-browser --kiosk chrome://gpu` once and
-   check that rasterization/compositing say "Hardware accelerated" — if they
-   say "Software only", fix that before assuming the app itself is slow.
-
-The `--autoplay-policy=no-user-gesture-required` flag above isn't about
-performance — without it, Chromium blocks all audio (the startup chime,
-alert beeps, TTS) until the very first tap, since kiosk mode never gets an
-initial user gesture the way a normal browser tab would.
-
-### Option A — autostart (Raspberry Pi OS with desktop)
-
-```bash
-mkdir -p ~/.config/autostart
-nano ~/.config/autostart/kiosk.desktop
-```
-
-Paste:
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=Family Dashboard Kiosk
-Exec=chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required http://localhost:3000
-```
-
-### Option B — via `/etc/rc.local` (lite / headless)
-
-Add before `exit 0`:
-
-```bash
-su pi -c 'DISPLAY=:0 chromium-browser --noerrdialogs --disable-infobars --kiosk --enable-gpu-rasterization --enable-zero-copy --use-gl=egl --ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required http://localhost:3000 &'
-```
-
-### Disable screen blanking
-
-```bash
-sudo nano /etc/lightdm/lightdm.conf
-```
-
-Under `[Seat:*]` add:
-
-```
-xserver-command=X -s 0 -dpms
-```
-
-Or add to `~/.config/autostart/nodpms.desktop`:
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=Disable DPMS
-Exec=xset s off -dpms
-```
+**Kiosk autostart + screen blanking** — `system/openbox-autostart`,
+installed to `~/.config/openbox/autostart`. Launches Chromium in kiosk mode
+with `--autoplay-policy=no-user-gesture-required` (without it, Chromium
+blocks all audio — startup chime, alert beeps, TTS — until the very first
+tap, since kiosk mode never gets an initial user gesture the way a normal
+browser tab would), disables screen blanking/DPMS, hides the mouse cursor
+via `unclutter`, and sets the display resolution.
 
 ---
 
 ## Text-to-speech (Piper)
 
 Alert Read-Aloud uses [Piper](https://github.com/rhasspy/piper) for local,
-offline TTS — installed manually on the Pi (not via `packages.txt`, since
-it's a standalone binary + voice model rather than an apt package):
+offline TTS — installed by `scripts/provision-pi.sh` into `piper/` inside
+the repo (not via `packages.txt`, since it's a standalone binary + voice
+model rather than an apt package). `system/dashboard.service` points
+`PIPER_BIN` at that exact path via `Environment=`, since a systemd
+service's default `PATH` doesn't include it:
 
-- `PIPER_BIN` (env var, default `piper`) — path to the binary, if not on `PATH`
+- `PIPER_BIN` (env var, default `piper` i.e. must be on `PATH` if unset — overridden to `piper/piper` by `dashboard.service`) — path to the binary
 - `PIPER_MODEL` (env var, default `piper/en_US-lessac-medium.onnx`) — path to the voice model
 - `PIPER_LENGTH_SCALE` (env var, default `1.15`) — server-wide default speech rate; higher is slower/clearer, lower is faster. Overridden per-request by the **Speech Rate** slider in Settings ▸ Alert Notifications, which lets you A/B test on the Pi's actual speaker via the **Test Speech Rate** button — no redeploy needed.
 
@@ -208,9 +130,17 @@ The app will launch fullscreen like a native app.
 
 ## Updating
 
+Normally automatic: the dashboard checks for updates every 5 minutes and
+shows an **Update available** badge — tap it, then **Update Now**, and it
+pulls, reinstalls dependencies, reapplies `scripts/system-update.sh`, and
+restarts itself.
+
+To update manually from a terminal instead:
+
 ```bash
-cd ~/git-projects/family-dashboard
+cd ~/family-dashboard
 git pull
 npm install --omit=dev
-sudo systemctl restart family-dashboard
+bash scripts/system-update.sh
+sudo systemctl restart dashboard.service
 ```

@@ -2,6 +2,8 @@
 # starting with # are ignored. Installed by scripts/system-update.sh on
 # every update (a no-op if everything listed is already present).
 #
-# Nothing needed yet — Piper (TTS) is installed manually as a standalone
-# binary + voice model, not an apt package. Add entries here for future
-# needs (e.g. Bluetooth/audio packages).
+# Piper (TTS) is NOT here — it's a standalone binary + voice model, not an
+# apt package. See scripts/provision-pi.sh / the README's Text-to-speech
+# section. Add entries here for future needs (e.g. Bluetooth/audio packages).
+
+unclutter

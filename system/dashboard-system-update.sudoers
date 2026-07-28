@@ -1,0 +1,18 @@
+# /etc/sudoers.d/dashboard-system-update
+#
+# Grants the dashboard's Node process (running as `user`, see
+# system/dashboard.service) passwordless access to exactly the system
+# commands it needs — nothing broader:
+#   - scripts/system-update.sh, run automatically after every self-update
+#     (installs new apt packages, reinstalls dashboard.service if changed)
+#   - the "Exit to Terminal" debug feature (kills the X session)
+#
+# Installed automatically by scripts/provision-pi.sh on a fresh Pi. To
+# install by hand instead:
+#   sudo install -m 440 system/dashboard-system-update.sudoers /etc/sudoers.d/dashboard-system-update
+#   sudo visudo -c    # validate before trusting it
+
+user ALL=(root) NOPASSWD: /usr/bin/apt-get install -y *
+user ALL=(root) NOPASSWD: /usr/bin/install -o root -g root -m 644 /home/user/family-dashboard/system/dashboard.service /etc/systemd/system/dashboard.service
+user ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+user ALL=(root) NOPASSWD: /usr/bin/pkill -f /usr/lib/xorg/Xorg
