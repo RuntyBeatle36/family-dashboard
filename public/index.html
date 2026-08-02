@@ -689,6 +689,41 @@
      Rows are built by JS from a layout table — see OSK_ROWS in app.js. -->
 <div id="osk" class="osk" hidden></div>
 
+<!-- ── Custom date/time pickers ───────────────────────────────────
+     Fully custom (not the native <input type="date"/"time"> picker) — the
+     native one can't be made to respect the app's own 12h/24h and US/EU
+     date settings (its widget always follows the OS/browser locale), and
+     testing found its actual behavior unreliable across browsers/versions
+     outright. Centered sub-dialogs (same overlay pattern as every other
+     modal in the app) rather than positioned next to the triggering field
+     — anchoring near the field risked the popup overlapping other fields
+     on a short viewport when it had to flip above/below to stay on screen. -->
+<div id="dt-date-overlay" class="dt-picker-overlay" hidden>
+  <div id="dt-date-popup" class="dt-picker-popup dt-date-popup">
+    <div class="dt-picker-header">
+      <button type="button" class="btn btn-icon btn-sm" id="dt-date-prev">&#8249;</button>
+      <span id="dt-date-popup-label" class="dt-picker-title"></span>
+      <button type="button" class="btn btn-icon btn-sm" id="dt-date-next">&#8250;</button>
+    </div>
+    <div class="dt-picker-weekdays" id="dt-date-weekdays"></div>
+    <div class="dt-picker-grid" id="dt-date-grid"></div>
+    <div class="dt-picker-footer">
+      <button type="button" class="btn btn-ghost btn-sm" id="dt-date-today">Today</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="dt-date-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="dt-time-overlay" class="dt-picker-overlay" hidden>
+  <div id="dt-time-popup" class="dt-picker-popup dt-time-popup">
+    <div class="dt-picker-header">
+      <span class="dt-picker-title">Select Time</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="dt-time-clear">Clear</button>
+    </div>
+    <div class="dt-time-list" id="dt-time-list"></div>
+  </div>
+</div>
+
 <script src="/app.js"></script>
 </body>
 </html>

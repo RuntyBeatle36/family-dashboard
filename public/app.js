@@ -3348,14 +3348,148 @@ const untilRow    = document.getElementById('ev-until-row');
 const allDayCbx   = document.getElementById('ev-allday');
 const timeFields  = document.getElementById('ev-time-fields');
 
-// Custom date/time picker display — see the .dt-input-wrap comment in
-// style.css for why the native input isn't shown directly. formatFn turns
-// the native input's raw value ("2026-07-23" / "14:30") into the app's own
-// date/time format; sync() must be called manually after setting the
-// underlying input's .value via JS (opening the form for add/edit doesn't
-// fire a native 'change' event), which is why each wireup below returns
-// its sync function instead of just attaching listeners.
-function wireCustomDateTimeInput(inputId, btnId, textId, formatFn, placeholder) {
+// ── Custom date/time picker popups ───────────────────────────────
+// Fully custom UI, not the native <input type="date"/"time"> picker — the
+// native widget's own display format can't be made to follow this app's
+// Date & Time Format setting (it always shows whatever the OS/browser
+// locale dictates, regardless of what's configured here), and testing
+// found its actual behavior calling showPicker() varied noticeably across
+// browsers/versions (Chromium vs Firefox, old vs new Chromium builds).
+// Being fully custom means identical, predictable behavior everywhere.
+const dateOverlay = document.getElementById('dt-date-overlay');
+const timeOverlay = document.getElementById('dt-time-overlay');
+let activeDatePicker  = null; // { input } for whichever field is open
+let activeTimePicker  = null;
+let datePickerViewDate = new Date(); // month currently shown in the date popup
+
+const DT_MLONG     = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
+const DT_DOW_SHORT = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+function parseYMD(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function closeDtPopups() {
+  dateOverlay.hidden = true;
+  timeOverlay.hidden = true;
+  activeDatePicker = null;
+  activeTimePicker = null;
+}
+// Same click-outside-closes pattern as every other modal in the app
+// (addModal, detailModal, etc.) — clicking the dimmed backdrop itself
+// (not the popup card) dismisses it.
+dateOverlay.addEventListener('click', e => { if (e.target === dateOverlay) closeDtPopups(); });
+timeOverlay.addEventListener('click', e => { if (e.target === timeOverlay) closeDtPopups(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDtPopups(); });
+
+/* ── Date picker: calendar grid, same layout logic as the month view ── */
+function renderDatePickerGrid() {
+  const year  = datePickerViewDate.getFullYear();
+  const month = datePickerViewDate.getMonth();
+  document.getElementById('dt-date-popup-label').textContent = `${DT_MLONG[month]} ${year}`;
+
+  const weekdaysEl = document.getElementById('dt-date-weekdays');
+  if (!weekdaysEl.childElementCount) weekdaysEl.innerHTML = DT_DOW_SHORT.map(d => `<span>${d}</span>`).join('');
+
+  const grid = document.getElementById('dt-date-grid');
+  grid.innerHTML = '';
+  const startDow    = new Date(year, month, 1).getDay();
+  const daysInMo    = new Date(year, month + 1, 0).getDate();
+  const totalCells  = Math.ceil((startDow + daysInMo) / 7) * 7;
+  const today       = toYMD(new Date());
+  const selected    = activeDatePicker?.input.value || '';
+
+  for (let i = 0; i < totalCells; i++) {
+    const d   = new Date(year, month, 1 + i - startDow);
+    const ymd = toYMD(d);
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'dt-date-cell' +
+      (d.getMonth() !== month ? ' other-month' : '') +
+      (ymd === today    ? ' is-today'    : '') +
+      (ymd === selected ? ' is-selected' : '');
+    cell.textContent = d.getDate();
+    cell.addEventListener('click', () => {
+      activeDatePicker.input.value = ymd;
+      activeDatePicker.input.dispatchEvent(new Event('change'));
+      closeDtPopups();
+    });
+    grid.appendChild(cell);
+  }
+}
+
+function openDatePicker(input) {
+  closeDtPopups();
+  activeDatePicker = { input };
+  datePickerViewDate = input.value ? parseYMD(input.value) : new Date();
+  datePickerViewDate.setDate(1);
+  renderDatePickerGrid();
+  dateOverlay.hidden = false;
+}
+document.getElementById('dt-date-prev').addEventListener('click', () => {
+  datePickerViewDate.setMonth(datePickerViewDate.getMonth() - 1);
+  renderDatePickerGrid();
+});
+document.getElementById('dt-date-next').addEventListener('click', () => {
+  datePickerViewDate.setMonth(datePickerViewDate.getMonth() + 1);
+  renderDatePickerGrid();
+});
+document.getElementById('dt-date-today').addEventListener('click', () => {
+  if (!activeDatePicker) return;
+  activeDatePicker.input.value = toYMD(new Date());
+  activeDatePicker.input.dispatchEvent(new Event('change'));
+  closeDtPopups();
+});
+document.getElementById('dt-date-close').addEventListener('click', closeDtPopups);
+
+/* ── Time picker: scrollable list of 15-minute slots, formatted per the
+   app's own 12h/24h setting — tap one directly rather than dialing hour/
+   minute/AM-PM separately. */
+function renderTimePickerList() {
+  const list = document.getElementById('dt-time-list');
+  list.innerHTML = '';
+  const selected = activeTimePicker?.input.value || '';
+  let selectedBtn = null;
+  for (let mins = 0; mins < 24 * 60; mins += 15) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    const value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dt-time-opt' + (value === selected ? ' is-selected' : '');
+    btn.textContent = fmt12hHM(h, m);
+    btn.addEventListener('click', () => {
+      activeTimePicker.input.value = value;
+      activeTimePicker.input.dispatchEvent(new Event('change'));
+      closeDtPopups();
+    });
+    if (value === selected) selectedBtn = btn;
+    list.appendChild(btn);
+  }
+  (selectedBtn || list.firstChild)?.scrollIntoView({ block: 'center' });
+}
+
+function openTimePicker(input) {
+  closeDtPopups();
+  activeTimePicker = { input };
+  renderTimePickerList();
+  timeOverlay.hidden = false;
+}
+document.getElementById('dt-time-clear').addEventListener('click', () => {
+  if (!activeTimePicker) return;
+  activeTimePicker.input.value = '';
+  activeTimePicker.input.dispatchEvent(new Event('change'));
+  closeDtPopups();
+});
+
+// formatFn turns the native input's raw value ("2026-07-23" / "14:30")
+// into the app's own date/time format; sync() must be called manually
+// after setting the underlying input's .value via JS (opening the form
+// for add/edit doesn't fire a native 'change' event), which is why each
+// wireup below returns its sync function instead of just attaching
+// listeners.
+function wireCustomDateTimeInput(inputId, btnId, textId, kind, formatFn, placeholder) {
   const input = document.getElementById(inputId);
   const btn   = document.getElementById(btnId);
   const text  = document.getElementById(textId);
@@ -3368,29 +3502,9 @@ function wireCustomDateTimeInput(inputId, btnId, textId, formatFn, placeholder) 
       text.classList.add('placeholder');
     }
   };
-  // showPicker() only exists on Chromium 99+ — Raspberry Pi OS's packaged
-  // Chromium can lag well behind that. On an older build, input.focus()
-  // alone never opens a date/time picker (that needs a real click on the
-  // browser's own icon, or showPicker()) — silently doing nothing, which is
-  // worse than the original bug. Falling back permanently to the native
-  // input itself (restoring its default appearance so its own icon renders
-  // again) beats a custom button with no way to actually open anything.
-  const fallbackToNative = () => {
-    input.classList.add('dt-input-native-fallback');
-    btn.hidden = true;
-    input.focus();
-  };
   btn.addEventListener('click', () => {
-    if (typeof input.showPicker !== 'function') { fallbackToNative(); return; }
-    try {
-      // Clicking the button focuses the BUTTON (normal browser behavior) —
-      // without explicitly moving focus to the actual input too, keyboard
-      // interaction (typing a time directly) keeps going to the button,
-      // which accepts none of it. Needed regardless of whether the
-      // showPicker() popup itself is visible.
-      input.focus();
-      input.showPicker();
-    } catch { fallbackToNative(); }
+    if (kind === 'date') openDatePicker(input);
+    else openTimePicker(input);
   });
   input.addEventListener('input', sync);
   input.addEventListener('change', sync);
@@ -3409,10 +3523,10 @@ function formatTimeForDisplay(timeStr) {
   return fmt12hHM(h, m);
 }
 
-const syncEvDate  = wireCustomDateTimeInput('ev-date',  'ev-date-btn',  'ev-date-text',  formatDateForDisplay, 'Select date');
-const syncEvStart = wireCustomDateTimeInput('ev-start', 'ev-start-btn', 'ev-start-text', formatTimeForDisplay, 'Start time');
-const syncEvEnd   = wireCustomDateTimeInput('ev-end',   'ev-end-btn',   'ev-end-text',   formatTimeForDisplay, 'End time');
-const syncEvUntil = wireCustomDateTimeInput('ev-until', 'ev-until-btn', 'ev-until-text', formatDateForDisplay, 'No end date');
+const syncEvDate  = wireCustomDateTimeInput('ev-date',  'ev-date-btn',  'ev-date-text',  'date', formatDateForDisplay, 'Select date');
+const syncEvStart = wireCustomDateTimeInput('ev-start', 'ev-start-btn', 'ev-start-text', 'time', formatTimeForDisplay, 'Start time');
+const syncEvEnd   = wireCustomDateTimeInput('ev-end',   'ev-end-btn',   'ev-end-text',   'time', formatTimeForDisplay, 'End time');
+const syncEvUntil = wireCustomDateTimeInput('ev-until', 'ev-until-btn', 'ev-until-text', 'date', formatDateForDisplay, 'No end date');
 function syncAllEventFormDisplays() { syncEvDate(); syncEvStart(); syncEvEnd(); syncEvUntil(); }
 
 // Color swatches
@@ -3455,6 +3569,7 @@ document.getElementById('cal-add-btn').addEventListener('click', () => {
 
 function closeAddModal() {
   addModal.hidden = true;
+  closeDtPopups(); // a date/time popup left open with its parent form gone would float uselessly
   addForm.reset();
   syncAllEventFormDisplays(); // reset() doesn't fire input/change, so the custom displays need an explicit refresh
   untilRow.style.display    = 'none';

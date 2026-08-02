@@ -117,7 +117,8 @@
    on top of much busier, more cluttered content — switch to a solid
    background when blur is off, scoped here to just .modal-overlay so nothing
    outside a menu is affected. */
-[data-glass="off"] .modal-overlay {
+[data-glass="off"] .modal-overlay,
+[data-glass="off"] .dt-picker-overlay {
   --glass:   var(--glass-solid);
   --glass-2: var(--glass-solid-2);
 }
@@ -1207,35 +1208,20 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 2px rgba(90,180,255,0.18);
 }
 
-/* Custom date/time picker display — -webkit-appearance:none above (needed
-   for this input's own consistent glass styling) drops Chromium's built-in
-   picker-indicator icon on some Linux builds, leaving no visible/reliable
-   way to open the native picker. The native input stays in the DOM (value
-   store + showPicker() target); this button is the only visible, tappable
-   surface, always shows a real icon, and displays the value in the app's
-   own date/time format setting.
-   Hidden via full overlap by the opaque button on top, NOT opacity:0 —
-   Firefox's showPicker() silently no-ops (no error, no popup) on an
-   opacity:0 element, even though the same call works fine in Chromium.
-   Staying at opacity:1 (just visually covered by the button painted after
-   it) keeps the element "really visible" as far as the picker API is
-   concerned in both engines. inset:0 makes it exactly coincide with the
-   button's box so nothing peeks out from behind it. */
+/* Custom date/time picker display — the native <input type="date"/"time">
+   is never shown or interacted with directly (see the .dt-picker-popup
+   block below for why: its own picker widget can't be made to follow the
+   app's Date & Time Format setting, and behavior varied across browsers).
+   It stays in the DOM purely as the value store submitted with the form;
+   this button is the only visible, tappable surface. */
 .dt-input-wrap { position: relative; }
 .dt-input-native {
   position: absolute;
   inset: 0;
+  opacity: 0;
   pointer-events: none;
-  z-index: 1;
 }
 .dt-input-display {
-  /* position + z-index above the native input — Firefox paints native
-     date/time controls through their own internal layer that doesn't
-     reliably respect plain DOM-order stacking the way normal elements do,
-     so relying on "painted later = on top" left the native control's own
-     rendering showing through instead of this button. */
-  position: relative;
-  z-index: 2;
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -1259,18 +1245,109 @@ input:focus, textarea:focus, select:focus {
 .dt-input-text { flex: 1; }
 .dt-input-text.placeholder { color: var(--text-dimmer); }
 
-/* Fallback for Chromium builds without showPicker() (see the JS comment in
-   wireCustomDateTimeInput) — undoes the hiding above so the native input
-   (and whatever icon that Chromium build gives it) becomes the real,
-   working control again. A working native picker beats a custom button
-   with no way to open anything. */
-.dt-input-native.dt-input-native-fallback {
-  position: static;
-  opacity: 1;
-  pointer-events: auto;
-  width: 100%;
-  -webkit-appearance: auto;
+/* ── Custom date/time picker popups ───────────────────────────────
+   Fully custom UI (not the native <input> picker) — the native widget's
+   own 12h/24h and locale display can't be made to follow this app's own
+   Date & Time Format setting, and its reliability varied across browsers
+   (Chromium vs Firefox vs old Chromium builds each behaved differently).
+   Centered sub-dialogs using the exact same overlay pattern as every other
+   modal in the app (.modal-overlay/.modal) — including its theme-aware
+   variables, so these automatically switch with dark/light mode like
+   everything else — just with a higher z-index to layer above the Add/Edit
+   Event modal they open on top of. */
+.dt-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.52);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
 }
+.dt-picker-overlay[hidden] { display: none; }
+
+.dt-picker-popup {
+  width: 260px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--glass-2);
+  border: 1.5px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 0.7rem;
+  color: var(--text);
+  backdrop-filter: var(--blur-strong);
+  -webkit-backdrop-filter: var(--blur-strong);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+}
+
+.dt-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+.dt-picker-title { font-weight: 700; font-size: 0.9rem; }
+
+.dt-picker-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-dimmer);
+  margin-bottom: 0.25rem;
+}
+
+.dt-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.dt-date-cell {
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  padding: 0.4rem 0;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+.dt-date-cell:hover { background: var(--glass-border); }
+.dt-date-cell.other-month { color: var(--text-dimmer); opacity: 0.5; }
+.dt-date-cell.is-today { outline: 1.5px solid var(--accent); }
+.dt-date-cell.is-selected { background: var(--accent); color: #fff; }
+
+.dt-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--glass-border2);
+}
+
+.dt-time-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dt-time-opt {
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+.dt-time-opt:hover { background: var(--glass-border); }
+.dt-time-opt.is-selected { background: var(--accent); color: #fff; }
 
 input::placeholder, textarea::placeholder { color: var(--text-dimmer); }
 textarea { resize: vertical; min-height: 3rem; }
