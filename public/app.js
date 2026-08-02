@@ -210,7 +210,12 @@ function renderLockAgenda() {
       // the lock screen, defeating the point of marking them private.
       const label = ev.is_private ? '🔒 Private event' : escHtml(ev.title);
       const bg    = ev.is_private ? 'rgba(255,255,255,0.14)' : ev.color;
-      return `<div class="lock-agenda-item" style="background:${bg}">${label}</div>`;
+      // Time isn't identity-revealing the way title/color are, so it's
+      // shown even for private events — just when, not what.
+      const time  = (!ev.all_day && ev.start_time)
+        ? `<span class="lock-agenda-time">${fmt12h(ev.start_time)}${ev.end_time ? '–' + fmt12h(ev.end_time) : ''}</span>`
+        : '';
+      return `<div class="lock-agenda-item" style="background:${bg}">${time}${label}</div>`;
     }).join('');
   };
   document.getElementById('lock-agenda-today').innerHTML    = listFor(lockAgendaEvents.today);
@@ -310,6 +315,27 @@ document.getElementById('theme-options').addEventListener('click', e => {
 
 applyTheme(); // initial apply before any data
 
+// Date & Time Format button clicks — same scoped active-state pattern as
+// the Graphics settings groups (gfx-glass/gfx-wx-quality), not the global
+// theme buttons, since .theme-opt is reused across several independent
+// groups on this page.
+document.getElementById('date-format-options').addEventListener('click', e => {
+  const btn = e.target.closest('.theme-opt');
+  if (!btn) return;
+  localStorage.setItem('dateFormat', btn.dataset.val);
+  document.querySelectorAll('#date-format-options .theme-opt').forEach(b =>
+    b.classList.toggle('active', b === btn));
+  refreshDateTimeDisplaysAppWide();
+});
+document.getElementById('time-format-options').addEventListener('click', e => {
+  const btn = e.target.closest('.theme-opt');
+  if (!btn) return;
+  localStorage.setItem('timeFormat', btn.dataset.val);
+  document.querySelectorAll('#time-format-options .theme-opt').forEach(b =>
+    b.classList.toggle('active', b === btn));
+  refreshDateTimeDisplaysAppWide();
+});
+
 /* ══════════════════════════════════════════════════════════
    UTILITIES
    ══════════════════════════════════════════════════════════ */
@@ -338,6 +364,12 @@ function timeAgo(unixSec) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+// Settings > Date & Time Format. Applied app-wide: every clock/calendar/
+// event time funnels through fmt12hHM (kept the historical name — it now
+// also handles 24h), and every spelled-out date through fmtLongDate below.
+const getDateFormat = () => localStorage.getItem('dateFormat') || 'US'; // 'US' | 'EU'
+const getTimeFormat = () => localStorage.getItem('timeFormat') || '12h'; // '12h' | '24h'
+
 function fmt12h(val) {
   if (val === null || val === undefined || val === '') return '';
   if (typeof val === 'number') {
@@ -349,9 +381,22 @@ function fmt12h(val) {
 }
 
 function fmt12hHM(h, m) {
+  if (getTimeFormat() === '24h') return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
   const ampm = h >= 12 ? 'PM' : 'AM';
   const h12  = h % 12 || 12;
   return m ? `${h12}:${String(m).padStart(2,'0')} ${ampm}` : `${h12} ${ampm}`;
+}
+
+// Spelled-out date, e.g. "Thursday, July 23, 2026" (US) vs "Thursday, 23
+// July 2026" (EU) — day-before-month for the EU order, matching how dates
+// are actually spoken/written in most of the world outside the US, not
+// just swapping the numeric MM/DD.
+function fmtLongDate(dateObj, { weekday = null } = {}) {
+  const mon  = CLOCK_MONS[dateObj.getMonth()];
+  const day  = dateObj.getDate();
+  const yr   = dateObj.getFullYear();
+  const core = getDateFormat() === 'EU' ? `${day} ${mon} ${yr}` : `${mon} ${day}, ${yr}`;
+  return weekday ? `${weekday}, ${core}` : core;
 }
 
 function timeToMins(str) {
@@ -389,13 +434,22 @@ const CLOCK_DAYS  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday'
 const CLOCK_MONS  = ['January','February','March','April','May','June',
                       'July','August','September','October','November','December'];
 
+// The live clock always shows minutes, unlike fmt12hHM's calendar/forecast
+// use elsewhere (where a bare "2 PM" for a whole-hour event is the
+// established, more compact convention) — a literal clock reading "2 PM"
+// while the minute hand visibly isn't at :00 would look broken.
+function fmtClockTime(h, m) {
+  if (getTimeFormat() === '24h') return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
 function updateClock() {
   const now  = new Date();
   const h    = now.getHours();
-  const m    = String(now.getMinutes()).padStart(2, '0');
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const clockText = `${h % 12 || 12}:${m} ${ampm}`;
-  const dateText  = `${CLOCK_DAYS[now.getDay()]}, ${CLOCK_MONS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  const clockText = fmtClockTime(h, now.getMinutes());
+  const dateText  = fmtLongDate(now, { weekday: CLOCK_DAYS[now.getDay()] });
 
   clockEl.textContent   = clockText;
   dateStrEl.textContent = dateText;
@@ -2572,6 +2626,10 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('lock-reveal-secs').value     = getLockRevealSecs();
   document.getElementById('toggle-lock-agenda').checked = getLockAgendaEnabled();
   document.getElementById('toggle-osk').checked = getOskEnabled();
+  document.querySelectorAll('#date-format-options .theme-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.val === getDateFormat()));
+  document.querySelectorAll('#time-format-options .theme-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.val === getTimeFormat()));
   settingsModal.hidden = false;
 });
 
@@ -2982,17 +3040,24 @@ function setCalLabel(start, end) {
   const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const MLONG = ['January','February','March','April','May','June',
                  'July','August','September','October','November','December'];
+  const eu = getDateFormat() === 'EU';
   let text;
   if (calView === 'day') {
     const DN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    text = `${DN[start.getDay()]}, ${M[start.getMonth()]} ${start.getDate()}, ${start.getFullYear()}`;
+    text = fmtLongDate(start, { weekday: DN[start.getDay()] });
   } else if (calView === 'month') {
     text = `${MLONG[start.getMonth()]} ${start.getFullYear()}`;
   } else {
     const sm = start.getMonth() === end.getMonth();
-    text = sm
-      ? `${M[start.getMonth()]} ${start.getDate()}–${end.getDate()}, ${start.getFullYear()}`
-      : `${M[start.getMonth()]} ${start.getDate()} – ${M[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+    if (sm) {
+      text = eu
+        ? `${start.getDate()}–${end.getDate()} ${M[start.getMonth()]} ${start.getFullYear()}`
+        : `${M[start.getMonth()]} ${start.getDate()}–${end.getDate()}, ${start.getFullYear()}`;
+    } else {
+      text = eu
+        ? `${start.getDate()} ${M[start.getMonth()]} – ${end.getDate()} ${M[end.getMonth()]} ${end.getFullYear()}`
+        : `${M[start.getMonth()]} ${start.getDate()} – ${M[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+    }
   }
   document.getElementById('cal-week-label').textContent = text;
 }
@@ -3226,9 +3291,8 @@ function fillMonthEvents(events) {
     const chip = document.createElement('div');
     chip.className = 'cal-month-chip';
     chip.style.background = ev.color;
-    chip.textContent = (ev.all_day || !ev.start_time)
-      ? ev.title
-      : `${fmt12h(ev.start_time)} ${ev.title}`;
+    const time = ev.end_time ? `${fmt12h(ev.start_time)}–${fmt12h(ev.end_time)}` : fmt12h(ev.start_time);
+    chip.textContent = (ev.all_day || !ev.start_time) ? ev.title : `${time} ${ev.title}`;
     chip.addEventListener('click', () => showEventDetail(ev));
     container.appendChild(chip);
   });
@@ -3284,6 +3348,73 @@ const untilRow    = document.getElementById('ev-until-row');
 const allDayCbx   = document.getElementById('ev-allday');
 const timeFields  = document.getElementById('ev-time-fields');
 
+// Custom date/time picker display — see the .dt-input-wrap comment in
+// style.css for why the native input isn't shown directly. formatFn turns
+// the native input's raw value ("2026-07-23" / "14:30") into the app's own
+// date/time format; sync() must be called manually after setting the
+// underlying input's .value via JS (opening the form for add/edit doesn't
+// fire a native 'change' event), which is why each wireup below returns
+// its sync function instead of just attaching listeners.
+function wireCustomDateTimeInput(inputId, btnId, textId, formatFn, placeholder) {
+  const input = document.getElementById(inputId);
+  const btn   = document.getElementById(btnId);
+  const text  = document.getElementById(textId);
+  const sync = () => {
+    if (input.value) {
+      text.textContent = formatFn(input.value);
+      text.classList.remove('placeholder');
+    } else {
+      text.textContent = placeholder;
+      text.classList.add('placeholder');
+    }
+  };
+  // showPicker() only exists on Chromium 99+ — Raspberry Pi OS's packaged
+  // Chromium can lag well behind that. On an older build, input.focus()
+  // alone never opens a date/time picker (that needs a real click on the
+  // browser's own icon, or showPicker()) — silently doing nothing, which is
+  // worse than the original bug. Falling back permanently to the native
+  // input itself (restoring its default appearance so its own icon renders
+  // again) beats a custom button with no way to actually open anything.
+  const fallbackToNative = () => {
+    input.classList.add('dt-input-native-fallback');
+    btn.hidden = true;
+    input.focus();
+  };
+  btn.addEventListener('click', () => {
+    if (typeof input.showPicker !== 'function') { fallbackToNative(); return; }
+    try {
+      // Clicking the button focuses the BUTTON (normal browser behavior) —
+      // without explicitly moving focus to the actual input too, keyboard
+      // interaction (typing a time directly) keeps going to the button,
+      // which accepts none of it. Needed regardless of whether the
+      // showPicker() popup itself is visible.
+      input.focus();
+      input.showPicker();
+    } catch { fallbackToNative(); }
+  });
+  input.addEventListener('input', sync);
+  input.addEventListener('change', sync);
+  sync();
+  return sync;
+}
+
+function formatDateForDisplay(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return getDateFormat() === 'EU'
+    ? `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`
+    : `${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}`;
+}
+function formatTimeForDisplay(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  return fmt12hHM(h, m);
+}
+
+const syncEvDate  = wireCustomDateTimeInput('ev-date',  'ev-date-btn',  'ev-date-text',  formatDateForDisplay, 'Select date');
+const syncEvStart = wireCustomDateTimeInput('ev-start', 'ev-start-btn', 'ev-start-text', formatTimeForDisplay, 'Start time');
+const syncEvEnd   = wireCustomDateTimeInput('ev-end',   'ev-end-btn',   'ev-end-text',   formatTimeForDisplay, 'End time');
+const syncEvUntil = wireCustomDateTimeInput('ev-until', 'ev-until-btn', 'ev-until-text', formatDateForDisplay, 'No end date');
+function syncAllEventFormDisplays() { syncEvDate(); syncEvStart(); syncEvEnd(); syncEvUntil(); }
+
 // Color swatches
 const swatchContainer = document.getElementById('color-swatches');
 COLORS.forEach((c, i) => {
@@ -3317,6 +3448,7 @@ allDayCbx.addEventListener('change', () => {
 
 document.getElementById('cal-add-btn').addEventListener('click', () => {
   document.getElementById('ev-date').value = toYMD(new Date());
+  syncAllEventFormDisplays();
   addModal.hidden = false;
   document.getElementById('ev-title').focus();
 });
@@ -3324,6 +3456,7 @@ document.getElementById('cal-add-btn').addEventListener('click', () => {
 function closeAddModal() {
   addModal.hidden = true;
   addForm.reset();
+  syncAllEventFormDisplays(); // reset() doesn't fire input/change, so the custom displays need an explicit refresh
   untilRow.style.display    = 'none';
   intervalRow.style.display = 'none';
   timeFields.style.display  = 'flex';
@@ -3366,6 +3499,7 @@ function openEditModal(ev) {
   document.getElementById('ev-interval-unit').textContent = RECUR_UNIT_LABELS[recurSel.value] || '';
   document.getElementById('ev-recur-interval').value = ev.recurrence_interval || 1;
   document.getElementById('ev-until').value = ev.recurrence_until || '';
+  syncAllEventFormDisplays();
 
   document.getElementById('add-modal-title').textContent  = 'Edit Event';
   document.getElementById('add-modal-submit').textContent = 'Save Changes';
@@ -3446,8 +3580,8 @@ function showEventDetail(ev) {
 
   const [y, m, d] = ev.display_date.split('-').map(Number);
   const dateObj = new Date(y, m - 1, d);
-  const dateFmt = dateObj.toLocaleDateString('en-US',
-    { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  const DNLONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dateFmt = fmtLongDate(dateObj, { weekday: DNLONG[dateObj.getDay()] });
 
   let info = `<strong>Date:</strong> ${dateFmt}<br>`;
   if (ev.start_time) {
@@ -3474,13 +3608,27 @@ function showEventDetail(ev) {
   if (ev.description) info += `<div class="detail-desc">${escHtml(ev.description)}</div>`;
 
   if (ev.created_at) {
-    const createdFmt = new Date(ev.created_at * 1000).toLocaleDateString('en-US',
-      { month: 'long', day: 'numeric', year: 'numeric' });
+    const createdFmt = fmtLongDate(new Date(ev.created_at * 1000));
     info += `<div class="detail-created">Created ${createdFmt}</div>`;
   }
 
   document.getElementById('detail-body').innerHTML = info;
   detailModal.hidden = false;
+}
+
+// Settings > Date & Time Format changes should be visible immediately, not
+// just on the next natural refresh — re-renders everything currently on
+// screen that shows a date or time. Forces the calendar's structure-cache
+// keys to miss so setCalLabel/event chips actually rebuild even though the
+// underlying view/dates haven't changed, only their formatting.
+function refreshDateTimeDisplaysAppWide() {
+  updateClock();
+  _lastCalKey = null;
+  _lastEventsSig = null;
+  loadCalendar();
+  if (!document.getElementById('lock-screen').hidden) renderLockAgenda();
+  if (!addModal.hidden) syncAllEventFormDisplays();
+  if (!detailModal.hidden && detailEventFull) showEventDetail(detailEventFull);
 }
 
 document.getElementById('detail-close').addEventListener('click', () => { detailModal.hidden = true; });

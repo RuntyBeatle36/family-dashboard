@@ -422,6 +422,7 @@ body {
   margin: 0.3rem 0;
   border-radius: 6px;
 }
+.lock-agenda-time { opacity: 0.8; margin-right: 0.4rem; }
 
 .lock-hint {
   margin-top: 1.5rem;
@@ -1204,6 +1205,71 @@ select {
 input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(90,180,255,0.18);
+}
+
+/* Custom date/time picker display — -webkit-appearance:none above (needed
+   for this input's own consistent glass styling) drops Chromium's built-in
+   picker-indicator icon on some Linux builds, leaving no visible/reliable
+   way to open the native picker. The native input stays in the DOM (value
+   store + showPicker() target); this button is the only visible, tappable
+   surface, always shows a real icon, and displays the value in the app's
+   own date/time format setting.
+   Hidden via full overlap by the opaque button on top, NOT opacity:0 —
+   Firefox's showPicker() silently no-ops (no error, no popup) on an
+   opacity:0 element, even though the same call works fine in Chromium.
+   Staying at opacity:1 (just visually covered by the button painted after
+   it) keeps the element "really visible" as far as the picker API is
+   concerned in both engines. inset:0 makes it exactly coincide with the
+   button's box so nothing peeks out from behind it. */
+.dt-input-wrap { position: relative; }
+.dt-input-native {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.dt-input-display {
+  /* position + z-index above the native input — Firefox paints native
+     date/time controls through their own internal layer that doesn't
+     reliably respect plain DOM-order stacking the way normal elements do,
+     so relying on "painted later = on top" left the native control's own
+     rendering showing through instead of this button. */
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  background: var(--glass-2);
+  border: 1.5px solid var(--glass-border);
+  border-radius: 9px;
+  color: var(--text);
+  font-size: 0.95rem;
+  padding: 0.55rem 0.8rem;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.dt-input-display:hover  { border-color: var(--accent); }
+.dt-input-display:active { transform: scale(0.98); }
+.dt-input-icon { font-size: 1.05rem; flex-shrink: 0; }
+.dt-input-text { flex: 1; }
+.dt-input-text.placeholder { color: var(--text-dimmer); }
+
+/* Fallback for Chromium builds without showPicker() (see the JS comment in
+   wireCustomDateTimeInput) — undoes the hiding above so the native input
+   (and whatever icon that Chromium build gives it) becomes the real,
+   working control again. A working native picker beats a custom button
+   with no way to open anything. */
+.dt-input-native.dt-input-native-fallback {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  width: 100%;
+  -webkit-appearance: auto;
 }
 
 input::placeholder, textarea::placeholder { color: var(--text-dimmer); }

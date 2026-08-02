@@ -189,7 +189,13 @@
       </div>
 
       <label class="field-label">Date
-        <input id="ev-date" type="date" required />
+        <div class="dt-input-wrap">
+          <input id="ev-date" type="date" required class="dt-input-native" />
+          <button type="button" class="dt-input-display" id="ev-date-btn">
+            <span class="dt-input-icon">📅</span>
+            <span id="ev-date-text" class="dt-input-text"></span>
+          </button>
+        </div>
       </label>
 
       <label class="field-label allday-row">
@@ -199,15 +205,27 @@
 
       <label class="field-label allday-row">
         <input id="ev-private" type="checkbox" />
-        🔒 Private (shows as "Busy" on the wall display until someone taps the screen)
+        🔒 Private (shows as "Busy" until tapped)
       </label>
 
       <div id="ev-time-fields" class="modal-row">
         <label class="field-label">Start
-          <input id="ev-start" type="time" />
+          <div class="dt-input-wrap">
+            <input id="ev-start" type="time" class="dt-input-native" />
+            <button type="button" class="dt-input-display" id="ev-start-btn">
+              <span class="dt-input-icon">🕐</span>
+              <span id="ev-start-text" class="dt-input-text"></span>
+            </button>
+          </div>
         </label>
         <label class="field-label">End
-          <input id="ev-end" type="time" />
+          <div class="dt-input-wrap">
+            <input id="ev-end" type="time" class="dt-input-native" />
+            <button type="button" class="dt-input-display" id="ev-end-btn">
+              <span class="dt-input-icon">🕐</span>
+              <span id="ev-end-text" class="dt-input-text"></span>
+            </button>
+          </div>
         </label>
       </div>
 
@@ -231,7 +249,13 @@
       </div>
 
       <label class="field-label" id="ev-until-row" style="display:none">Repeat until
-        <input id="ev-until" type="date" />
+        <div class="dt-input-wrap">
+          <input id="ev-until" type="date" class="dt-input-native" />
+          <button type="button" class="dt-input-display" id="ev-until-btn">
+            <span class="dt-input-icon">📅</span>
+            <span id="ev-until-text" class="dt-input-text"></span>
+          </button>
+        </div>
       </label>
 
       <div class="modal-actions">
@@ -291,6 +315,23 @@
       <p class="settings-desc">Scales text throughout the whole dashboard.</p>
       <label class="field-label">Text Size
         <input type="range" id="text-scale-slider" min="85" max="150" step="5" value="100" />
+      </label>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">🗓️ Date &amp; Time Format</div>
+      <p class="settings-desc">Applies throughout the dashboard — clock, calendar, and event times.</p>
+      <label class="field-label" style="margin-bottom:0.7rem">Date Format
+        <div class="theme-options" id="date-format-options">
+          <button class="theme-opt" data-val="US">US · 7/23/2026</button>
+          <button class="theme-opt" data-val="EU">EU · 23/7/2026</button>
+        </div>
+      </label>
+      <label class="field-label">Time Format
+        <div class="theme-options" id="time-format-options">
+          <button class="theme-opt" data-val="12h">12-hour</button>
+          <button class="theme-opt" data-val="24h">24-hour</button>
+        </div>
       </label>
     </div>
 
