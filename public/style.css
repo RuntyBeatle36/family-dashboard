@@ -1583,6 +1583,16 @@ select {
   text-align: center;
 }
 
+.recur-scope-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.recur-scope-options .btn {
+  width: 100%;
+  text-align: center;
+}
+
 .detail-color-bar {
   height: 5px;
   border-radius: 3px;

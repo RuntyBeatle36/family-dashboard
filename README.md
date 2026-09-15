@@ -97,6 +97,29 @@ via `unclutter`, and sets the display resolution.
 
 ---
 
+## Security check-up
+
+```bash
+sudo bash scripts/harden-pi.sh
+```
+
+Audits and tightens the things that matter for a box sitting on your home
+network with SSH and a NOPASSWD sudoers rule: enables the `ufw` firewall
+(allowing SSH + port 3000, denying everything else inbound), installs
+`fail2ban` against SSH brute-forcing, turns on daily unattended security
+updates, hardens `sshd_config` (no root login, no empty passwords, and disables
+SSH password login — but *only* once it finds a key already in
+`~/.ssh/authorized_keys`, so it can never lock you out), re-validates the
+`dashboard-system-update` sudoers rule against the repo's copy, and fixes a
+few file permissions. Idempotent, safe to re-run any time.
+
+It never restricts outbound traffic (GitHub/apt/Piper keep working) and
+never blocks or disables SSH — deliberately **not** wired into the automatic
+self-update flow, since changes like these are exactly the kind you want to
+watch happen, not have run silently in the background.
+
+---
+
 ## Text-to-speech (Piper)
 
 Alert Read-Aloud uses [Piper](https://github.com/rhasspy/piper) for local,

@@ -229,7 +229,7 @@
         </label>
       </div>
 
-      <div class="modal-row">
+      <div class="modal-row" id="ev-repeat-row">
         <label class="field-label" style="flex:1.6">Repeat
           <select id="ev-recur">
             <option value="none">Does not repeat</option>
@@ -278,9 +278,19 @@
         <button class="btn btn-accent" id="detail-edit">✏️ Edit</button>
       </div>
       <div class="detail-delete-group">
-        <button class="btn btn-danger-outline" id="detail-delete-occurrence" hidden>Delete This Occurrence</button>
         <button class="btn btn-danger" id="detail-delete">Delete Event</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recurring Event Scope Picker (shared by Edit & Delete) ──── -->
+<div id="recur-scope-modal" class="modal-overlay" hidden>
+  <div class="modal modal-sm">
+    <h3 class="modal-title" id="recur-scope-title">Apply to…</h3>
+    <div class="recur-scope-options" id="recur-scope-options"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="recur-scope-cancel">Cancel</button>
     </div>
   </div>
 </div>

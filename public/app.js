@@ -137,6 +137,7 @@ let detailEventId   = null;
 let detailEventDate = null; // display_date of the occurrence currently shown
 let detailEventFull = null; // full event object currently shown, for Edit
 let editingEventId  = null; // set while the Add Event form is reused for editing
+let editingOccurrenceDate = null; // set when editing just one occurrence of a recurring series
 let selectedColor = COLORS[0].hex;
 
 /* ══════════════════════════════════════════════════════════
@@ -1484,7 +1485,13 @@ function setWxMode(desc) {
     return applyWxMode('dust');
   if (d.includes('smoke') || d.includes('haze') || d.includes('ash') || d.includes('spray'))
     return applyWxMode('smoke');
-  if (d.includes('overcast') || d.includes('mostly cloudy') || d.includes('considerable'))
+  // "Overcast"/"considerable cloudiness" = full 100% cloud cover, genuinely
+  // dim regardless of time of day — that's what earns the flat grey sky and
+  // forces dark theme below. "Mostly Cloudy" is NOT full cover (NWS still
+  // has it well short of "Overcast") and stays plenty bright during the
+  // day, so it's handled by the regular cloudy-day/cloudy-night branch
+  // further down instead of being lumped in here.
+  if (d.includes('overcast') || d.includes('considerable'))
     return applyWxMode('overcast');
 
   if (d.includes('windy') || d.includes('breezy') || d.includes('blustery') || d.includes('gusty'))
@@ -3579,17 +3586,23 @@ function closeAddModal() {
     el.classList.toggle('selected', i === 0));
   selectedColor = COLORS[0].hex;
   editingEventId = null;
+  editingOccurrenceDate = null;
   document.getElementById('add-modal-title').textContent  = 'Add Event';
   document.getElementById('add-modal-submit').textContent = 'Save Event';
   document.getElementById('edit-recur-hint').hidden = true;
+  document.getElementById('ev-repeat-row').style.display = 'flex';
 }
 
 // Reuses the Add Event form/modal for editing — populates every field from
 // the existing event, then the submit handler below routes to PATCH instead
-// of POST based on `editingEventId`. Always edits the whole series for a
-// recurring event (there's no per-occurrence edit, unlike delete).
-function openEditModal(ev) {
+// of POST based on `editingEventId`. Edits the whole series by default; pass
+// occurrenceDate (an occurrence's display_date) to instead edit just that one
+// occurrence — it's detached into its own standalone event on save (see the
+// submit handler and the server's PATCH ?mode=single), so the recurrence
+// fields are hidden here since they no longer apply to a single occurrence.
+function openEditModal(ev, occurrenceDate = null) {
   editingEventId = ev.id;
+  editingOccurrenceDate = occurrenceDate;
 
   document.getElementById('ev-title').value  = ev.title;
   document.getElementById('ev-desc').value   = ev.description || '';
@@ -3599,7 +3612,7 @@ function openEditModal(ev) {
   swatchContainer.querySelectorAll('.color-swatch').forEach((el, i) =>
     el.classList.toggle('selected', COLORS[i].hex === ev.color));
 
-  document.getElementById('ev-date').value = ev.event_date;
+  document.getElementById('ev-date').value = occurrenceDate || ev.event_date;
 
   allDayCbx.checked = !!ev.all_day;
   timeFields.style.display = allDayCbx.checked ? 'none' : 'flex';
@@ -3607,7 +3620,8 @@ function openEditModal(ev) {
   document.getElementById('ev-end').value   = ev.end_time   || '';
   document.getElementById('ev-private').checked = !!ev.is_private;
 
-  recurSel.value = ev.recurrence || 'none';
+  document.getElementById('ev-repeat-row').style.display = occurrenceDate ? 'none' : 'flex';
+  recurSel.value = occurrenceDate ? 'none' : (ev.recurrence || 'none');
   const repeats = recurSel.value !== 'none';
   untilRow.style.display    = repeats ? 'flex' : 'none';
   intervalRow.style.display = repeats ? 'flex' : 'none';
@@ -3618,7 +3632,14 @@ function openEditModal(ev) {
 
   document.getElementById('add-modal-title').textContent  = 'Edit Event';
   document.getElementById('add-modal-submit').textContent = 'Save Changes';
-  document.getElementById('edit-recur-hint').hidden = !repeats;
+  const hintEl = document.getElementById('edit-recur-hint');
+  if (occurrenceDate) {
+    hintEl.textContent = 'Editing just this occurrence — the rest of the series is unaffected.';
+    hintEl.hidden = false;
+  } else {
+    hintEl.textContent = 'Editing a recurring event updates the entire series (all occurrences).';
+    hintEl.hidden = !repeats;
+  }
 
   addModal.hidden = false;
   document.getElementById('ev-title').focus();
@@ -3649,8 +3670,14 @@ addForm.addEventListener('submit', async e => {
       recurrence_interval:  repeats ? (parseInt(document.getElementById('ev-recur-interval').value, 10) || 1) : 1,
       recurrence_until:     repeats ? (document.getElementById('ev-until').value || null) : null,
     };
-    if (isEdit) await api('PATCH', `/api/calendar/${editingEventId}`, payload);
-    else        await api('POST', '/api/calendar', payload);
+    if (isEdit) {
+      const url = editingOccurrenceDate
+        ? `/api/calendar/${editingEventId}?date=${editingOccurrenceDate}&mode=single`
+        : `/api/calendar/${editingEventId}`;
+      await api('PATCH', url, payload);
+    } else {
+      await api('POST', '/api/calendar', payload);
+    }
     closeAddModal();
     loadCalendar();
   } catch (err) {
@@ -3710,14 +3737,11 @@ function showEventDetail(ev) {
   if (ev.is_private) info += `<strong>🔒 Private</strong> (shows as "Busy" until tapped)<br>`;
 
   const isRecurring = ev.recurrence && ev.recurrence !== 'none';
-  const occBtn = document.getElementById('detail-delete-occurrence');
   if (isRecurring) {
     info += `<strong>Recurrence:</strong> ${describeRecurrence(ev)}<br>`;
-    document.getElementById('detail-delete').textContent = 'Delete All Occurrences';
-    occBtn.hidden = false;
+    document.getElementById('detail-delete').textContent = 'Delete…';
   } else {
     document.getElementById('detail-delete').textContent = 'Delete Event';
-    occBtn.hidden = true;
   }
 
   if (ev.description) info += `<div class="detail-desc">${escHtml(ev.description)}</div>`;
@@ -3749,28 +3773,69 @@ function refreshDateTimeDisplaysAppWide() {
 document.getElementById('detail-close').addEventListener('click', () => { detailModal.hidden = true; });
 detailModal.addEventListener('click', e => { if (e.target === detailModal) detailModal.hidden = true; });
 
+/* ── Recurring event scope picker ────────────────────────────
+   Shared by Edit and Delete: a recurring event needs to know which
+   occurrence(s) an action applies to. Non-recurring events skip this
+   entirely and act immediately, same as before. */
+const recurScopeModal = document.getElementById('recur-scope-modal');
+
+function openRecurScopeModal(title, options) {
+  document.getElementById('recur-scope-title').textContent = title;
+  const container = document.getElementById('recur-scope-options');
+  container.innerHTML = '';
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `btn ${opt.danger ? 'btn-danger-outline' : 'btn-ghost'}`;
+    btn.textContent = opt.label;
+    btn.addEventListener('click', () => { closeRecurScopeModal(); opt.action(); });
+    container.appendChild(btn);
+  });
+  recurScopeModal.hidden = false;
+}
+
+function closeRecurScopeModal() { recurScopeModal.hidden = true; }
+
+document.getElementById('recur-scope-cancel').addEventListener('click', closeRecurScopeModal);
+recurScopeModal.addEventListener('click', e => { if (e.target === recurScopeModal) closeRecurScopeModal(); });
+
 document.getElementById('detail-edit').addEventListener('click', () => {
   if (!detailEventFull) return;
-  detailModal.hidden = true;
-  openEditModal(detailEventFull);
+  const isRecurring = detailEventFull.recurrence && detailEventFull.recurrence !== 'none';
+  if (!isRecurring) {
+    detailModal.hidden = true;
+    openEditModal(detailEventFull);
+    return;
+  }
+  openRecurScopeModal('Edit which events?', [
+    { label: 'This Event Only',          action: () => { detailModal.hidden = true; openEditModal(detailEventFull, detailEventDate); } },
+    { label: 'All Events in the Series', action: () => { detailModal.hidden = true; openEditModal(detailEventFull); } },
+  ]);
 });
 
-document.getElementById('detail-delete').addEventListener('click', async () => {
+async function deleteCalendarEvent(scope) {
+  try {
+    const url = (!scope || scope === 'all')
+      ? `/api/calendar/${detailEventId}`
+      : `/api/calendar/${detailEventId}?date=${detailEventDate}&mode=${scope}`;
+    await api('DELETE', url);
+    detailModal.hidden = true;
+    loadCalendar();
+  } catch (err) { showError('Delete failed: ' + err.message); }
+}
+
+document.getElementById('detail-delete').addEventListener('click', () => {
   if (!detailEventId) return;
-  try {
-    await api('DELETE', `/api/calendar/${detailEventId}`);
-    detailModal.hidden = true;
-    loadCalendar();
-  } catch (err) { showError('Delete failed: ' + err.message); }
-});
+  const ev = detailEventFull;
+  const isRecurring = ev && ev.recurrence && ev.recurrence !== 'none';
+  if (!isRecurring) return deleteCalendarEvent('all');
 
-document.getElementById('detail-delete-occurrence').addEventListener('click', async () => {
-  if (!detailEventId || !detailEventDate) return;
-  try {
-    await api('DELETE', `/api/calendar/${detailEventId}?date=${detailEventDate}`);
-    detailModal.hidden = true;
-    loadCalendar();
-  } catch (err) { showError('Delete failed: ' + err.message); }
+  openRecurScopeModal('Delete which events?', [
+    { label: 'This Occurrence Only',      danger: true, action: () => deleteCalendarEvent('single') },
+    { label: 'This and Following Events', danger: true, action: () => deleteCalendarEvent('future') },
+    { label: 'All Previous Events',       danger: true, action: () => deleteCalendarEvent('past') },
+    { label: 'All Events in the Series',  danger: true, action: () => deleteCalendarEvent('all') },
+  ]);
 });
 
 /* ══════════════════════════════════════════════════════════

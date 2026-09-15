@@ -125,6 +125,8 @@ const stmt = {
     WHERE id = ?
   `),
   calendarSetExcluded: db.prepare('UPDATE calendar_events SET excluded_dates = ? WHERE id = ?'),
+  calendarSetUntil: db.prepare('UPDATE calendar_events SET recurrence_until = ? WHERE id = ?'),
+  calendarSetStart: db.prepare('UPDATE calendar_events SET event_date = ?, excluded_dates = ? WHERE id = ?'),
   calendarDelete: db.prepare('DELETE FROM calendar_events WHERE id = ?'),
 };
 
@@ -230,9 +232,12 @@ app.post('/api/calendar', (req, res) => {
   res.json(stmt.calendarGet.get(info.lastInsertRowid));
 });
 
-// PATCH /api/calendar/:id — edit an event. Always applies to the whole
-// series for a recurring event (no per-occurrence edit, unlike delete);
-// existing excluded_dates are left as-is.
+// PATCH /api/calendar/:id — edit an event. Applies to the whole series by
+// default. PATCH /api/calendar/:id?date=YYYY-MM-DD&mode=single edits just
+// that one occurrence of a recurring event: the occurrence's original date
+// is excluded from the series (same mechanism as a single-occurrence
+// delete) and the edits land on a brand-new standalone (non-recurring)
+// event instead, so the rest of the series is untouched.
 app.patch('/api/calendar/:id', (req, res) => {
   const existing = stmt.calendarGet.get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -248,6 +253,31 @@ app.patch('/api/calendar/:id', (req, res) => {
   const safeRecur    = ['none','daily','weekly','monthly','monthly_weekday','yearly'].includes(recurrence)
     ? recurrence : 'none';
   const safeInterval = Math.min(99, Math.max(1, parseInt(recurrence_interval, 10) || 1));
+
+  const { date, mode } = req.query;
+  if (mode === 'single' && existing.recurrence !== 'none') {
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date' });
+
+    const excluded = new Set((existing.excluded_dates || '').split(',').filter(Boolean));
+    excluded.add(date);
+    stmt.calendarSetExcluded.run([...excluded].join(','), req.params.id);
+
+    const info = stmt.calendarInsert.run(
+      title.trim().slice(0, 120),
+      (description || '').trim().slice(0, 500),
+      (person || '').trim().slice(0, 40),
+      safeColor,
+      event_date,
+      start_time  || null,
+      end_time    || null,
+      all_day ? 1 : 0,
+      'none',
+      1,
+      null,
+      is_private ? 1 : 0
+    );
+    return res.json(stmt.calendarGet.get(info.lastInsertRowid));
+  }
 
   stmt.calendarUpdate.run(
     title.trim().slice(0, 120),
@@ -268,13 +298,21 @@ app.patch('/api/calendar/:id', (req, res) => {
   res.json(stmt.calendarGet.get(req.params.id));
 });
 
-// DELETE /api/calendar/:id            — delete the event (all occurrences, if recurring)
-// DELETE /api/calendar/:id?date=YYYY-MM-DD — delete just that one occurrence of a
+// DELETE /api/calendar/:id                            — delete the event (all occurrences, if recurring)
+// DELETE /api/calendar/:id?date=YYYY-MM-DD             — delete just that one occurrence of a
 //   recurring event (recorded in excluded_dates, checked by expandEvent below).
 //   For a non-recurring event, that single date IS the whole event, so it's
 //   the same as an outright delete.
+// DELETE /api/calendar/:id?date=YYYY-MM-DD&mode=future — delete this occurrence and every
+//   later one, by moving recurrence_until back to the day before `date`. If `date` is the
+//   series' very first occurrence, that leaves nothing, so the whole series is dropped.
+// DELETE /api/calendar/:id?date=YYYY-MM-DD&mode=past   — delete every occurrence before
+//   `date`, by moving the series' start (event_date) forward to `date`. Recurrence phase
+//   (weekday/nth-weekday/month-day) is preserved automatically since `date` is itself a
+//   real occurrence of the existing pattern. If `date` is past the series' end, that
+//   leaves nothing, so the whole series is dropped.
 app.delete('/api/calendar/:id', (req, res) => {
-  const { date } = req.query;
+  const { date, mode } = req.query;
 
   if (date) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date' });
@@ -284,6 +322,29 @@ app.delete('/api/calendar/:id', (req, res) => {
 
     if (ev.recurrence === 'none') {
       stmt.calendarDelete.run(req.params.id);
+      return res.json({ ok: true });
+    }
+
+    if (mode === 'future') {
+      const cutoff = localDate(date);
+      cutoff.setDate(cutoff.getDate() - 1);
+      const untilStr = toDateStr(cutoff);
+      if (untilStr < ev.event_date) {
+        stmt.calendarDelete.run(req.params.id);
+        return res.json({ ok: true });
+      }
+      stmt.calendarSetUntil.run(untilStr, req.params.id);
+      return res.json({ ok: true });
+    }
+
+    if (mode === 'past') {
+      if (ev.recurrence_until && date > ev.recurrence_until) {
+        stmt.calendarDelete.run(req.params.id);
+        return res.json({ ok: true });
+      }
+      const excluded = new Set((ev.excluded_dates || '').split(',').filter(Boolean));
+      const cleaned  = [...excluded].filter(d => d >= date).join(',');
+      stmt.calendarSetStart.run(date, cleaned, req.params.id);
       return res.json({ ok: true });
     }
 
