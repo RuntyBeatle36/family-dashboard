@@ -49,18 +49,18 @@
   --bg:          #96b2dc;
   --bg-gradient: linear-gradient(155deg, #a3c0e8 0%, #88a6d6 55%, #93b8e2 100%);
 
-  /* The physical display is a TN panel — contrast and color visibly shift
-     with viewing angle, a hardware trait no CSS can truly correct. What
-     helps in practice: near-solid panels instead of relying on subtle
-     alpha blending (transparency is exactly what degrades worst off-axis),
-     strong hard-edge borders/shadows instead of soft blended separation,
-     and higher text contrast margins so text survives some amount of
-     washout and still reads. Every value below is pushed further than a
-     "normal monitor" design would need, on purpose. */
-  --glass:         rgba(225,229,235,0.90);
-  --glass-2:       rgba(235,238,242,0.97);
-  --glass-border:  rgba(255,255,255,0.85);
-  --glass-border2: rgba(200,206,214,0.70);
+  /* Clear glass, matching the dark theme's look: a faint white tint over the
+     sky rather than a near-solid gray slab. The earlier "washed out" problem
+     came from heavy pale fill stacked on a pale background — a light tint
+     lets the saturated sky read through instead. The physical display is a
+     TN panel (contrast shifts with viewing angle), so legibility is carried
+     by what survives off-axis: high-contrast dark text, crisp white edge
+     borders, strong grid lines and drop shadows below — not by panel fill.
+     Same blur cost as dark mode; alpha itself is essentially free. */
+  --glass:         rgba(255,255,255,0.16);
+  --glass-2:       rgba(255,255,255,0.30);
+  --glass-border:  rgba(255,255,255,0.70);
+  --glass-border2: rgba(255,255,255,0.40);
   --glass-solid:   rgba(228,232,238,0.97);
   --glass-solid-2: rgba(238,241,245,0.99);
 
@@ -69,8 +69,8 @@
   --success:  #1f9d5c;
 
   --text:        rgba(6,14,42,0.95);
-  --text-dim:    rgba(6,14,42,0.74);
-  --text-dimmer: rgba(6,14,42,0.48);
+  --text-dim:    rgba(6,14,42,0.80);
+  --text-dimmer: rgba(6,14,42,0.64);
 
   /* Grid lines were 0.07-0.08 originally — nearly invisible against a pale
      background, which is why the calendar read as one flat surface with
@@ -121,6 +121,42 @@
 [data-glass="off"] .dt-picker-overlay {
   --glass:   var(--glass-solid);
   --glass-2: var(--glass-solid-2);
+}
+
+/* ── Sky-aware glass (light theme only) ───────────────────────
+   Panels stay as clear as possible, but the weather canvas behind them
+   ranges from near-black (night, storms) to near-white (blizzard). Each
+   rule below is the least white frost that keeps every text tier readable
+   over that sky — main ≥ 7:1, dim ≥ 4.5:1, dimmer ≥ 3:1 — computed from
+   the actual sky gradients and per-mode canvas opacity. Fog, blizzard,
+   extreme cold and no-canvas (body[data-wx] is "none" when Weather
+   Animation is Off) pass at the base 0.16. Static per-condition colors,
+   so zero runtime/GPU cost beyond plain alpha. Dark theme deliberately
+   keeps its original look everywhere. */
+[data-theme="light"] body:is([data-wx="dust"], [data-wx="smoke"]) {
+  --glass:   rgba(255,255,255,0.35);
+  --glass-2: rgba(255,255,255,0.45);
+}
+[data-theme="light"] body:is([data-wx="overcast"], [data-wx="rain"], [data-wx="storm"], [data-wx="sleet"],
+    [data-wx="snow"], [data-wx="thundersnow"], [data-wx="extreme-heat"]) {
+  --glass:   rgba(255,255,255,0.50);
+  --glass-2: rgba(255,255,255,0.60);
+}
+/* Includes the regular day sky — its deep saturated blue is darker than it
+   looks; dark text over it needs real frost, not a faint tint. */
+[data-theme="light"] body:is([data-wx="clear-day"], [data-wx="cloudy-day"], [data-wx="windy-day"],
+    [data-wx="clear-night"], [data-wx="cloudy-night"], [data-wx="windy-night"], [data-wx="storm-severe"],
+    [data-wx="hurricane"], [data-wx="tornado"], [data-wx="hail"], [data-wx="eclipse"]) {
+  --glass:   rgba(255,255,255,0.60);
+  --glass-2: rgba(255,255,255,0.68);
+}
+
+/* Light-theme menus sit on the 52% black scrim, so dark text needs more
+   frost than anywhere else. Still translucent, not the solid blur-off panels. */
+[data-theme="light"]:not([data-glass="off"]) .modal-overlay,
+[data-theme="light"]:not([data-glass="off"]) .dt-picker-overlay {
+  --glass:   rgba(255,255,255,0.66);
+  --glass-2: rgba(255,255,255,0.76);
 }
 
 /* ── Canvas & lightning (bottom z-layer) ──────────────────── */
@@ -387,6 +423,82 @@ body {
   gap: 0.75rem;
   font-size: clamp(1.3rem, 2.8vw, 2rem);
   color: var(--text);
+}
+
+/* ── Lock Screen week preview ─────────────────────────────── */
+.lock-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: min(1100px, 94vw);
+  margin-top: 1rem;
+  background: var(--glass);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  text-align: left;
+}
+.lock-week[hidden] { display: none; }
+
+.lock-week-day {
+  padding: 0.6rem 0.5rem 0.7rem;
+  border-left: 1px solid var(--day-border);
+  min-width: 0;
+}
+.lock-week-day:first-child { border-left: none; }
+.lock-week-day.is-today { background: var(--today-bg); }
+
+.lock-week-hdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem;
+  margin-bottom: 0.45rem;
+}
+.lock-week-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.lock-week-num { font-size: 1.15rem; font-weight: 700; color: var(--text); }
+.lock-week-day.is-today .lock-week-name,
+.lock-week-day.is-today .lock-week-num { color: var(--accent); }
+
+.lock-week-events { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.lock-week-chip {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  padding: 0.25rem 0.45rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lock-week-time { font-weight: 500; opacity: 0.9; margin-right: 0.3rem; }
+
+/* Private: neutral, never the event's color (which would hint at whose/
+   what it is). Light theme needs a solid gray — the faint white fill makes
+   its white text vanish against a pale sky. */
+.lock-week-chip.is-private,
+.lock-agenda-item.is-private { background: rgba(255,255,255,0.14); }
+[data-theme="light"] .lock-week-chip.is-private,
+[data-theme="light"] .lock-agenda-item.is-private { background: #5b6475; }
+
+.lock-week-empty { font-size: 0.85rem; color: var(--text-dimmer); }
+.lock-week-more  { font-size: 0.75rem; font-weight: 600; color: var(--text-dim); }
+
+@media (max-width: 700px) {
+  .lock-week       { width: 96vw; }
+  .lock-week-day   { padding: 0.45rem 0.25rem; }
+  .lock-week-chip  { font-size: 0.68rem; padding: 0.2rem 0.3rem; }
+  .lock-week-time  { display: none; }
+  .lock-week-name  { font-size: 0.66rem; letter-spacing: 0; }
 }
 
 .lock-agenda {
@@ -956,6 +1068,12 @@ body {
 }
 
 .cal-month-cell.other-month { opacity: 0.32; }
+/* Upcoming next-month days shown near month's end — still readable, just muted */
+.cal-month-cell.other-month.lookahead { opacity: 0.7; }
+/* Dark text over a mid-blue sky loses legibility much faster when faded */
+[data-theme="light"] .cal-month-cell.other-month           { opacity: 0.55; }
+[data-theme="light"] .cal-month-cell.other-month.lookahead { opacity: 0.8; }
+.cal-month-date.with-month { width: auto; padding: 0 0.3rem; }
 
 .cal-month-cell.is-today { background: var(--today-bg); }
 
@@ -1009,6 +1127,13 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--glass-border) transparent;
 }
+
+/* Settings > Sidebar: hide unused panels; with both hidden, drop the
+   sidebar and let the calendar take the full width */
+[data-hide-todo] #todo-card,
+[data-hide-bulletin] #bulletin-card,
+[data-hide-todo][data-hide-bulletin] .sidebar { display: none; }
+[data-hide-todo][data-hide-bulletin] .cal-panel { border-right: none; }
 
 .sidebar::-webkit-scrollbar { width: 5px; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 99px; }
@@ -1142,6 +1267,7 @@ body {
 }
 
 .todo-item.done { opacity: 0.38; }
+[data-theme="light"] .todo-item.done { opacity: 0.6; } /* strikethrough already marks it done */
 
 .todo-item label {
   flex: 1;
@@ -1317,6 +1443,7 @@ input:focus, textarea:focus, select:focus {
 }
 .dt-date-cell:hover { background: var(--glass-border); }
 .dt-date-cell.other-month { color: var(--text-dimmer); opacity: 0.5; }
+[data-theme="light"] .dt-date-cell.other-month { opacity: 1; }
 .dt-date-cell.is-today { outline: 1.5px solid var(--accent); }
 .dt-date-cell.is-selected { background: var(--accent); color: #fff; }
 
@@ -1555,6 +1682,7 @@ select {
   color: var(--text-dim);
   opacity: 0.55;
 }
+[data-theme="light"] .app-version { color: var(--text-dimmer); opacity: 1; }
 
 /* Event detail modal: Close kept clearly apart from the destructive actions,
    which are grouped into their own tidy stack rather than loose in a row. */

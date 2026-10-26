@@ -153,6 +153,7 @@ let selectedColor = COLORS[0].hex;
 const getLockScreenEnabled = () => localStorage.getItem('lockScreenEnabled') === 'true';
 const getLockRevealSecs    = () => parseInt(localStorage.getItem('lockRevealSecs'), 10) || 60;
 const getLockAgendaEnabled = () => localStorage.getItem('lockAgendaEnabled') !== 'false'; // default on
+const getLockAgendaStyle   = () => localStorage.getItem('lockAgendaStyle') || 'week'; // 'week' | 'days'
 
 let privacyRevealed    = false;
 let privacyRevealTimer = null;
@@ -183,23 +184,86 @@ function revealPrivacy() {
 }
 document.addEventListener('pointerdown', revealPrivacy, true);
 
-/* ── Lock Screen agenda ("Today you have" / "Tomorrow you have") ───── */
+/* ── Lock Screen agenda ─────────────────────────────────────────────
+   Two styles: a rolling 7-day "week preview" (today + the next six days),
+   or the original "Today you have" / "Tomorrow you have" lists. Both get
+   the same privacy treatment for private events. */
 let lockAgendaEvents = { today: [], tomorrow: [] };
+let lockWeekEvents   = []; // all events for the next 7 days, sorted
+
+// All-day first, then by start time — same order a day column reads in
+function sortAgendaEvents(events) {
+  return events.slice().sort((a, b) => {
+    const aAll = a.all_day || !a.start_time, bAll = b.all_day || !b.start_time;
+    if (aAll !== bAll) return aAll ? -1 : 1;
+    return (a.start_time || '').localeCompare(b.start_time || '');
+  });
+}
 
 async function loadLockAgenda() {
   const todayD    = new Date();
   todayD.setHours(0, 0, 0, 0);
-  const tomorrowD = addDays(todayD, 1);
-  const todayStr  = toYMD(todayD);
-  const tomorrowStr = toYMD(tomorrowD);
+  const todayStr    = toYMD(todayD);
+  const tomorrowStr = toYMD(addDays(todayD, 1));
   try {
-    const events = await api('GET', `/api/calendar?start=${todayStr}&end=${tomorrowStr}`);
+    const events = sortAgendaEvents(
+      await api('GET', `/api/calendar?start=${todayStr}&end=${toYMD(addDays(todayD, 6))}`));
+    lockWeekEvents   = events;
     lockAgendaEvents = {
       today:    events.filter(e => e.display_date === todayStr),
       tomorrow: events.filter(e => e.display_date === tomorrowStr),
     };
-  } catch { lockAgendaEvents = { today: [], tomorrow: [] }; }
-  if (!document.getElementById('lock-screen').hidden) renderLockAgenda();
+  } catch {
+    lockWeekEvents   = [];
+    lockAgendaEvents = { today: [], tomorrow: [] };
+  }
+  if (!document.getElementById('lock-screen').hidden) renderLockScreen();
+}
+
+// Private events never show their title or color on the Lock Screen (color =
+// person/category, so it would leak identity) — just a lock and the time.
+function lockEventTime(ev) {
+  return (!ev.all_day && ev.start_time)
+    ? `${fmt12h(ev.start_time)}${ev.end_time ? '–' + fmt12h(ev.end_time) : ''}`
+    : '';
+}
+
+const LOCK_WEEK_MAX_PER_DAY = 3;
+
+function renderLockWeek() {
+  const DAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const todayD = new Date();
+  todayD.setHours(0, 0, 0, 0);
+
+  let html = '';
+  for (let i = 0; i < 7; i++) {
+    const d   = addDays(todayD, i);
+    const ymd = toYMD(d);
+    const dayEvents = lockWeekEvents.filter(e => e.display_date === ymd);
+    const shown = dayEvents.slice(0, LOCK_WEEK_MAX_PER_DAY);
+    const more  = dayEvents.length - shown.length;
+
+    const chips = shown.map(ev => {
+      // Week cells are narrow — start time only, the full range won't fit
+      const shortTime = (!ev.all_day && ev.start_time)
+        ? `<span class="lock-week-time">${fmt12h(ev.start_time)}</span>` : '';
+      return ev.is_private
+        ? `<div class="lock-week-chip is-private">${shortTime}🔒 Private</div>`
+        : `<div class="lock-week-chip" style="background:${ev.color}">${shortTime}${escHtml(ev.title)}</div>`;
+    }).join('');
+
+    html += `<div class="lock-week-day${i === 0 ? ' is-today' : ''}">
+      <div class="lock-week-hdr">
+        <span class="lock-week-name">${i === 0 ? 'Today' : DAYS[d.getDay()]}</span>
+        <span class="lock-week-num">${d.getDate()}</span>
+      </div>
+      <div class="lock-week-events">
+        ${chips || '<div class="lock-week-empty">—</div>'}
+        ${more > 0 ? `<div class="lock-week-more">+${more} more</div>` : ''}
+      </div>
+    </div>`;
+  }
+  document.getElementById('lock-week').innerHTML = html;
 }
 
 function renderLockAgenda() {
@@ -210,13 +274,13 @@ function renderLockAgenda() {
       // color too would leak identity (color = person/category) through
       // the lock screen, defeating the point of marking them private.
       const label = ev.is_private ? '🔒 Private event' : escHtml(ev.title);
-      const bg    = ev.is_private ? 'rgba(255,255,255,0.14)' : ev.color;
       // Time isn't identity-revealing the way title/color are, so it's
       // shown even for private events — just when, not what.
-      const time  = (!ev.all_day && ev.start_time)
-        ? `<span class="lock-agenda-time">${fmt12h(ev.start_time)}${ev.end_time ? '–' + fmt12h(ev.end_time) : ''}</span>`
-        : '';
-      return `<div class="lock-agenda-item" style="background:${bg}">${time}${label}</div>`;
+      const t    = lockEventTime(ev);
+      const time = t ? `<span class="lock-agenda-time">${t}</span>` : '';
+      return ev.is_private
+        ? `<div class="lock-agenda-item is-private">${time}${label}</div>`
+        : `<div class="lock-agenda-item" style="background:${ev.color}">${time}${label}</div>`;
     }).join('');
   };
   document.getElementById('lock-agenda-today').innerHTML    = listFor(lockAgendaEvents.today);
@@ -224,8 +288,11 @@ function renderLockAgenda() {
 }
 
 function renderLockScreen() {
-  document.getElementById('lock-agenda').hidden = !getLockAgendaEnabled();
-  if (getLockAgendaEnabled()) renderLockAgenda();
+  const on   = getLockAgendaEnabled();
+  const week = getLockAgendaStyle() === 'week';
+  document.getElementById('lock-week').hidden   = !(on && week);
+  document.getElementById('lock-agenda').hidden = !(on && !week);
+  if (on) week ? renderLockWeek() : renderLockAgenda();
 }
 
 loadLockAgenda();
@@ -1362,7 +1429,9 @@ function applyWxMode(mode) {
   clearTimeout(lightTimer);
   clearStrike();
   wxMode = mode;
-  document.body.dataset.wx = mode;
+  // Drives the sky-aware glass tint in CSS — "none" when the canvas is off,
+  // since the panels then sit on the plain theme background
+  document.body.dataset.wx = getWxQuality() === 'off' ? 'none' : mode;
   applyTheme(); // auto theme also reacts to cloud cover, not just sunrise/sunset — react promptly to a condition change rather than waiting for the next per-minute check
 
   // Graphics setting: Weather Animation = Off — skip the canvas entirely
@@ -2311,6 +2380,19 @@ const nightDimFields = document.getElementById('night-dim-fields');
    ══════════════════════════════════════════════════════════ */
 const getOskEnabled = () => localStorage.getItem('oskEnabled') === 'true';
 
+/* ── Sidebar panels (To-Do / Bulletin) — each can be hidden ──────────
+   Attributes on <html> drive the CSS; with both hidden the whole sidebar
+   goes away and the calendar takes the full width. Hidden panels also
+   stop polling the server (see loadTodo/loadBulletin). */
+const getTodoEnabled     = () => localStorage.getItem('todoEnabled')     !== 'false'; // default on
+const getBulletinEnabled = () => localStorage.getItem('bulletinEnabled') !== 'false'; // default on
+
+function applySidebarPanels() {
+  document.documentElement.toggleAttribute('data-hide-todo',     !getTodoEnabled());
+  document.documentElement.toggleAttribute('data-hide-bulletin', !getBulletinEnabled());
+}
+applySidebarPanels();
+
 // Two modes — letters, and everything else in one page (iOS splits digits/
 // punctuation across two separate screens, 123 then #+=, but that nested
 // second tap was the one that was misbehaving; one flat symbols page removes
@@ -2632,7 +2714,11 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('toggle-lock-screen').checked = getLockScreenEnabled();
   document.getElementById('lock-reveal-secs').value     = getLockRevealSecs();
   document.getElementById('toggle-lock-agenda').checked = getLockAgendaEnabled();
+  document.querySelectorAll('#lock-agenda-style-options .theme-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.val === getLockAgendaStyle()));
   document.getElementById('toggle-osk').checked = getOskEnabled();
+  document.getElementById('toggle-todo').checked     = getTodoEnabled();
+  document.getElementById('toggle-bulletin').checked = getBulletinEnabled();
   document.querySelectorAll('#date-format-options .theme-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.val === getDateFormat()));
   document.querySelectorAll('#time-format-options .theme-opt').forEach(b =>
@@ -2705,6 +2791,24 @@ document.getElementById('lock-reveal-secs').addEventListener('change', e => {
 document.getElementById('toggle-lock-agenda').addEventListener('change', e => {
   localStorage.setItem('lockAgendaEnabled', e.target.checked);
   if (!document.getElementById('lock-screen').hidden) renderLockScreen();
+});
+document.getElementById('lock-agenda-style-options').addEventListener('click', e => {
+  const btn = e.target.closest('.theme-opt');
+  if (!btn) return;
+  localStorage.setItem('lockAgendaStyle', btn.dataset.val);
+  document.querySelectorAll('#lock-agenda-style-options .theme-opt').forEach(b =>
+    b.classList.toggle('active', b === btn));
+  if (!document.getElementById('lock-screen').hidden) renderLockScreen();
+});
+document.getElementById('toggle-todo').addEventListener('change', e => {
+  localStorage.setItem('todoEnabled', e.target.checked);
+  applySidebarPanels();
+  loadTodo(); // refresh right away when turned back on (no-op when off)
+});
+document.getElementById('toggle-bulletin').addEventListener('change', e => {
+  localStorage.setItem('bulletinEnabled', e.target.checked);
+  applySidebarPanels();
+  loadBulletin();
 });
 document.getElementById('toggle-osk').addEventListener('change', e => {
   localStorage.setItem('oskEnabled', e.target.checked);
@@ -3231,16 +3335,19 @@ async function loadMonthView(structureChanged, calKey) {
   const year    = pivot.getFullYear();
   const month   = pivot.getMonth();
   const lastDay = new Date(year, month + 1, 0);
+  const range   = getMonthGridRange(year, month);
 
   if (structureChanged) {
     setCalLabel(pivot, lastDay);
-    buildMonthStructure(year, month);
+    buildMonthStructure(year, month, range);
     _lastCalKey = calKey;
   }
 
+  // Fetch the whole visible grid (not just this month) so the leading/trailing
+  // other-month cells — including the next-month lookahead row — show events too.
   let events;
   try {
-    events = await api('GET', `/api/calendar?start=${toYMD(pivot)}&end=${toYMD(lastDay)}`);
+    events = await api('GET', `/api/calendar?start=${toYMD(range.start)}&end=${toYMD(addDays(range.start, range.cells - 1))}`);
   } catch { events = []; }
 
   const sig = eventsSig(events);
@@ -3251,9 +3358,34 @@ async function loadMonthView(structureChanged, calKey) {
   }
 }
 
-function buildMonthStructure(year, month) {
+// Visible date range for a month grid. Normally just the weeks spanning the
+// month, but once today is in the current month's final week, today's row
+// would be the bottom row with little or nothing of next month visible —
+// so add the following week as a lookahead. The grid always starts on the
+// Sunday on/before the 1st and covers whole weeks, so the leading/trailing
+// days of the adjacent months are always shown (rarely this means 7 rows).
+function getMonthGridRange(year, month) {
+  const startDow = new Date(year, month, 1).getDay();
+  const daysInMo = new Date(year, month + 1, 0).getDate();
+  const start = new Date(year, month, 1 - startDow);
+  let cells = Math.ceil((startDow + daysInMo) / 7) * 7;
+  let lookahead = false;
+
+  const now = new Date();
+  if (now.getFullYear() === year && now.getMonth() === month) {
+    const todayIdx = startDow + now.getDate() - 1;
+    if (Math.floor(todayIdx / 7) === cells / 7 - 1) {
+      cells += 7;
+      lookahead = true;
+    }
+  }
+  return { start, cells, lookahead };
+}
+
+function buildMonthStructure(year, month, range = getMonthGridRange(year, month)) {
   const today = todayYMD();
   const DAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MON   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   // Reuse cal-header for day-name row (no gutter in month view — grid starts at col 1)
   const hdr = document.getElementById('cal-header');
@@ -3265,25 +3397,24 @@ function buildMonthStructure(year, month) {
     hdr.appendChild(cell);
   });
 
-  const firstDay  = new Date(year, month, 1);
-  const startDow  = firstDay.getDay();
-  const daysInMo  = new Date(year, month + 1, 0).getDate();
-  const totalCells = Math.ceil((startDow + daysInMo) / 7) * 7;
-
   const grid = document.getElementById('cal-month-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateRows = `repeat(${totalCells / 7}, minmax(0, 1fr))`;
+  grid.style.gridTemplateRows = `repeat(${range.cells / 7}, minmax(0, 1fr))`;
 
-  for (let i = 0; i < totalCells; i++) {
-    const d   = new Date(year, month, 1 + i - startDow);
+  for (let i = 0; i < range.cells; i++) {
+    const d   = addDays(range.start, i);
     const ymd = toYMD(d);
     const thisMonth = d.getMonth() === month;
     const cell = document.createElement('div');
     cell.className = 'cal-month-cell' +
       (ymd === today   ? ' is-today'    : '') +
-      (!thisMonth      ? ' other-month' : '');
+      (!thisMonth      ? ' other-month' : '') +
+      (!thisMonth && range.lookahead && ymd > today ? ' lookahead' : '');
     cell.dataset.date = ymd;
-    cell.innerHTML = `<div class="cal-month-date">${d.getDate()}</div>
+    // Label the 1st of the lookahead month ("Nov 1") so the month change is obvious
+    const dateLabel = range.lookahead && !thisMonth && d.getDate() === 1
+      ? `${MON[d.getMonth()]} 1` : d.getDate();
+    cell.innerHTML = `<div class="cal-month-date${typeof dateLabel === 'string' ? ' with-month' : ''}">${dateLabel}</div>
                       <div class="cal-month-events"></div>`;
     grid.appendChild(cell);
   }
@@ -3870,6 +4001,7 @@ function renderTodo(items) {
 }
 
 async function loadTodo() {
+  if (!getTodoEnabled()) return; // hidden — skip the poll entirely
   try { renderTodo(await api('GET', '/api/todo')); } catch { /* server briefly unavailable */ }
 }
 
@@ -3929,6 +4061,7 @@ function renderBulletin(posts) {
 }
 
 async function loadBulletin() {
+  if (!getBulletinEnabled()) return; // hidden — skip the poll entirely
   try { renderBulletin(await api('GET', '/api/bulletin')); } catch { /* silent */ }
 }
 
