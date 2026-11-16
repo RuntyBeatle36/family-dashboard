@@ -101,6 +101,23 @@ else
   echo "-- Sudoers rule already installed, skipping --"
 fi
 
+# ── 5b. polkit rule: Wi-Fi + time zone from the setup guide / Settings ──
+POLKIT_DEST="/etc/polkit-1/rules.d/50-family-dashboard.rules"
+if ! cmp -s "$REPO_DIR/system/50-family-dashboard.rules" "$POLKIT_DEST" 2>/dev/null; then
+  echo "-- Installing polkit rule (Wi-Fi / time zone) --"
+  sudo install -m 644 "$REPO_DIR/system/50-family-dashboard.rules" "$POLKIT_DEST"
+else
+  echo "-- polkit rule already installed, skipping --"
+fi
+
+# ── 5c. First-run setup guide on a brand-new install ────────────────
+# Only when there's no database yet — re-running this on a Pi that's
+# already in use must never drop it back into setup.
+if [ ! -f "$REPO_DIR/db/dashboard.db" ]; then
+  mkdir -p "$REPO_DIR/db"
+  date -u +%FT%TZ > "$REPO_DIR/db/first-run"
+fi
+
 # ── 6. System packages + systemd service + kiosk autostart ──────────
 # Reuses the same script the in-app self-update flow runs, so there's one
 # source of truth for "what a correctly-configured Pi looks like."

@@ -121,6 +121,56 @@ Graphics Benchmark. If the screen stays black after switching, SSH in and run
 
 ---
 
+## First-run setup guide
+
+A brand-new dashboard opens a full-screen, touch-friendly setup guide
+instead of the dashboard: **Wi-Fi** (pick a network, type the password on the
+on-screen keyboard) → **ZIP code** (sets weather, alerts and the Pi's time
+zone) and clock style → **screen tuning** (runs the graphics benchmark and
+applies the best settings, or skip) → done, with an offer to set up phone
+access. Everything stays changeable in Settings, including **📶 Wi-Fi**.
+
+It only appears in first-run mode (`db/first-run`), which is turned on by a
+fresh `provision-pi.sh` install, `prepare-image.sh`, or **Settings ▸ ♻️ Reset
+for a New Owner** (hidden with Debug Options; tap the version number 7
+times). Reset erases events, to-dos, bulletin, settings, the family code and
+the Tailscale connection (optionally saved Wi-Fi too), keeping a backup copy
+in the home folder. Updating an existing dashboard never triggers it.
+
+Wi-Fi and time-zone changes use NetworkManager / timedatectl, allowed for
+the dashboard's user by `system/50-family-dashboard.rules` (polkit), which
+`provision-pi.sh` installs. A Pi provisioned before this existed needs
+`bash scripts/provision-pi.sh` run once for Settings ▸ Wi-Fi to work.
+
+## Making a plug-and-play SD card image
+
+Build one "master" Pi, strip it of anything personal, and copy its card.
+Every card written from that image boots straight into the setup guide as
+its own unique device. No keyboard, SSH or network setup needed.
+
+1. **Build the master.** Flash Raspberry Pi OS (64-bit, with desktop) with
+   Raspberry Pi Imager: username `user`, your own Wi-Fi, SSH on. Boot it,
+   run the provisioning script (see *Deploy on Raspberry Pi*), reboot, and
+   check the dashboard works. On a Pi 4/5, optionally switch to Wayland.
+2. **Prepare it** (on the Pi, last thing you do):
+   `bash scripts/prepare-image.sh`. It erases dashboard data, this Pi's
+   Tailscale identity, saved Wi-Fi, SSH host keys and the machine ID (each
+   copy regenerates its own), optionally your SSH keys + SSH itself, then
+   powers off. **Don't boot this card again before copying it.**
+3. **Copy the card to an image file** on Windows with
+   [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/):
+   choose a file name like `family-dashboard.img`, then **Read**.
+4. **Shrink it** (and make it fill any card size on first boot) with
+   [PiShrink](https://github.com/Drewsif/PiShrink) in WSL Ubuntu:
+   ```bash
+   wget https://raw.githubusercontent.com/Drewsif/PiShrink/master/pishrink.sh
+   sudo bash pishrink.sh -z /mnt/c/path/to/family-dashboard.img
+   ```
+5. **Write new cards** with Raspberry Pi Imager: *Choose OS ▸ Use custom* ▸
+   the `.img.gz`. **Skip** Imager's "OS customisation" (it would overwrite
+   the prepared setup). First boot expands the card and restarts once, then
+   the setup guide appears.
+
 ## Remote access
 
 Family members can view, add and edit **calendar events only** from

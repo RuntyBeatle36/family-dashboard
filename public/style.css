@@ -2047,3 +2047,98 @@ body.osk-open .modal { max-height: calc(90vh - var(--osk-h, 0px)); }
    scroll to — padding-bottom manufactures that room; scroll-padding-bottom
    then keeps the browser from scrolling straight through it. */
 body.osk-open .sidebar { padding-bottom: var(--osk-h, 0px); scroll-padding-bottom: var(--osk-h, 0px); }
+
+/* ── First-run setup guide ─────────────────────────────────
+   Full screen, above modals (100) but below the on-screen keyboard (400),
+   since the Wi-Fi password is typed on it. Large tap targets throughout —
+   this is a touchscreen with no mouse. */
+.setup-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  padding-bottom: calc(16px + var(--osk-h, 0px) * var(--osk-on, 0));
+  background: var(--bg-gradient);
+  overflow-y: auto;
+}
+body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
+.setup-screen[hidden] { display: none; }
+.setup-card {
+  width: 100%;
+  max-width: 620px;
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--glass-solid-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: var(--shadow);
+}
+.setup-hero { font-size: 3rem; text-align: center; }
+.setup-title { margin: 0; font-size: 1.5rem; }
+.setup-text { margin: 0; color: var(--text-dim); line-height: 1.5; }
+.setup-label { color: var(--text); font-weight: 600; margin-top: 0.4rem; }
+.setup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.6rem; margin-top: 0.5rem; }
+.setup-actions .btn { min-height: 48px; padding: 0 1.4rem; font-size: 1rem; }
+.setup-actions-col { flex-direction: column; align-items: stretch; }
+.setup-big { font-size: 1.1rem; }
+.setup-zip { display: flex; gap: 0.6rem; }
+.setup-zip input {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.3rem;
+  letter-spacing: 0.1em;
+  padding: 0.6rem 0.9rem;
+}
+.setup-zip .btn { min-height: 48px; }
+.setup-card .theme-opt { min-height: 48px; font-size: 1rem; }
+
+/* ── Wi-Fi picker (setup guide + Settings ▸ Wi-Fi) ───────── */
+.wifi-current { padding: 0.6rem 0.8rem; border-radius: 10px; background: rgba(77, 216, 152, 0.14); }
+.wifi-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-weight: 600; margin-top: 0.3rem; }
+.wifi-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.wifi-item { border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; }
+.wifi-item.open { border-color: var(--accent); }
+.wifi-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 0.9rem;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+.wifi-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wifi-tag { font-size: 0.75rem; color: var(--success); font-weight: 600; }
+.wifi-bars { display: inline-flex; align-items: flex-end; gap: 2px; width: 22px; height: 16px; flex: none; }
+.wifi-bars i { flex: 1; border-radius: 1px; background: var(--text-dimmer); }
+.wifi-bars i.on { background: var(--text); }
+.wifi-connect { display: flex; flex-direction: column; gap: 0.5rem; padding: 0 0.9rem 0.9rem; }
+.wifi-hidden-form { padding: 0; }
+.wifi-connect input[type="text"], .wifi-connect input[type="password"] { font-size: 1.05rem; padding: 0.6rem 0.8rem; }
+.wifi-connect .btn { min-height: 46px; }
+.wifi-show { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-dim); }
+.btn-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0.4rem 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+#wifi-modal-body { display: flex; flex-direction: column; gap: 0.6rem; }
+.reset-list { margin: 0; padding-left: 1.2rem; line-height: 1.6; }

@@ -86,7 +86,9 @@ async function resolveNwsStation(lat, lon) {
   const sd = await sr.json();
   const stationId = sd.features?.[0]?.properties?.stationIdentifier || null;
 
-  return { stationId, label };
+  // IANA zone (e.g. "America/Chicago") — lets the setup guide set the Pi's
+  // clock from the ZIP code alone
+  return { stationId, label, timeZone: pd.properties?.timeZone || null };
 }
 
 // Zip → {lat, lon, city, detail}. Corpus Christi zips resolve locally
@@ -494,6 +496,12 @@ function showToast(msg, kind = 'error') {
   toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
 }
 function showError(msg) { showToast(msg, 'error'); }
+
+// api() throws the server's raw response text, which for this app's routes
+// is a JSON {error} body — pull out the plain-language message for display.
+function errText(err) {
+  try { return JSON.parse(err.message).error || err.message; } catch { return err.message; }
+}
 
 /* ══════════════════════════════════════════════════════════
    CLOCK & DATE
@@ -2429,7 +2437,8 @@ function oskIsTextField(el) {
   if (!el) return false;
   if (el.tagName === 'TEXTAREA') return true;
   if (el.tagName !== 'INPUT') return false;
-  return ['text', 'search', 'email', 'number'].includes(el.type);
+  // password: the setup guide's Wi-Fi password is typed on this keyboard
+  return ['text', 'search', 'email', 'number', 'password', 'tel', 'url'].includes(el.type);
 }
 
 // Key labels double as both the visible glyph and the data-char attribute
@@ -2579,14 +2588,14 @@ fetch('/api/version').then(r => r.json()).then(({ build, commit }) => {
     (build ? `Build ${build}` : '') + (commit ? ` · ${commit}` : '');
 }).catch(() => {});
 
-// Debug Options AND Graphics are both hidden by default — Debug so kids/
+// Debug Options, Graphics and Reset are hidden by default — Debug so kids/
 // guests don't stumble into weather/alert simulation tools, Graphics
 // because the higher quality tiers can make weaker Pi hardware choppy and
-// shouldn't be a casual accidental change. Tapping the version text 7
-// times in a row reveals both, same "developer options" convention
+// shouldn't be a casual accidental change, Reset because it erases
+// everything. Tapping the version text 7 times in a row reveals them, same "developer options" convention
 // Android uses. Stored in localStorage so it stays unlocked across
 // reloads once found; taps more than 2s apart don't count toward the streak.
-const ADVANCED_SECTION_IDS = ['debug-section', 'graphics-section'];
+const ADVANCED_SECTION_IDS = ['debug-section', 'graphics-section', 'reset-section'];
 let debugTapCount = 0;
 let debugTapTimer = null;
 if (localStorage.getItem('debugUnlocked') === 'true') {
@@ -3112,7 +3121,7 @@ async function remoteAction(action, fn) {
   remoteUi.error = '';
   renderRemote();
   try { await fn(); }
-  catch (err) { remoteUi.error = err.message; }
+  catch (err) { remoteUi.error = errText(err); }
   remoteUi.busy = null;
   await refreshRemote();
 }
@@ -3225,6 +3234,413 @@ document.getElementById('remote-badge').addEventListener('click', () => {
   document.getElementById('settings-btn').click();
   document.getElementById('remote-open-btn').click();
 });
+
+/* ══════════════════════════════════════════════════════════
+   WI-FI PICKER
+   Shared by the first-run setup guide and Settings ▸ Wi-Fi. Lists nearby
+   networks (strongest first), taps open a password field, plain-language
+   errors. Talks to /api/setup/wifi/* (setup.js → nmcli).
+   ══════════════════════════════════════════════════════════ */
+function signalBars(pct) {
+  const n = pct >= 75 ? 4 : pct >= 50 ? 3 : pct >= 25 ? 2 : 1;
+  return `<span class="wifi-bars" aria-label="Signal ${n} of 4">${[1, 2, 3, 4].map(i =>
+    `<i class="${i <= n ? 'on' : ''}" style="height:${i * 25}%"></i>`).join('')}</span>`;
+}
+
+// onChange(status) fires after a successful connection
+function createWifiPicker(container, onChange) {
+  const st = { status: null, networks: null, scanning: false, selected: null, hidden: false, busy: false, error: '' };
+
+  function render() {
+    const s = st.status;
+    let html = '';
+    if (s && !s.available) {
+      html += `<p class="settings-desc">${s.online
+        ? '✅ Connected to the internet with a network cable. No Wi-Fi needed.'
+        : 'No Wi-Fi hardware found. Plug in a network cable instead.'}</p>`;
+      container.innerHTML = html;
+      return;
+    }
+    if (s?.ssid) {
+      html += `<div class="wifi-current">✅ Connected to <strong>${escHtml(s.ssid)}</strong>${s.online ? '' : ' (no internet yet)'}</div>`;
+    } else if (s?.wired && s.online) {
+      html += '<div class="wifi-current">✅ Connected with a network cable</div>';
+    }
+
+    html += `<div class="wifi-head"><span>${s?.ssid ? 'Switch to a different network' : 'Choose your Wi-Fi network'}</span>
+      <button class="btn btn-ghost btn-sm" data-wifi="scan" ${st.scanning ? 'disabled' : ''}>${st.scanning ? 'Searching…' : '↻ Search again'}</button></div>`;
+
+    if (!st.networks && st.scanning) {
+      html += '<p class="settings-desc">Looking for networks…</p>';
+    } else if (st.networks && !st.networks.length) {
+      html += '<p class="settings-desc">No networks found. Make sure the router is on, then search again.</p>';
+    }
+
+    html += '<div class="wifi-list">';
+    for (const [i, n] of (st.networks || []).entries()) {
+      const open = st.selected === i;
+      html += `<div class="wifi-item ${open ? 'open' : ''}">
+        <button class="wifi-row" data-wifi="pick" data-i="${i}">
+          ${signalBars(n.signal)}
+          <span class="wifi-name">${escHtml(n.ssid)}</span>
+          ${n.connected ? '<span class="wifi-tag">Connected</span>' : ''}
+          ${n.secure ? '<span class="wifi-lock" aria-label="Password protected">🔒</span>' : ''}
+        </button>
+        ${open && !n.connected ? `<div class="wifi-connect">
+          ${n.secure ? '<input type="password" class="wifi-pass" placeholder="Wi-Fi password" autocomplete="off">' : ''}
+          <label class="wifi-show"><input type="checkbox" data-wifi="show"> Show password</label>
+          <button class="btn btn-accent btn-sm" data-wifi="connect" ${st.busy ? 'disabled' : ''}>${st.busy ? 'Connecting… (up to 30 seconds)' : 'Connect'}</button>
+        </div>` : ''}
+      </div>`;
+    }
+    html += '</div>';
+
+    html += st.hidden
+      ? `<div class="wifi-connect wifi-hidden-form">
+          <input type="text" class="wifi-hidden-ssid" placeholder="Network name" autocomplete="off">
+          <input type="password" class="wifi-pass" placeholder="Password (leave empty if none)" autocomplete="off">
+          <button class="btn btn-accent btn-sm" data-wifi="connect-hidden" ${st.busy ? 'disabled' : ''}>${st.busy ? 'Connecting…' : 'Connect'}</button>
+        </div>`
+      : '<button class="btn-link" data-wifi="hidden">My network isn\'t listed</button>';
+
+    if (st.error) html += `<p class="remote-error">${escHtml(st.error)}</p>`;
+    container.innerHTML = html;
+  }
+
+  async function refreshStatus() {
+    try { st.status = await api('GET', '/api/setup/state').then(r => r.wifi); }
+    catch { st.status = null; }
+  }
+
+  async function scan() {
+    st.scanning = true; st.error = ''; render();
+    try { st.networks = await api('GET', '/api/setup/wifi/networks'); }
+    catch (err) { st.error = err.message; }
+    st.scanning = false;
+    await refreshStatus();
+    render();
+  }
+
+  async function connect(ssid, password, hidden) {
+    st.busy = true; st.error = ''; render();
+    try {
+      st.status = await api('POST', '/api/setup/wifi/connect', { ssid, password, hidden });
+      st.selected = null; st.hidden = false;
+      showToast(`Connected to ${ssid}.`, 'success');
+      onChange?.(st.status);
+      st.busy = false;
+      await scan();
+    } catch (err) {
+      st.busy = false;
+      st.error = errText(err);
+      render();
+    }
+  }
+
+  container.addEventListener('click', e => {
+    const el = e.target.closest('[data-wifi]');
+    if (!el) return;
+    const item = el.closest('.wifi-item, .wifi-hidden-form');
+    switch (el.dataset.wifi) {
+      case 'scan':   return scan();
+      case 'hidden': st.hidden = true; st.selected = null; render(); return container.querySelector('.wifi-hidden-ssid')?.focus();
+      case 'pick': {
+        const i = +el.dataset.i;
+        st.selected = st.selected === i ? null : i;
+        st.error = '';
+        render();
+        return container.querySelector('.wifi-item.open .wifi-pass')?.focus();
+      }
+      case 'show':
+        item.querySelectorAll('.wifi-pass').forEach(p => { p.type = el.checked ? 'text' : 'password'; });
+        return;
+      case 'connect': {
+        const n = st.networks[st.selected];
+        const pass = item.querySelector('.wifi-pass')?.value || '';
+        if (n.secure && !pass) { st.error = 'Type the Wi-Fi password first.'; return render(); }
+        return connect(n.ssid, pass, false);
+      }
+      case 'connect-hidden': {
+        const ssid = item.querySelector('.wifi-hidden-ssid').value.trim();
+        if (!ssid) { st.error = 'Type the network name first.'; return render(); }
+        return connect(ssid, item.querySelector('.wifi-pass').value, true);
+      }
+    }
+  });
+  // Enter on the on-screen/physical keyboard connects
+  container.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !e.target.matches('.wifi-pass, .wifi-hidden-ssid')) return;
+    e.preventDefault();
+    e.target.closest('.wifi-item, .wifi-hidden-form')?.querySelector('[data-wifi^="connect"]')?.click();
+  });
+
+  return { start: async () => { await refreshStatus(); render(); scan(); }, status: () => st.status };
+}
+
+/* ── Settings ▸ Wi-Fi ─────────────────────────────────────── */
+const wifiModal = document.getElementById('wifi-modal');
+const settingsWifiPicker = createWifiPicker(document.getElementById('wifi-modal-body'), refreshWifiSettingsStatus);
+
+async function refreshWifiSettingsStatus() {
+  const el = document.getElementById('wifi-settings-status');
+  try {
+    const { wifi } = await api('GET', '/api/setup/state');
+    el.textContent = wifi.ssid ? `Connected to ${wifi.ssid}.`
+      : wifi.wired && wifi.online ? 'Connected with a network cable.'
+      : wifi.available ? 'Not connected.' : 'Wi-Fi isn\'t available on this device.';
+  } catch { el.textContent = 'Couldn\'t check Wi-Fi.'; }
+}
+document.getElementById('settings-btn').addEventListener('click', refreshWifiSettingsStatus);
+
+document.getElementById('wifi-open-btn').addEventListener('click', () => {
+  settingsModal.hidden = true;
+  wifiModal.hidden = false;
+  settingsWifiPicker.start();
+});
+function closeWifiModal() { wifiModal.hidden = true; settingsModal.hidden = false; refreshWifiSettingsStatus(); }
+document.getElementById('wifi-close').addEventListener('click', closeWifiModal);
+wifiModal.addEventListener('click', e => { if (e.target === wifiModal) closeWifiModal(); });
+
+/* ── Settings ▸ Reset for a new owner ─────────────────────── */
+const resetModal = document.getElementById('reset-modal');
+document.getElementById('reset-open-btn').addEventListener('click', () => {
+  settingsModal.hidden = true;
+  resetModal.hidden = false;
+});
+document.getElementById('reset-cancel').addEventListener('click', () => {
+  resetModal.hidden = true;
+  settingsModal.hidden = false;
+});
+
+let resetArmed = false;
+document.getElementById('reset-confirm').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  if (!resetArmed) {
+    resetArmed = true;
+    btn.textContent = 'Tap again: this can\'t be undone';
+    setTimeout(() => { resetArmed = false; btn.textContent = 'Erase Everything'; }, 5000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Erasing…';
+  try {
+    await api('POST', '/api/setup/reset', {
+      confirm: 'RESET',
+      forgetWifi: document.getElementById('reset-forget-wifi').checked,
+    });
+    localStorage.clear();
+    location.reload();
+  } catch (err) {
+    showError('Reset failed: ' + errText(err));
+    btn.disabled = false;
+    btn.textContent = 'Erase Everything';
+    resetArmed = false;
+  }
+});
+
+/* ══════════════════════════════════════════════════════════
+   FIRST-RUN SETUP GUIDE
+   Full-screen, one step at a time, shown when the server reports first-run
+   mode (a fresh plug-and-play card, a new install, or after "Reset for a
+   new owner"). Wi-Fi comes first so a card with nothing preconfigured
+   works. Everything here stays changeable later in Settings.
+   ══════════════════════════════════════════════════════════ */
+const setupScreen = document.getElementById('setup-screen');
+const setupCard   = document.getElementById('setup-card');
+const SETUP_STEPS = ['welcome', 'wifi', 'location', 'screen', 'done'];
+const setup = { step: 'welcome', online: false, loc: null, locBusy: false, locError: '', bench: null };
+let setupWifiPicker = null;
+
+function setupHead(n, title) {
+  return `<p class="remote-step">Step ${n} of 3</p><h2 class="setup-title">${title}</h2>`;
+}
+
+function renderSetup() {
+  let html = '';
+  switch (setup.step) {
+    case 'welcome':
+      html = `<div class="setup-hero">👋</div>
+        <h2 class="setup-title">Welcome to your Family Dashboard</h2>
+        <p class="setup-text">Let's get it ready. It takes about 5 minutes: connect to Wi-Fi,
+        tell it where you are, and let it tune itself for this screen.</p>
+        <div class="setup-actions"><button class="btn btn-accent setup-big" data-setup="next">Let's go</button></div>`;
+      break;
+
+    case 'wifi':
+      html = `${setupHead(1, 'Connect to the internet')}
+        <p class="setup-text">The dashboard needs the internet for weather and updates.</p>
+        <div id="setup-wifi"></div>
+        <div class="setup-actions">
+          <button class="btn btn-ghost" data-setup="back">Back</button>
+          <button class="btn btn-accent" data-setup="next" ${setup.online ? '' : 'disabled'}>Next</button>
+        </div>`;
+      break;
+
+    case 'location': {
+      const tf = getTimeFormat();
+      html = `${setupHead(2, 'Where is this dashboard?')}
+        <p class="setup-text">Your ZIP code sets the weather, weather alerts and the clock's time zone.</p>
+        <div class="setup-zip">
+          <input type="text" id="setup-zip" inputmode="numeric" maxlength="5" placeholder="ZIP code"
+                 value="${escHtml(setup.loc?.zip || '')}" autocomplete="off">
+          <button class="btn btn-accent" data-setup="zip" ${setup.locBusy ? 'disabled' : ''}>${setup.locBusy ? 'Looking up…' : 'Look up'}</button>
+        </div>
+        ${setup.loc ? `<div class="wifi-current">📍 <strong>${escHtml(setup.loc.city)}</strong>${setup.loc.timeZone
+          ? ` · ${escHtml(friendlyTimeZone(setup.loc.timeZone))}` : ''}</div>` : ''}
+        ${setup.locError ? `<p class="remote-error">${escHtml(setup.locError)}</p>` : ''}
+        <p class="setup-text setup-label">How should the clock look?</p>
+        <div class="theme-options">
+          <button class="theme-opt ${tf === '12h' ? 'active' : ''}" data-setup="tf" data-val="12h">3:30 PM</button>
+          <button class="theme-opt ${tf === '24h' ? 'active' : ''}" data-setup="tf" data-val="24h">15:30</button>
+        </div>
+        <div class="setup-actions">
+          <button class="btn btn-ghost" data-setup="back">Back</button>
+          <button class="btn btn-accent" data-setup="next" ${setup.loc ? '' : 'disabled'}>Next</button>
+        </div>`;
+      break;
+    }
+
+    case 'screen':
+      html = `${setupHead(3, 'Tune it for this screen')}`
+        + (setup.bench
+          ? `<div class="wifi-current">✅ Done. Using the smoothest look this screen handles well.</div>
+             <p class="setup-text">You can change this anytime in Settings.</p>
+             <div class="setup-actions"><button class="btn btn-accent" data-setup="next">Next</button></div>`
+          : `<p class="setup-text">The dashboard will try out its animations and visual effects and keep
+             the nicest ones that still run smoothly here. It takes about <strong>3 minutes</strong>.
+             The screen will change a few times. Please don't touch it while it works.</p>
+             <div class="setup-actions">
+               <button class="btn btn-ghost" data-setup="back">Back</button>
+               <button class="btn btn-ghost" data-setup="skip-bench">Skip (use the simplest look)</button>
+               <button class="btn btn-accent" data-setup="bench">Start</button>
+             </div>`);
+      break;
+
+    case 'done':
+      html = `<div class="setup-hero">🎉</div>
+        <h2 class="setup-title">You're all set!</h2>
+        <p class="setup-text">Add events with <strong>+ Add Event</strong>, and find everything else
+        in Settings (⚙️, top right).</p>
+        <p class="setup-text">Want family to see and add events from their phones when they're away
+        from home? You can set that up now, or anytime later in Settings.</p>
+        <div class="setup-actions setup-actions-col">
+          <button class="btn btn-accent setup-big" data-setup="finish">Start using the dashboard</button>
+          <button class="btn btn-ghost" data-setup="finish-remote">Set up phone access first</button>
+        </div>`;
+      break;
+  }
+  setupCard.innerHTML = html;
+
+  if (setup.step === 'wifi') {
+    setupWifiPicker = createWifiPicker(document.getElementById('setup-wifi'), s => {
+      setup.online = !!s.online;
+      document.querySelector('[data-setup="next"]').disabled = !setup.online;
+    });
+    setupWifiPicker.start().then(() => {
+      setup.online = !!setupWifiPicker.status()?.online;
+      const next = document.querySelector('[data-setup="next"]');
+      if (next) next.disabled = !setup.online;
+    });
+  }
+}
+
+// "America/Chicago" → "Central Standard Time" (whatever the browser calls it)
+function friendlyTimeZone(tz) {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'long' })
+      .formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || tz;
+  } catch { return tz; }
+}
+
+async function setupLookupZip() {
+  const zip = document.getElementById('setup-zip').value.trim();
+  if (!/^\d{5}$/.test(zip)) { setup.locError = 'Type a 5-digit ZIP code.'; return renderSetup(); }
+  setup.locBusy = true; setup.locError = ''; renderSetup();
+  try {
+    const geo = await geocodeZip(zip);
+    const station = await resolveNwsStation(geo.lat, geo.lon);
+    setup.loc = {
+      lat: geo.lat, lon: geo.lon, zip,
+      city: geo.city || station.label || 'Your location',
+      detail: geo.detail || zip,
+      stationId: station.stationId,
+      timeZone: station.timeZone,
+    };
+  } catch {
+    setup.locError = 'Couldn\'t find that ZIP code. Check it and try again.';
+  }
+  setup.locBusy = false;
+  renderSetup();
+}
+
+async function setupSaveLocation() {
+  const { timeZone, ...loc } = setup.loc;
+  setActiveLocation(loc);
+  if (timeZone) {
+    try { await api('POST', '/api/setup/timezone', { timeZone }); }
+    catch { showError('Couldn\'t set the time zone. You can fix the clock later in Settings.'); }
+  }
+}
+
+async function setupRunBench() {
+  setupScreen.hidden = true; // measure the dashboard itself, not this card
+  try { setup.bench = await runGraphicsBenchmark({ fromSetup: true }); }
+  catch { setup.bench = { skipped: true }; }
+  setupScreen.hidden = false;
+  renderSetup();
+}
+
+async function setupFinish(openRemote) {
+  try { await api('POST', '/api/setup/complete'); } catch { /* shows again next load; harmless */ }
+  if (!openRemote) return location.reload(); // clean start with the new location/settings
+  setupScreen.hidden = true;
+  document.getElementById('settings-btn').click();
+  document.getElementById('remote-open-btn').click();
+}
+
+setupCard.addEventListener('click', async e => {
+  const el = e.target.closest('[data-setup]');
+  if (!el || el.disabled) return;
+  const i = SETUP_STEPS.indexOf(setup.step);
+  switch (el.dataset.setup) {
+    case 'next':
+      if (setup.step === 'location') await setupSaveLocation();
+      setup.step = SETUP_STEPS[i + 1];
+      return renderSetup();
+    case 'back':
+      setup.step = SETUP_STEPS[i - 1];
+      return renderSetup();
+    case 'zip':
+      return setupLookupZip();
+    case 'tf':
+      localStorage.setItem('timeFormat', el.dataset.val);
+      refreshDateTimeDisplaysAppWide();
+      return renderSetup();
+    case 'bench':
+      return setupRunBench();
+    case 'skip-bench':
+      localStorage.setItem('gfxGlass', 'off');
+      localStorage.setItem('gfxWxQuality', 'off');
+      setup.bench = { skipped: true };
+      return renderSetup();
+    case 'finish':
+      return setupFinish(false);
+    case 'finish-remote':
+      return setupFinish(true);
+  }
+});
+setupCard.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'setup-zip') { e.preventDefault(); setupLookupZip(); }
+});
+
+api('GET', '/api/setup/state').then(s => {
+  if (!s.firstRun) return;
+  // A touchscreen with no keyboard attached — turn the on-screen keyboard
+  // on before the first text field (the Wi-Fi password) needs it.
+  if (navigator.maxTouchPoints > 0 && localStorage.getItem('oskEnabled') === null) localStorage.setItem('oskEnabled', 'true');
+  setupScreen.hidden = false;
+  renderSetup();
+}).catch(() => {});
 
 /* ── Debug submenu (opened from Settings) ─────────────────── */
 const debugModal = document.getElementById('debug-modal');
@@ -3487,8 +3903,10 @@ function renderBenchResults(res) {
   });
 }
 
-async function runGraphicsBenchmark() {
-  if (benchRunning) return;
+// fromSetup: run by the first-run setup guide — applies the recommended
+// settings itself and returns the result instead of opening Debug Options.
+async function runGraphicsBenchmark({ fromSetup = false } = {}) {
+  if (benchRunning) return null;
   benchRunning = true;
   const saved = {
     glass: localStorage.getItem('gfxGlass'), wx: localStorage.getItem('gfxWxQuality'),
@@ -3532,9 +3950,18 @@ async function runGraphicsBenchmark() {
     recommended: benchRecommend(runs),
   };
   renderBenchResults(res);
-  debugModal.hidden = false;
   try { await api('POST', '/api/benchmark', res); }
-  catch { showToast('Benchmark finished, but saving results to the server failed.'); }
+  catch { if (!fromSetup) showToast('Benchmark finished, but saving results to the server failed.'); }
+  if (fromSetup) {
+    const rec = res.recommended || { glass: 'off', wx: 'off' };
+    localStorage.setItem('gfxGlass', rec.glass);
+    localStorage.setItem('gfxWxQuality', rec.wx);
+    applyGlassSetting();
+    applyWxMode(wxMode);
+  } else {
+    debugModal.hidden = false;
+  }
+  return res;
 }
 
 document.getElementById('debug-run-bench').addEventListener('click', () => {

@@ -125,4 +125,12 @@ async function disableFunnel() {
   await cli(['serve', 'reset']);
 }
 
-module.exports = { installed, startDaemon, status, login, enableFunnel, disableFunnel };
+// "Reset for a new owner": take the link down and detach this Pi from the
+// previous owner's Tailscale account entirely.
+async function logout() {
+  if (!installed()) return;
+  await cli(['serve', 'reset']).catch(() => {});
+  await cli(['logout'], 15000).catch(() => {});
+}
+
+module.exports = { installed, startDaemon, status, login, enableFunnel, disableFunnel, logout };

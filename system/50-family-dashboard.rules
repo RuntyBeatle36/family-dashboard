@@ -1,0 +1,20 @@
+// /etc/polkit-1/rules.d/50-family-dashboard.rules
+//
+// Lets the dashboard service (running as `user`, see system/dashboard.service)
+// change Wi-Fi and the time zone from the setup guide / Settings, without
+// sudo. A systemd service has no desktop login session, so polkit's default
+// "active local user" allowances don't apply to it — this grants exactly
+// these actions and nothing else:
+//   - NetworkManager: scan, connect, forget networks (setup.js)
+//   - systemd-timedated: set the time zone
+//
+// Installed by scripts/provision-pi.sh.
+
+polkit.addRule(function (action, subject) {
+  if (subject.user !== "user") return polkit.Result.NOT_HANDLED;
+  if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 ||
+      action.id === "org.freedesktop.timedate1.set-timezone") {
+    return polkit.Result.YES;
+  }
+  return polkit.Result.NOT_HANDLED;
+});

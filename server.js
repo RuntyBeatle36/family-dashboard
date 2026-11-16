@@ -6,6 +6,7 @@ const { execFile, execFileSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 const { createRemote } = require('./remote');
 const tailscale = require('./tailscale');
+const setup = require('./setup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -735,6 +736,65 @@ app.post('/api/remote/funnel', async (req, res) => {
   }
   if (!remoteAccess.code()) return res.status(400).json({ error: 'Turn on remote access first.' });
   res.json(await tailscale.enableFunnel(remoteAccess.port));
+});
+
+// ── First-run setup, Wi-Fi, reset (see setup.js) ──────────────────
+// Main app only (home network / owner's Tailscale devices), like the rest
+// of Settings.
+app.get('/api/setup/state', async (req, res) => {
+  res.json({ firstRun: setup.isFirstRun(), wifi: await setup.wifiStatus() });
+});
+
+app.get('/api/setup/wifi/networks', async (req, res) => {
+  try { res.json(await setup.wifiScan()); }
+  catch (err) { res.status(500).json({ error: "Couldn't look for Wi-Fi networks." }); }
+});
+
+app.post('/api/setup/wifi/connect', async (req, res) => {
+  try {
+    await setup.wifiConnect(req.body || {});
+    res.json(await setup.wifiStatus());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/setup/timezone', async (req, res) => {
+  try { await setup.setTimezone(req.body?.timeZone); res.json({ ok: true }); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.post('/api/setup/complete', (req, res) => {
+  setup.clearFirstRun();
+  res.json({ ok: true });
+});
+
+// "Reset for a new owner": snapshots the database to the home folder (just
+// in case), then erases everything personal — events, to-dos, bulletin,
+// remote access code/sessions, Tailscale account, saved Wi-Fi — and puts the
+// dashboard back into first-run setup. The browser side clears its own
+// saved settings and reloads.
+app.post('/api/setup/reset', async (req, res) => {
+  if (req.body?.confirm !== 'RESET') return res.status(400).json({ error: 'Confirmation required' });
+  try {
+    const backup = path.join(os.homedir(), `dashboard-reset-backup-${Date.now()}.db`);
+    db.prepare('VACUUM INTO ?').run(backup);
+    db.exec(`
+      DELETE FROM calendar_events;
+      DELETE FROM todo_items;
+      DELETE FROM bulletin_posts;
+      DELETE FROM remote_sessions;
+      DELETE FROM app_settings;
+      DELETE FROM gfx_benchmarks;
+    `);
+    await tailscale.logout();
+    setup.markFirstRun();
+    res.json({ ok: true, backup });
+    // After the response: dropping Wi-Fi may cut off the device that asked
+    if (req.body.forgetWifi) res.on('finish', () => setup.wifiForgetAll().catch(() => {}));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 remoteAccess.listen();
