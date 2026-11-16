@@ -54,4 +54,10 @@ if [ -f "$REPO_DIR/system/labwc-autostart" ] && [ -f "$HOME/.config/labwc/autost
   fi
 fi
 
+# ── One-time database backup ─────────────────────────────────
+# Deletes itself after a successful run, so this only fires once per Pi.
+if [ -f "$REPO_DIR/scripts/backup-db.sh" ]; then
+  bash "$REPO_DIR/scripts/backup-db.sh" || echo "system-update: database backup failed, continuing"
+fi
+
 echo "system-update: done"
