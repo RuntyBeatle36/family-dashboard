@@ -2080,7 +2080,23 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
   gap: 0.85rem;
   box-shadow: var(--shadow);
 }
-.setup-hero { font-size: 3rem; text-align: center; }
+.setup-hero { text-align: center; color: var(--accent); }
+.setup-hero .ico { width: 56px; height: 56px; stroke-width: 1.5; }
+.setup-hero-ok { color: var(--success); }
+.ico {
+  width: 1.1em;
+  height: 1.1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.2em;
+  flex: none;
+}
+.wifi-current .ico, .remote-ok .ico { color: var(--success); }
+.remote-warn .ico { color: #e0a030; }
+.wifi-lock { color: var(--text-dim); display: inline-flex; }
 .setup-title { margin: 0; font-size: 1.5rem; }
 .setup-text { margin: 0; color: var(--text-dim); line-height: 1.5; }
 .setup-label { color: var(--text); font-weight: 600; margin-top: 0.4rem; }
@@ -2126,9 +2142,22 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 .wifi-bars i { flex: 1; border-radius: 1px; background: var(--text-dimmer); }
 .wifi-bars i.on { background: var(--text); }
 .wifi-connect { display: flex; flex-direction: column; gap: 0.5rem; padding: 0 0.9rem 0.9rem; }
-.wifi-hidden-form { padding: 0; }
+.wifi-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+}
+.wifi-panel-title { font-weight: 700; }
+.wifi-panel .settings-desc { margin: 0; }
+.wifi-panel input[type="text"], .wifi-panel input[type="password"] { font-size: 1.05rem; padding: 0.6rem 0.8rem; }
+.wifi-panel-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.wifi-panel-actions .btn { min-height: 46px; flex: 0 1 auto; padding: 0 1.2rem; }
 .wifi-connect input[type="text"], .wifi-connect input[type="password"] { font-size: 1.05rem; padding: 0.6rem 0.8rem; }
 .wifi-connect .btn { min-height: 46px; }
+.wifi-head .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
 .wifi-show { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-dim); }
 .btn-link {
   align-self: flex-start;
@@ -2142,3 +2171,6 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 }
 #wifi-modal-body { display: flex; flex-direction: column; gap: 0.6rem; }
 .reset-list { margin: 0; padding-left: 1.2rem; line-height: 1.6; }
+
+.device-pw { margin-top: 0.5rem; font-size: 0.9rem; line-height: 1.7; }
+.device-pw code { font-size: 1rem; user-select: all; }

@@ -640,7 +640,7 @@
      (then a "share & manage" view once it's on) — see renderRemote(). -->
 <div id="remote-modal" class="modal-overlay" hidden>
   <div class="modal">
-    <h3 class="modal-title">🌐 Use the Calendar Away From Home</h3>
+    <h3 class="modal-title">Use the Calendar Away From Home</h3>
     <div id="remote-body" class="remote-body"><p class="settings-desc">Checking…</p></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="remote-close">‹ Back to Settings</button>
@@ -668,12 +668,23 @@
         Runs every Glass Blur × Weather Animation combination on this screen
         (heavy rain and overcast clouds for each weather tier), measures frame
         rate and CPU, and recommends the highest settings that stay smooth.
-        Takes about 3 minutes. Don't touch the screen while it runs. Your
+        Takes about 3 minutes; touch is locked while it runs. Your
         settings are restored when it finishes. The latest results are saved
         on the server at <code>/api/benchmark</code>.
       </p>
       <button class="btn btn-ghost btn-sm" id="debug-run-bench">▶ Run Graphics Benchmark</button>
       <div id="bench-results" class="bench-results"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">🔑 Device Login</div>
+      <p class="settings-desc">
+        The username and password for signing in to this Pi itself (console or
+        SSH). Each unit gets its own random password on its first boot. Only
+        shown here, on this screen.
+      </p>
+      <button class="btn btn-ghost btn-sm" id="device-pw-btn">Show</button>
+      <div class="device-pw" id="device-pw" hidden></div>
     </div>
 
     <div class="settings-section">

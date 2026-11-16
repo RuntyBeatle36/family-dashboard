@@ -3030,7 +3030,7 @@ function renderRemote() {
     case 'connect': {
       const reconnect = remoteScreen(s) === 'reconnect';
       html = (reconnect
-        ? `<div class="remote-warn">⚠️ <strong>The family link is paused.</strong> This dashboard needs to sign in to Tailscale again. Family members can't open the calendar until you do.</div>
+        ? `<div class="remote-warn">${ICON.alert} <strong>The family link is paused.</strong> This dashboard needs to sign in to Tailscale again. Family members can't open the calendar until you do.</div>
            <h4 class="remote-title">Sign this dashboard back in</h4>`
         : `${stepHead(1, 'Connect this dashboard')}
            <p class="settings-desc">This uses a free service called <strong>Tailscale</strong> to reach the
@@ -3055,7 +3055,7 @@ function renderRemote() {
 
     case 'live': {
       const link = `${ts.publicUrl}#code=${s.code}`;
-      html = `<div class="remote-ok">✅ <strong>The family link is on.</strong></div>
+      html = `<div class="remote-ok">${ICON.check} <strong>The family link is on.</strong></div>
         <p class="settings-desc">Family members scan this with their phone's camera. It opens the calendar
         already signed in. (Tip: they can use "Add to Home Screen" to make it an app icon.)</p>
         ${qrSvg(link, 'qr-large')}
@@ -3235,6 +3235,19 @@ document.getElementById('remote-badge').addEventListener('click', () => {
   document.getElementById('remote-open-btn').click();
 });
 
+/* ── Line icons for the setup and phone-access guides ─────────
+   Inline SVG (stroke = currentColor) rather than emoji, so these screens
+   look the same on every device and match the rest of the type. */
+const ICON = {
+  check:   '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
+  checkCircle: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg>',
+  lock:    '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  pin:     '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  alert:   '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  refresh: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>',
+  calendar:'<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+};
+
 /* ══════════════════════════════════════════════════════════
    WI-FI PICKER
    Shared by the first-run setup guide and Settings ▸ Wi-Fi. Lists nearby
@@ -3256,19 +3269,36 @@ function createWifiPicker(container, onChange) {
     let html = '';
     if (s && !s.available) {
       html += `<p class="settings-desc">${s.online
-        ? '✅ Connected to the internet with a network cable. No Wi-Fi needed.'
+        ? `${ICON.check} Connected to the internet with a network cable. No Wi-Fi needed.`
         : 'No Wi-Fi hardware found. Plug in a network cable instead.'}</p>`;
       container.innerHTML = html;
       return;
     }
     if (s?.ssid) {
-      html += `<div class="wifi-current">✅ Connected to <strong>${escHtml(s.ssid)}</strong>${s.online ? '' : ' (no internet yet)'}</div>`;
+      html += `<div class="wifi-current">${ICON.check} Connected to <strong>${escHtml(s.ssid)}</strong>${s.online ? '' : ' (no internet yet)'}</div>`;
     } else if (s?.wired && s.online) {
-      html += '<div class="wifi-current">✅ Connected with a network cable</div>';
+      html += `<div class="wifi-current">${ICON.check} Connected with a network cable</div>`;
+    }
+
+    if (st.hidden) {
+      html += `<div class="wifi-panel">
+        <div class="wifi-panel-title">Join a network by name</div>
+        <p class="settings-desc">For a network that doesn't show up in the list. Type its name exactly, including capital letters.</p>
+        <input type="text" class="wifi-hidden-ssid" placeholder="Network name" autocomplete="off">
+        <input type="password" class="wifi-pass" placeholder="Password (leave empty if there isn't one)" autocomplete="off">
+        <label class="wifi-show"><input type="checkbox" data-wifi="show"> Show password</label>
+        ${st.error ? `<p class="remote-error">${escHtml(st.error)}</p>` : ''}
+        <div class="wifi-panel-actions">
+          <button class="btn btn-ghost btn-sm" data-wifi="cancel-hidden" ${st.busy ? 'disabled' : ''}>Cancel</button>
+          <button class="btn btn-accent btn-sm" data-wifi="connect-hidden" ${st.busy ? 'disabled' : ''}>${st.busy ? 'Connecting…' : 'Connect'}</button>
+        </div>
+      </div>`;
+      container.innerHTML = html;
+      return;
     }
 
     html += `<div class="wifi-head"><span>${s?.ssid ? 'Switch to a different network' : 'Choose your Wi-Fi network'}</span>
-      <button class="btn btn-ghost btn-sm" data-wifi="scan" ${st.scanning ? 'disabled' : ''}>${st.scanning ? 'Searching…' : '↻ Search again'}</button></div>`;
+      <button class="btn btn-ghost btn-sm" data-wifi="scan" ${st.scanning ? 'disabled' : ''}>${ICON.refresh} ${st.scanning ? 'Searching…' : 'Refresh'}</button></div>`;
 
     if (!st.networks && st.scanning) {
       html += '<p class="settings-desc">Looking for networks…</p>';
@@ -3284,24 +3314,21 @@ function createWifiPicker(container, onChange) {
           ${signalBars(n.signal)}
           <span class="wifi-name">${escHtml(n.ssid)}</span>
           ${n.connected ? '<span class="wifi-tag">Connected</span>' : ''}
-          ${n.secure ? '<span class="wifi-lock" aria-label="Password protected">🔒</span>' : ''}
+          ${n.secure ? `<span class="wifi-lock" title="Password protected">${ICON.lock}</span>` : ''}
         </button>
         ${open && !n.connected ? `<div class="wifi-connect">
           ${n.secure ? '<input type="password" class="wifi-pass" placeholder="Wi-Fi password" autocomplete="off">' : ''}
           <label class="wifi-show"><input type="checkbox" data-wifi="show"> Show password</label>
-          <button class="btn btn-accent btn-sm" data-wifi="connect" ${st.busy ? 'disabled' : ''}>${st.busy ? 'Connecting… (up to 30 seconds)' : 'Connect'}</button>
+          <div class="wifi-panel-actions">
+            <button class="btn btn-ghost btn-sm" data-wifi="pick" data-i="${i}" ${st.busy ? 'disabled' : ''}>Cancel</button>
+            <button class="btn btn-accent btn-sm" data-wifi="connect" ${st.busy ? 'disabled' : ''}>${st.busy ? 'Connecting… (up to 30 seconds)' : 'Connect'}</button>
+          </div>
         </div>` : ''}
       </div>`;
     }
     html += '</div>';
 
-    html += st.hidden
-      ? `<div class="wifi-connect wifi-hidden-form">
-          <input type="text" class="wifi-hidden-ssid" placeholder="Network name" autocomplete="off">
-          <input type="password" class="wifi-pass" placeholder="Password (leave empty if none)" autocomplete="off">
-          <button class="btn btn-accent btn-sm" data-wifi="connect-hidden" ${st.busy ? 'disabled' : ''}>${st.busy ? 'Connecting…' : 'Connect'}</button>
-        </div>`
-      : '<button class="btn-link" data-wifi="hidden">My network isn\'t listed</button>';
+    html += '<button class="btn-link" data-wifi="hidden">My network isn\'t listed</button>';
 
     if (st.error) html += `<p class="remote-error">${escHtml(st.error)}</p>`;
     container.innerHTML = html;
@@ -3340,10 +3367,11 @@ function createWifiPicker(container, onChange) {
   container.addEventListener('click', e => {
     const el = e.target.closest('[data-wifi]');
     if (!el) return;
-    const item = el.closest('.wifi-item, .wifi-hidden-form');
+    const item = el.closest('.wifi-item, .wifi-panel');
     switch (el.dataset.wifi) {
       case 'scan':   return scan();
-      case 'hidden': st.hidden = true; st.selected = null; render(); return container.querySelector('.wifi-hidden-ssid')?.focus();
+      case 'hidden': st.hidden = true; st.selected = null; st.error = ''; render(); return container.querySelector('.wifi-hidden-ssid')?.focus();
+      case 'cancel-hidden': st.hidden = false; st.error = ''; return render();
       case 'pick': {
         const i = +el.dataset.i;
         st.selected = st.selected === i ? null : i;
@@ -3371,7 +3399,7 @@ function createWifiPicker(container, onChange) {
   container.addEventListener('keydown', e => {
     if (e.key !== 'Enter' || !e.target.matches('.wifi-pass, .wifi-hidden-ssid')) return;
     e.preventDefault();
-    e.target.closest('.wifi-item, .wifi-hidden-form')?.querySelector('[data-wifi^="connect"]')?.click();
+    e.target.closest('.wifi-item, .wifi-panel')?.querySelector('[data-wifi^="connect"]')?.click();
   });
 
   return { start: async () => { await refreshStatus(); render(); scan(); }, status: () => st.status };
@@ -3459,7 +3487,7 @@ function renderSetup() {
   let html = '';
   switch (setup.step) {
     case 'welcome':
-      html = `<div class="setup-hero">👋</div>
+      html = `<div class="setup-hero">${ICON.calendar}</div>
         <h2 class="setup-title">Welcome to your Family Dashboard</h2>
         <p class="setup-text">Let's get it ready. It takes about 5 minutes: connect to Wi-Fi,
         tell it where you are, and let it tune itself for this screen.</p>
@@ -3485,7 +3513,7 @@ function renderSetup() {
                  value="${escHtml(setup.loc?.zip || '')}" autocomplete="off">
           <button class="btn btn-accent" data-setup="zip" ${setup.locBusy ? 'disabled' : ''}>${setup.locBusy ? 'Looking up…' : 'Look up'}</button>
         </div>
-        ${setup.loc ? `<div class="wifi-current">📍 <strong>${escHtml(setup.loc.city)}</strong>${setup.loc.timeZone
+        ${setup.loc ? `<div class="wifi-current">${ICON.pin} <strong>${escHtml(setup.loc.city)}</strong>${setup.loc.timeZone
           ? ` · ${escHtml(friendlyTimeZone(setup.loc.timeZone))}` : ''}</div>` : ''}
         ${setup.locError ? `<p class="remote-error">${escHtml(setup.locError)}</p>` : ''}
         <p class="setup-text setup-label">How should the clock look?</p>
@@ -3503,7 +3531,7 @@ function renderSetup() {
     case 'screen':
       html = `${setupHead(3, 'Tune it for this screen')}`
         + (setup.bench
-          ? `<div class="wifi-current">✅ Done. Using the smoothest look this screen handles well.</div>
+          ? `<div class="wifi-current">${ICON.check} Done. Using the smoothest look this screen handles well.</div>
              <p class="setup-text">You can change this anytime in Settings.</p>
              <div class="setup-actions"><button class="btn btn-accent" data-setup="next">Next</button></div>`
           : `<p class="setup-text">The dashboard will try out its animations and visual effects and keep
@@ -3517,10 +3545,10 @@ function renderSetup() {
       break;
 
     case 'done':
-      html = `<div class="setup-hero">🎉</div>
-        <h2 class="setup-title">You're all set!</h2>
+      html = `<div class="setup-hero setup-hero-ok">${ICON.checkCircle}</div>
+        <h2 class="setup-title">You're all set</h2>
         <p class="setup-text">Add events with <strong>+ Add Event</strong>, and find everything else
-        in Settings (⚙️, top right).</p>
+        in <strong>Settings</strong> (the gear button, top right).</p>
         <p class="setup-text">Want family to see and add events from their phones when they're away
         from home? You can set that up now, or anytime later in Settings.</p>
         <div class="setup-actions setup-actions-col">
@@ -3576,6 +3604,11 @@ async function setupLookupZip() {
 async function setupSaveLocation() {
   const { timeZone, ...loc } = setup.loc;
   setActiveLocation(loc);
+  // Refresh now: finishing via "Set up phone access first" doesn't reload,
+  // and the dashboard would otherwise keep showing the default location's
+  // weather until the next scheduled refresh.
+  fetchWeather();
+  fetchAlerts();
   if (timeZone) {
     try { await api('POST', '/api/setup/timezone', { timeZone }); }
     catch { showError('Couldn\'t set the time zone. You can fix the clock later in Settings.'); }
@@ -3641,6 +3674,22 @@ api('GET', '/api/setup/state').then(s => {
   setupScreen.hidden = false;
   renderSetup();
 }).catch(() => {});
+
+/* ── Debug ▸ Device Login ─────────────────────────────────── */
+document.getElementById('device-pw-btn').addEventListener('click', async e => {
+  const out = document.getElementById('device-pw');
+  if (!out.hidden) { out.hidden = true; e.currentTarget.textContent = 'Show'; return; }
+  try {
+    const r = await api('GET', '/api/device/password');
+    out.innerHTML = r.password
+      ? `Username: <code>${escHtml(r.user)}</code><br>Password: <code>${escHtml(r.password)}</code>`
+      : `Username: <code>${escHtml(r.user)}</code><br>This unit uses the password set when it was built (no per-device password on file).`;
+  } catch (err) {
+    out.textContent = errText(err);
+  }
+  out.hidden = false;
+  e.currentTarget.textContent = 'Hide';
+});
 
 /* ── Debug submenu (opened from Settings) ─────────────────── */
 const debugModal = document.getElementById('debug-modal');
@@ -3923,14 +3972,23 @@ async function runGraphicsBenchmark({ fromSetup = false } = {}) {
 
   const banner = document.getElementById('bench-banner');
   banner.hidden = false;
+  // A stray tap mid-run would open menus over the dashboard and skew the
+  // measurements — swallow all input until it's done (capture phase on
+  // window, ahead of every other listener).
+  const INPUT_EVENTS = ['pointerdown', 'pointerup', 'click', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'keydown', 'wheel', 'contextmenu'];
+  const blockInput = e => { e.preventDefault(); e.stopImmediatePropagation(); };
+  INPUT_EVENTS.forEach(t => window.addEventListener(t, blockInput, { capture: true, passive: false }));
   const runs = [];
   try {
     for (const [i, p] of plan.entries()) {
-      banner.textContent = `Benchmark ${i + 1}/${plan.length}: Glass ${p.glass} · Weather ${p.wx}` +
-        (p.wx === 'off' ? '' : ` · ${p.scene.label}`) + ' — please don\'t touch the screen';
+      banner.textContent = fromSetup
+        ? `Tuning the display for this screen (${i + 1} of ${plan.length}). This takes about 3 minutes. The screen is locked until it's done.`
+        : `Benchmark ${i + 1}/${plan.length}: Glass ${p.glass} · Weather ${p.wx}` +
+          (p.wx === 'off' ? '' : ` · ${p.scene.label}`) + ' — touch is locked until it\'s done';
       runs.push(await benchRunOne(p.glass, p.wx, p.scene));
     }
   } finally {
+    INPUT_EVENTS.forEach(t => window.removeEventListener(t, blockInput, { capture: true }));
     const restore = (key, val) => val == null ? localStorage.removeItem(key) : localStorage.setItem(key, val);
     restore('gfxGlass', saved.glass);
     restore('gfxWxQuality', saved.wx);

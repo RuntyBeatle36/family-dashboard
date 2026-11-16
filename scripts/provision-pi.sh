@@ -87,9 +87,16 @@ else
   echo "-- Voice model already present (or Piper unavailable), skipping --"
 fi
 
-# ── 5. Sudoers rule for the self-update flow + Exit to Terminal ─────
+# ── 5. Package helper + sudoers rule (self-update, Exit to Terminal) ──
+# The helper must be root-owned outside the (user-writable) repo, or the
+# sudo rule pointing at it would be meaningless.
+APT_HELPER=/usr/local/sbin/family-dashboard-apt
+if ! cmp -s "$REPO_DIR/system/family-dashboard-apt" "$APT_HELPER" 2>/dev/null; then
+  echo "-- Installing package helper --"
+  sudo install -o root -g root -m 755 "$REPO_DIR/system/family-dashboard-apt" "$APT_HELPER"
+fi
 SUDOERS_DEST="/etc/sudoers.d/dashboard-system-update"
-if [ ! -f "$SUDOERS_DEST" ]; then
+if ! sudo cmp -s "$REPO_DIR/system/dashboard-system-update.sudoers" "$SUDOERS_DEST" 2>/dev/null; then
   echo "-- Installing sudoers rule --"
   sudo install -m 440 "$REPO_DIR/system/dashboard-system-update.sudoers" "$SUDOERS_DEST"
   if ! sudo visudo -c -f "$SUDOERS_DEST" >/dev/null 2>&1; then
@@ -98,7 +105,15 @@ if [ ! -f "$SUDOERS_DEST" ]; then
     sudo rm -f "$SUDOERS_DEST"
   fi
 else
-  echo "-- Sudoers rule already installed, skipping --"
+  echo "-- Sudoers rule up to date, skipping --"
+fi
+
+# dashboard.service: installed here (by hand, as root) rather than by the
+# self-updater — see the note in system/dashboard-system-update.sudoers.
+if ! cmp -s "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service 2>/dev/null; then
+  echo "-- Installing dashboard.service --"
+  sudo install -o root -g root -m 644 "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service
+  sudo systemctl daemon-reload
 fi
 
 # ── 5b. polkit rule: Wi-Fi + time zone from the setup guide / Settings ──

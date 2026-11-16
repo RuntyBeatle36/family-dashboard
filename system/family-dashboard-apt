@@ -1,0 +1,27 @@
+#!/bin/sh
+# /usr/local/sbin/family-dashboard-apt — root-owned, installed by
+# scripts/provision-pi.sh. The ONLY package-installing command the dashboard
+# may run as root (see system/dashboard-system-update.sudoers).
+#
+# Installs Debian packages by NAME from the configured repositories, and
+# nothing else: every argument must look like a package name, so no apt
+# options (e.g. -o ...Pre-Invoke=<command>), no paths and no local .deb
+# files can get through. A bare `apt-get install -y *` sudo rule allows
+# all of those, which is the same as passwordless root.
+set -eu
+
+[ "$#" -ge 1 ] || { echo "usage: family-dashboard-apt PACKAGE..." >&2; exit 2; }
+[ "$#" -le 20 ] || { echo "family-dashboard-apt: too many packages" >&2; exit 2; }
+
+for pkg in "$@"; do
+  case "$pkg" in
+    -*|*/*) echo "family-dashboard-apt: refusing '$pkg' (not a package name)" >&2; exit 2 ;;
+  esac
+  if ! printf '%s' "$pkg" | grep -Eq '^[a-z0-9][a-z0-9+.-]{0,63}$'; then
+    echo "family-dashboard-apt: refusing '$pkg' (not a package name)" >&2
+    exit 2
+  fi
+done
+
+export DEBIAN_FRONTEND=noninteractive
+exec /usr/bin/apt-get install -y --no-install-recommends -- "$@"

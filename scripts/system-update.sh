@@ -5,9 +5,9 @@
 # changed, same as npm install already being run on every update
 # regardless of whether package.json changed.
 #
-# Needs the sudoers rules in /etc/sudoers.d/dashboard-system-update:
-# apt-get install, systemctl daemon-reload, and installing
-# system/dashboard.service into place. See README for the exact rules.
+# Needs the sudoers rule in /etc/sudoers.d/dashboard-system-update, which
+# allows only /usr/local/sbin/family-dashboard-apt (install packages by
+# name). See system/dashboard-system-update.sudoers.
 set -uo pipefail  # not -e: one failed step (e.g. a flaky apt mirror)
                   # shouldn't abort the whole script and skip the rest
 
@@ -19,19 +19,22 @@ if [ -f "$PACKAGES_FILE" ]; then
   PACKAGES=$(grep -vE '^\s*(#|$)' "$PACKAGES_FILE" || true)
   if [ -n "$PACKAGES" ]; then
     echo "system-update: installing packages: $PACKAGES"
-    sudo /usr/bin/apt-get install -y $PACKAGES || echo "system-update: apt-get install failed, continuing"
+    if [ -x /usr/local/sbin/family-dashboard-apt ]; then
+      sudo -n /usr/local/sbin/family-dashboard-apt $PACKAGES || echo "system-update: package install failed, continuing"
+    else
+      # Pi provisioned before the helper existed (older, broader sudoers rule)
+      sudo -n /usr/bin/apt-get install -y $PACKAGES || echo "system-update: apt-get install failed, continuing"
+    fi
   fi
 fi
 
 # ── systemd service file ─────────────────────────────────────
-if [ -f "$REPO_DIR/system/dashboard.service" ]; then
-  if ! cmp -s "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service 2>/dev/null; then
-    echo "system-update: dashboard.service changed, installing"
-    sudo /usr/bin/install -o root -g root -m 644 \
-      "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service \
-      && sudo /usr/bin/systemctl daemon-reload \
-      || echo "system-update: failed to install dashboard.service, continuing"
-  fi
+# Not installed from here any more: the repo is writable by this user, so
+# a sudo rule letting it copy the file into /etc/systemd/system would let
+# anything running as `user` define a root service. Just flag the change.
+if [ -f "$REPO_DIR/system/dashboard.service" ] && \
+   ! cmp -s "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service 2>/dev/null; then
+  echo "system-update: dashboard.service changed — run scripts/provision-pi.sh once to apply it"
 fi
 
 # ── Openbox kiosk autostart ──────────────────────────────────

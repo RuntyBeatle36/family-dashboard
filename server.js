@@ -797,6 +797,24 @@ app.post('/api/setup/reset', async (req, res) => {
   }
 });
 
+// Per-device login password (set on a plug-and-play unit's first boot by
+// system/family-dashboard-firstboot). Answered only for the unit's own
+// screen — loopback requests — never for other devices on the network.
+// (The owner's own Tailscale devices also arrive via loopback in
+// userspace mode, which is fine: that's the owner.)
+app.get('/api/device/password', (req, res) => {
+  const ip = req.socket.remoteAddress || '';
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) {
+    return res.status(403).json({ error: "Only shown on the dashboard's own screen." });
+  }
+  try {
+    const pw = fs.readFileSync(path.join(os.homedir(), '.device-password'), 'utf8').trim();
+    res.json({ user: os.userInfo().username, password: pw || null });
+  } catch {
+    res.json({ user: os.userInfo().username, password: null });
+  }
+});
+
 remoteAccess.listen();
 tailscale.startDaemon();
 

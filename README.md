@@ -69,11 +69,16 @@ provisioning; every later `git pull` reinstalls it automatically only if
 its content actually changed.
 
 **Sudoers rule** — `system/dashboard-system-update.sudoers`, installed to
-`/etc/sudoers.d/dashboard-system-update`. Grants passwordless access to
-exactly the handful of system commands the self-update flow and "Exit to
-Terminal" need (installing packages, reinstalling the service file,
-`systemctl daemon-reload`, killing the X session) — nothing broader.
-Without it, those actions prompt for a password that nobody's there to type.
+`/etc/sudoers.d/dashboard-system-update`. Grants passwordless access to just
+two commands: `/usr/local/sbin/family-dashboard-apt` (a root-owned helper
+that installs Debian packages **by name only**, refusing apt options, paths
+and `.deb` files, which a bare `apt-get install -y *` rule would allow and
+which would amount to root) and killing the X session for Exit to Terminal.
+`dashboard.service` is deliberately not installable by the app (the repo is
+user-writable); `provision-pi.sh` installs it, so service-file changes need
+that script re-run by hand. **Pis provisioned before this change keep the
+old, broader rule until `bash scripts/provision-pi.sh` (or `sudo bash
+scripts/harden-pi.sh`) is run once.**
 
 **GPU acceleration** (Pi 4/5, 2GB+) — the dashboard leans on
 `backdrop-filter: blur()` (glass panels) and a full-screen animated canvas.
@@ -157,6 +162,9 @@ its own unique device. No keyboard, SSH or network setup needed.
    Tailscale identity, saved Wi-Fi, SSH host keys and the machine ID (each
    copy regenerates its own), optionally your SSH keys + SSH itself, then
    powers off. **Don't boot this card again before copying it.**
+   Each copy also gets its **own random login password** on first boot (no
+   shared password across units). It's shown only on that unit's screen, in
+   Debug Options ▸ Device Login, and saved in `~/.device-password`.
 3. **Copy the card to an image file** on Windows with
    [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/):
    choose a file name like `family-dashboard.img`, then **Read**.

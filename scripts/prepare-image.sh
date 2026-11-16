@@ -13,7 +13,8 @@
 #     share one Tailscale device)
 #   - forgets saved Wi-Fi networks
 #   - removes SSH host keys and the machine ID, and installs a one-time
-#     boot step that regenerates them, so each copy gets its own
+#     boot step that regenerates them and sets a random login password, so
+#     each copy is its own device (no shared password across units)
 #   - optionally removes authorized SSH keys and turns SSH off
 #   - clears logs, shell history and backups, then powers off
 #
@@ -57,21 +58,24 @@ nmcli -t -f NAME,TYPE connection show | while IFS=: read -r name type; do
 done
 
 echo "-- Making each copy unique on first boot --"
+# family-dashboard-firstboot: new SSH host keys + a random per-device login
+# password (shown on that unit's screen in Debug Options ▸ Device Login)
+sudo install -o root -g root -m 755 "$REPO_DIR/system/family-dashboard-firstboot" /usr/local/sbin/family-dashboard-firstboot
 sudo tee /etc/systemd/system/family-dashboard-firstboot.service >/dev/null <<'UNIT'
 [Unit]
-Description=Family Dashboard: give this copy its own SSH host keys
-ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
-Before=ssh.service
+Description=Family Dashboard: make this copy its own device (SSH keys, password)
+Before=ssh.service dashboard.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/ssh-keygen -A
+ExecStart=/usr/local/sbin/family-dashboard-firstboot
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 sudo systemctl enable family-dashboard-firstboot.service >/dev/null
 sudo rm -f /etc/ssh/ssh_host_*
+rm -f "$HOME/.device-password"
 # An empty machine-id makes systemd generate a fresh one on next boot
 sudo truncate -s 0 /etc/machine-id
 sudo rm -f /var/lib/dbus/machine-id

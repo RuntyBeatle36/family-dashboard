@@ -188,11 +188,22 @@ for f in /etc/sudoers.d/*; do
   fi
 done
 
+APT_HELPER_SRC="$REPO_DIR/system/family-dashboard-apt"
+APT_HELPER_DEST=/usr/local/sbin/family-dashboard-apt
+if [ -f "$APT_HELPER_SRC" ]; then
+  if cmp -s "$APT_HELPER_SRC" "$APT_HELPER_DEST" && [ "$(stat -c '%U:%a' "$APT_HELPER_DEST")" = "root:755" ]; then
+    pass "package helper matches the repo and is root-owned"
+  else
+    act "Installing/repairing the package helper (root-owned, 755)"
+    install -o root -g root -m 755 "$APT_HELPER_SRC" "$APT_HELPER_DEST"
+  fi
+fi
+
 DASH_SUDOERS_SRC="$REPO_DIR/system/dashboard-system-update.sudoers"
 DASH_SUDOERS_DEST=/etc/sudoers.d/dashboard-system-update
 if [ -f "$DASH_SUDOERS_SRC" ]; then
   if [ -f "$DASH_SUDOERS_DEST" ] && cmp -s "$DASH_SUDOERS_SRC" "$DASH_SUDOERS_DEST"; then
-    pass "dashboard sudoers rule matches the repo (still scoped to just apt-get install / the service file install / daemon-reload / pkill Xorg)"
+    pass "dashboard sudoers rule matches the repo (scoped to the package-name-only helper + pkill Xorg)"
   else
     act "Installing/repairing the dashboard sudoers rule from the repo"
     install -m 440 "$DASH_SUDOERS_SRC" "$DASH_SUDOERS_DEST"
