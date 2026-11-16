@@ -104,6 +104,9 @@ async function status() {
     state:     st.BackendState,              // NeedsLogin | Starting | Running | Stopped …
     authUrl:   st.AuthURL || null,
     ip:        st.Self?.TailscaleIPs?.[0] || null,
+    // Absent once the owner turns off key expiry for this machine; while
+    // set, Tailscale signs the Pi out on that date unless renewed.
+    keyExpiry: st.Self?.KeyExpiry || null,
     dnsName,
     funnelOn,
     publicUrl: funnelOn && dnsName ? `https://${dnsName}/` : null,

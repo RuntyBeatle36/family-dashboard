@@ -240,21 +240,42 @@
    stretching the (flex-column) modal — it scrolls inside instead. */
 .bench-results .bench-scroll { overflow-x: auto; width: 0; min-width: 100%; }
 
-/* Settings ▸ Remote Access */
-.remote-status { font-size: 0.85rem; line-height: 1.5; margin-bottom: 0.5rem; overflow-wrap: anywhere; }
-.remote-status code, .remote-link code { user-select: all; }
-.remote-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
-.remote-actions:empty { display: none; }
-.remote-link { font-size: 0.85rem; margin-top: 0.5rem; overflow-wrap: anywhere; }
-.remote-link a { color: var(--accent); }
+/* Settings ▸ Remote Access (guided setup) */
+.remote-body { display: flex; flex-direction: column; gap: 0.6rem; }
+.remote-step { margin: 0; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.remote-title { margin: 0; font-size: 1.05rem; }
+.remote-body .settings-desc { margin: 0; }
+.remote-center { text-align: center; }
+.remote-small { font-size: 0.75rem; overflow-wrap: anywhere; }
+.remote-small a { color: var(--accent); }
+.remote-waiting { font-style: italic; }
+.remote-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.remote-center-row { justify-content: center; }
+/* White quiet zone around the code (the SVG has its own white background)
+   so it scans reliably on the dark theme too */
+.qr-box { width: 180px; margin: 0.25rem auto; padding: 6px; background: #fff; border-radius: 10px; line-height: 0; }
+.qr-box.qr-small { width: 140px; }
+.qr-box.qr-large { width: 220px; }
+.qr-box svg { width: 100%; height: auto; }
+.remote-steps { margin: 0; padding-left: 1.2rem; font-size: 0.85rem; line-height: 1.5; }
+.remote-ok, .remote-warn { padding: 0.6rem 0.75rem; border-radius: 10px; font-size: 0.9rem; }
+.remote-ok   { background: rgba(77, 216, 152, 0.14); }
+.remote-warn { background: rgba(255, 170, 60, 0.16); }
+.remote-error { margin: 0; color: var(--danger); font-size: 0.85rem; }
 .remote-code {
+  text-align: center;
   font-family: 'Consolas', 'SF Mono', 'Courier New', monospace;
   font-size: 1.8rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   user-select: all;
 }
-#share-link { width: 100%; }
+.remote-manage { border-top: 1px solid var(--glass-border); padding-top: 0.6rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.remote-details { font-size: 0.85rem; }
+.remote-details summary { cursor: pointer; color: var(--text-dim); padding: 0.3rem 0; }
+.remote-details[open] { display: flex; flex-direction: column; gap: 0.5rem; }
+.remote-warn-soft summary { color: inherit; }
+.remote-details code { user-select: all; overflow-wrap: anywhere; }
 
 /* Software-only dimming — sits above absolutely everything, including
    modals, so the whole screen dims consistently. pointer-events:none so

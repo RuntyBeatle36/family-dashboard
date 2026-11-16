@@ -2945,73 +2945,255 @@ document.getElementById('toggle-gfx-lightning').addEventListener('change', e => 
 });
 
 /* ── Remote Access submenu (opened from Settings) ─────────── */
-// Polls /api/remote/status while open, so Tailscale sign-in and Funnel
-// approval (both finished in a browser elsewhere) show up on their own.
+// A guided setup for a non-technical owner, one step per screen, then a
+// "share & manage" view once the family link is on. Which screen shows is
+// derived entirely from /api/remote/status (polled while open), so steps
+// finished on a phone — Tailscale sign-in, allowing public links, turning
+// off key expiry — advance this screen by themselves. Every link is also a
+// QR code, since the wall screen itself can't usefully open web pages.
 const remoteModal = document.getElementById('remote-modal');
-let remotePollId = null;
-let remoteState  = null;
+const remoteBody  = document.getElementById('remote-body');
+const TS_MACHINES_URL = 'https://login.tailscale.com/admin/machines';
+let remotePollId  = null;
+let remoteStatus  = null;
+let remoteLastHtml = '';
+// Transient UI state that isn't part of the server status
+const remoteUi = { loginUrl: null, approveUrl: null, busy: null, expirySkipped: false, error: '' };
 
-function remoteLinkHtml(text, url) {
-  return `${escHtml(text)}<br><a href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>`;
+function qrSvg(text, cls = '') {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  return `<div class="qr-box ${cls}">${qr.createSvgTag({ cellSize: 4, margin: 4, scalable: true })}</div>`;
 }
 
-function renderRemote(s) {
-  remoteState = s;
+function scanBlock(url, caption) {
+  return `${qrSvg(url)}
+    <p class="settings-desc remote-center">${caption}</p>
+    <p class="settings-desc remote-center remote-small">Or open: <a href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(url)}</a></p>`;
+}
+
+const stepHead = (n, title) =>
+  `<p class="remote-step">Step ${n} of 3</p><h4 class="remote-title">${title}</h4>`;
+const waitingNote = '<p class="settings-desc remote-center remote-waiting">This screen moves on by itself when you\'re done.</p>';
+const btn = (action, label, cls = 'btn-ghost') =>
+  `<button class="btn ${cls} btn-sm" data-action="${action}" ${remoteUi.busy ? 'disabled' : ''}>${remoteUi.busy === action ? 'One moment…' : label}</button>`;
+
+function expiryInstructions() {
+  return `${qrSvg(TS_MACHINES_URL, 'qr-small')}
+    <ol class="remote-steps">
+      <li>Scan this with your phone's camera (sign in again if asked).</li>
+      <li>Find <strong>family-dashboard</strong> in the list and tap the <strong>⋯</strong> next to it.</li>
+      <li>Tap <strong>Disable key expiry</strong>.</li>
+    </ol>`;
+}
+
+function remoteScreen(s) {
   const ts = s.tailscale || {};
-  const connected = ts.state === 'Running';
-  const statusEl = document.getElementById('ts-status');
-  const loginBtn = document.getElementById('ts-login-btn');
-  const loginLink = document.getElementById('ts-login-link');
+  if (!ts.installed) return 'not-installed';
+  if (!ts.running || ['NoState', 'Starting'].includes(ts.state)) return 'starting';
+  if (ts.state !== 'Running') return s.code ? 'reconnect' : 'connect';
+  if (s.code && ts.funnelOn) return 'live';
+  if (ts.keyExpiry && !remoteUi.expirySkipped) return 'expiry';
+  return 'link';
+}
 
-  if (!ts.installed) {
-    statusEl.textContent = 'Not installed yet. It installs automatically with the next update (tap 🔄 Update available, then Update Now).';
-  } else if (!ts.running) {
-    statusEl.textContent = 'Starting…';
-  } else if (connected) {
-    const host = ts.dnsName ? ts.dnsName.split('.')[0] : 'family-dashboard';
-    statusEl.innerHTML = `✅ Connected (${escHtml(ts.ip || '')}).<br>` +
-      `SSH from any of your Tailscale devices: <code>ssh user@${escHtml(host)}</code>`;
-  } else {
-    statusEl.textContent = 'Not signed in.';
+function renderRemote() {
+  const s  = remoteStatus;
+  const ts = s.tailscale || {};
+  const loginUrl = remoteUi.loginUrl || ts.authUrl;
+  let html;
+
+  switch (remoteScreen(s)) {
+    case 'not-installed':
+      html = `<h4 class="remote-title">Almost ready</h4>
+        <p class="settings-desc">This needs the latest update first. Tap <strong>🔄 Update available</strong>
+        at the top of the screen, then <strong>Update Now</strong>. When the dashboard comes back, open this again.</p>`;
+      break;
+
+    case 'starting':
+      html = `<h4 class="remote-title">Getting ready…</h4>
+        <p class="settings-desc">This takes a few seconds.</p>`;
+      break;
+
+    case 'reconnect':
+    case 'connect': {
+      const reconnect = remoteScreen(s) === 'reconnect';
+      html = (reconnect
+        ? `<div class="remote-warn">⚠️ <strong>The family link is paused.</strong> This dashboard needs to sign in to Tailscale again. Family members can't open the calendar until you do.</div>
+           <h4 class="remote-title">Sign this dashboard back in</h4>`
+        : `${stepHead(1, 'Connect this dashboard')}
+           <p class="settings-desc">This uses a free service called <strong>Tailscale</strong> to reach the
+           calendar safely from anywhere. You sign in once, with your Google, Apple or Microsoft
+           account. There's no new password to remember.</p>`)
+        + (loginUrl
+          ? scanBlock(loginUrl, 'Scan this with your phone\'s camera, then sign in.') + waitingNote
+          : `<div class="remote-actions">${btn('login', 'Get sign-in code', 'btn-accent')}</div>`);
+      break;
+    }
+
+    case 'expiry':
+      html = `${stepHead(2, 'Keep it connected')}
+        <p class="settings-desc">Tailscale normally makes a device sign in again every few months.
+        Turn that off for this dashboard so the family link never stops working:</p>
+        ${expiryInstructions()}
+        ${waitingNote}
+        <div class="remote-actions">${btn('skip-expiry', 'Skip for now')}</div>`;
+      break;
+
+    case 'link':
+      html = `${stepHead(3, 'Turn on the family link')}
+        <p class="settings-desc">This makes a private link to <strong>just the calendar</strong>. Nothing
+        else on this dashboard can be reached from it, and it only works with your family code.</p>`
+        + (remoteUi.approveUrl
+          ? `<p class="settings-desc"><strong>One more OK:</strong> Tailscale asks you once to allow a link
+             that works for people outside your account.</p>
+             ${scanBlock(remoteUi.approveUrl, 'Scan this, tap <strong>Enable</strong>, then come back.')}${waitingNote}`
+          : `<div class="remote-actions">${btn('enable', 'Turn on family link', 'btn-accent')}</div>`);
+      break;
+
+    case 'live': {
+      const link = `${ts.publicUrl}#code=${s.code}`;
+      html = `<div class="remote-ok">✅ <strong>The family link is on.</strong></div>
+        <p class="settings-desc">Family members scan this with their phone's camera. It opens the calendar
+        already signed in. (Tip: they can use "Add to Home Screen" to make it an app icon.)</p>
+        ${qrSvg(link, 'qr-large')}
+        <div class="remote-actions remote-center-row">
+          ${btn('copy', 'Copy link')}
+          ${navigator.share ? btn('share', 'Share…') : ''}
+        </div>
+        <p class="settings-desc remote-center">Or go to <strong>${escHtml(ts.publicUrl.replace(/^https:\/\//, '').replace(/\/$/, ''))}</strong>
+        and enter the family code:</p>
+        <div class="remote-code">${escHtml(s.code)}</div>
+        ${ts.keyExpiry ? `<details class="remote-details remote-warn-soft">
+          <summary>⚠️ This will stop working on ${escHtml(new Date(ts.keyExpiry).toLocaleDateString())} unless you change one setting</summary>
+          <p class="settings-desc">Tailscale will ask this dashboard to sign in again on that date. To stop that:</p>
+          ${expiryInstructions()}
+        </details>` : ''}
+        <div class="remote-manage">
+          <p class="settings-desc"><strong>Someone shouldn't have the code anymore?</strong> Make a new one.
+          Everyone will need the new code or link.</p>
+          <div class="remote-actions">
+            ${btn('reset', 'Make a new code')}
+            ${btn('off', 'Turn off family link', 'btn-danger-outline')}
+          </div>
+        </div>
+        <details class="remote-details">
+          <summary>For the technical person</summary>
+          <p class="settings-desc">Tailscale address: <code>${escHtml(ts.ip || '')}</code><br>
+          SSH from your own Tailscale devices: <code>ssh user@family-dashboard</code><br>
+          Full dashboard: <code>http://family-dashboard:3000</code><br>
+          The public link serves only the calendar (remote.js, port 3001).</p>
+        </details>`;
+      break;
+    }
   }
-  loginBtn.hidden = !(ts.installed && ts.running && !connected);
-  if (ts.authUrl && !connected) {
-    loginLink.innerHTML = remoteLinkHtml('Open this link to sign in (one time only):', ts.authUrl);
-    loginLink.hidden = false;
-  } else if (connected) {
-    loginLink.hidden = true;
-  }
 
-  document.getElementById('remote-code-off').hidden = !!s.code;
-  document.getElementById('remote-code-on').hidden  = !s.code;
-  document.getElementById('remote-code').textContent = s.code || '';
-
-  const ready = connected && !!s.code;
-  const desc  = document.getElementById('funnel-desc');
-  document.getElementById('funnel-on-btn').hidden = !ready || ts.funnelOn;
-  document.getElementById('funnel-share').hidden  = !ready || !ts.funnelOn;
-  if (!ready) {
-    desc.textContent = 'Needs steps 1 and 2 first.';
-  } else if (!ts.funnelOn) {
-    desc.textContent = 'Creates a private https:// link that only serves the calendar. Nothing else on this Pi is exposed.';
-  } else {
-    desc.textContent = 'Send this to family. Opening it signs them straight in.';
-    document.getElementById('funnel-approve').hidden = true;
-    const link = `${ts.publicUrl}#code=${s.code}`;
-    document.getElementById('share-link').value = link;
-    document.getElementById('public-url').textContent = ts.publicUrl;
-    document.getElementById('share-native-btn').hidden = !navigator.share;
+  if (remoteUi.error) html += `<p class="remote-error">${escHtml(remoteUi.error)}</p>`;
+  // Re-render only on change — polling every 3s would otherwise reset
+  // half-tapped "tap again" buttons and redraw the QR codes needlessly.
+  if (html !== remoteLastHtml) {
+    remoteBody.innerHTML = html;
+    remoteLastHtml = html;
   }
 }
 
 async function refreshRemote() {
-  try { renderRemote(await api('GET', '/api/remote/status')); }
-  catch (err) { document.getElementById('ts-status').textContent = 'Could not check status: ' + err.message; }
+  try {
+    remoteStatus = await api('GET', '/api/remote/status');
+    // A step's link is only needed until that step is done
+    if (remoteStatus.tailscale?.state === 'Running') remoteUi.loginUrl = null;
+    if (remoteStatus.tailscale?.funnelOn) remoteUi.approveUrl = null;
+    renderRemote();
+  } catch (err) {
+    remoteBody.innerHTML = `<p class="remote-error">Couldn't check: ${escHtml(err.message)}</p>`;
+    remoteLastHtml = '';
+  }
 }
+
+async function remoteAction(action, fn) {
+  remoteUi.busy = action;
+  remoteUi.error = '';
+  renderRemote();
+  try { await fn(); }
+  catch (err) { remoteUi.error = err.message; }
+  remoteUi.busy = null;
+  await refreshRemote();
+}
+
+// Two taps for the actions that cut family members off
+let remoteArmed = null;
+function confirmTap(el, confirmLabel) {
+  if (remoteArmed === el) { remoteArmed = null; return true; }
+  remoteArmed = el;
+  const label = el.textContent;
+  el.textContent = confirmLabel;
+  setTimeout(() => { if (remoteArmed === el) { remoteArmed = null; el.textContent = label; } }, 4000);
+  return false;
+}
+
+remoteBody.addEventListener('click', async e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const s = remoteStatus;
+
+  switch (el.dataset.action) {
+    case 'login':
+      return remoteAction('login', async () => {
+        const r = await api('POST', '/api/remote/tailscale-login');
+        if (r.url) remoteUi.loginUrl = r.url;
+        else if (!r.done) throw new Error('Couldn\'t get a sign-in code. Check the internet connection and try again.');
+      });
+
+    case 'skip-expiry':
+      remoteUi.expirySkipped = true;
+      return renderRemote();
+
+    case 'enable':
+      return remoteAction('enable', async () => {
+        if (!s.code) await api('POST', '/api/remote/code');
+        const r = await api('POST', '/api/remote/funnel', { on: true });
+        if (r.url) remoteUi.approveUrl = r.url;
+        else if (!r.done) throw new Error('Couldn\'t turn on the link. Check the internet connection and try again.');
+      });
+
+    case 'copy': {
+      const link = `${s.tailscale.publicUrl}#code=${s.code}`;
+      // navigator.clipboard needs https/localhost — over plain http from a
+      // phone on home Wi-Fi, fall back to the legacy copy command.
+      try { await navigator.clipboard.writeText(link); }
+      catch {
+        const t = Object.assign(document.createElement('textarea'), { value: link });
+        document.body.append(t); t.select();
+        document.execCommand('copy'); t.remove();
+      }
+      return showToast('Link copied.', 'success');
+    }
+
+    case 'share':
+      return navigator.share({ title: 'Family Calendar', url: `${s.tailscale.publicUrl}#code=${s.code}` }).catch(() => {});
+
+    case 'reset':
+      if (!confirmTap(el, 'Tap again to confirm')) return;
+      return remoteAction('reset', async () => {
+        await api('POST', '/api/remote/code');
+        showToast('New code made. Share the new link with your family.', 'success');
+      });
+
+    case 'off':
+      if (!confirmTap(el, 'Tap again to turn off')) return;
+      return remoteAction('off', async () => {
+        await api('DELETE', '/api/remote/code');
+        showToast('Family link turned off.', 'success');
+      });
+  }
+});
 
 document.getElementById('remote-open-btn').addEventListener('click', () => {
   settingsModal.hidden = true;
   remoteModal.hidden = false;
+  remoteUi.error = '';
+  remoteLastHtml = '';
   refreshRemote();
   remotePollId = setInterval(refreshRemote, 3000);
 });
@@ -3024,117 +3206,6 @@ function closeRemoteModal() {
 }
 document.getElementById('remote-close').addEventListener('click', closeRemoteModal);
 remoteModal.addEventListener('click', e => { if (e.target === remoteModal) closeRemoteModal(); });
-
-document.getElementById('ts-login-btn').addEventListener('click', async e => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = 'Getting sign-in link…';
-  try {
-    const r = await api('POST', '/api/remote/tailscale-login');
-    const el = document.getElementById('ts-login-link');
-    if (r.url) {
-      el.innerHTML = remoteLinkHtml('Open this link to sign in (one time only):', r.url);
-      el.hidden = false;
-    } else if (!r.done) {
-      showError('Tailscale sign-in failed: ' + (r.output || 'unknown error'));
-    }
-    refreshRemote();
-  } catch (err) {
-    showError('Tailscale sign-in failed: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Sign in to Tailscale';
-  }
-});
-
-async function newRemoteCode() {
-  try {
-    await api('POST', '/api/remote/code');
-    refreshRemote();
-  } catch (err) { showError('Could not create a code: ' + err.message); }
-}
-document.getElementById('remote-enable-btn').addEventListener('click', newRemoteCode);
-
-// Two taps for the actions that sign everyone out, like Exit to Terminal
-function armButton(btn, confirmText, action) {
-  const label = btn.textContent;
-  let armed = false, timer = null;
-  btn.addEventListener('click', async () => {
-    if (!armed) {
-      armed = true;
-      btn.textContent = confirmText;
-      timer = setTimeout(() => { armed = false; btn.textContent = label; }, 4000);
-      return;
-    }
-    clearTimeout(timer);
-    armed = false;
-    btn.textContent = label;
-    await action();
-  });
-}
-
-armButton(document.getElementById('remote-reset-btn'), 'Tap again: signs everyone out', async () => {
-  await newRemoteCode();
-  showToast('New code created. Everyone needs the new code or link.', 'success');
-});
-
-armButton(document.getElementById('remote-disable-btn'), 'Tap again to turn off', async () => {
-  try {
-    await api('DELETE', '/api/remote/code');
-    showToast('Remote access turned off.', 'success');
-    refreshRemote();
-  } catch (err) { showError('Could not turn off remote access: ' + err.message); }
-});
-
-document.getElementById('funnel-on-btn').addEventListener('click', async e => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = 'Creating link…';
-  try {
-    const r = await api('POST', '/api/remote/funnel', { on: true });
-    const el = document.getElementById('funnel-approve');
-    if (r.url) {
-      // First time only: Tailscale asks the account owner to allow public links
-      el.innerHTML = remoteLinkHtml('Tailscale needs you to allow public links once. Open this, approve, and the link appears here:', r.url);
-      el.hidden = false;
-    } else if (!r.done) {
-      showError('Could not create the link: ' + (r.output || 'unknown error'));
-    }
-    refreshRemote();
-  } catch (err) {
-    showError('Could not create the link: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Create public link';
-  }
-});
-
-armButton(document.getElementById('funnel-off-btn'), 'Tap again to remove', async () => {
-  try {
-    await api('POST', '/api/remote/funnel', { on: false });
-    refreshRemote();
-  } catch (err) { showError('Could not remove the link: ' + err.message); }
-});
-
-// navigator.clipboard only exists on https/localhost — over plain http
-// from a phone on home Wi-Fi, fall back to selecting the text.
-document.getElementById('share-copy-btn').addEventListener('click', async () => {
-  const input = document.getElementById('share-link');
-  try {
-    await navigator.clipboard.writeText(input.value);
-    showToast('Link copied.', 'success');
-  } catch {
-    input.focus();
-    input.select();
-    const ok = document.execCommand && document.execCommand('copy');
-    showToast(ok ? 'Link copied.' : 'Link selected. Copy it from the box.', 'success');
-  }
-});
-document.getElementById('share-link').addEventListener('focus', e => e.target.select());
-
-document.getElementById('share-native-btn').addEventListener('click', () => {
-  navigator.share({ title: 'Family Calendar', url: document.getElementById('share-link').value }).catch(() => {});
-});
 
 /* ── Debug submenu (opened from Settings) ─────────────────── */
 const debugModal = document.getElementById('debug-modal');

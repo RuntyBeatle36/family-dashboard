@@ -124,21 +124,25 @@ Graphics Benchmark. If the screen stays black after switching, SSH in and run
 ## Remote access
 
 Family members can view, add and edit **calendar events only** from
-anywhere, using a shared family code. You get SSH to the Pi from anywhere
-too. Everything is set up from **Settings ▸ Remote Access**, ideally on your
-phone on home Wi-Fi (`http://<PI_IP>:3000`), since a couple of steps open a
-Tailscale web page:
+anywhere: they scan a QR code or open a link, with no app or account. You
+get SSH to the Pi from anywhere too.
 
-1. **Connect to Tailscale.** Tap *Sign in to Tailscale* and open the link
-   (one time). Use a free Tailscale account; this Pi joins it as
-   `family-dashboard`.
-2. **Turn on remote access.** This creates the family code (e.g.
-   `K7QM-4XPD`). *Reset code* makes a new one and signs everyone out.
-3. **Create the public link.** The first time, Tailscale asks you to allow
-   public links (Funnel) for your account; approve it, and the link appears.
-   Share the sign-in link: it has the code built in, so opening it signs
-   family straight in. They stay signed in as long as they open it at
-   least every month or two.
+Setup is a guided, step-by-step screen written for non-technical owners:
+**Settings ▸ Use the Calendar Away From Home ▸ Set Up / Manage**. It works
+on the wall screen itself; every link is shown as a QR code to scan with a
+phone, and each step advances by itself once it's done on the phone:
+
+1. **Connect this dashboard.** Scan, then sign in to Tailscale with a
+   Google, Apple or Microsoft account (creates a free account; one time).
+2. **Keep it connected.** Turn off Tailscale's key expiry for the Pi, so it
+   never has to sign in again (otherwise the family link stops after ~6 months;
+   the manage screen shows a reminder with the date if this was skipped).
+3. **Turn on the family link.** Creates the family code and the public link.
+   The first time, Tailscale asks once to allow public links.
+
+Then the screen shows a QR code family members scan (it signs them straight
+in), the link to copy/share, and the code (e.g. `K7QM-4XPD`). *Make a new
+code* signs everyone out; *Turn off family link* takes it down.
 
 How it works:
 
