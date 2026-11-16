@@ -2,6 +2,12 @@
    Family Dashboard — app.js
    ═══════════════════════════════════════════════════════════ */
 
+/* ── Kiosk flag ───────────────────────────────────────────── */
+// The Wayland kiosk (system/labwc-autostart) opens /?kiosk — there's no
+// unclutter on Wayland, so the page hides the cursor itself. Phones and
+// other browsers never pass it, so their cursor is unaffected.
+if (new URLSearchParams(location.search).has('kiosk')) document.documentElement.classList.add('kiosk');
+
 /* ── Calendar constants ───────────────────────────────────── */
 const CAL_START  = 0;       // midnight — full 24-hour view
 const CAL_END    = 24;      // 24 rows (hours 0–23)

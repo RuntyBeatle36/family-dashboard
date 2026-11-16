@@ -1,0 +1,18 @@
+# Wayland (labwc) counterpart of system/openbox-autostart — installed to
+# ~/.config/labwc/autostart by scripts/kiosk-display.sh, only on a Pi that's
+# been switched to the Wayland kiosk.
+#
+# No screen-blanking setup needed: on Raspberry Pi OS, blanking under labwc
+# comes from swayidle in the system-wide /etc/xdg/labwc/autostart, which
+# this file replaces (labwc runs only the first autostart it finds).
+# No unclutter either (it's X11-only) — the ?kiosk URL flag makes the page
+# hide the cursor itself.
+
+# Not backgrounded: set the mode before Chromium opens, so it doesn't
+# start at the wrong size and immediately re-layout.
+wlr-randr --output HDMI-A-1 --mode 1920x1080@60Hz
+
+# Same flags as the Openbox kiosk, plus --ozone-platform=wayland so Chromium
+# talks to labwc directly instead of through the XWayland compatibility layer.
+chromium --ozone-platform=wayland --noerrdialogs --disable-infobars --kiosk --disable-dev-shm-usage --disable-gpu-sandbox --enable-gpu-rasterization --enable-zero-copy --disable-software-rasterizer --autoplay-policy=no-user-gesture-required 'http://localhost:3000/?kiosk' &
+amixer cset numid=3 2 &

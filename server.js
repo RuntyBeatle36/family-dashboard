@@ -574,10 +574,19 @@ app.post('/api/update-apply', async (req, res) => {
 // not a normal-use feature. The autologin + startx chain in ~/.profile is
 // a one-shot guarded check (not a loop), so this doesn't relaunch itself;
 // a reboot brings the kiosk back the normal way.
+//
+// On a Pi switched to Wayland (scripts/kiosk-display.sh) the session is
+// labwc instead — it runs as this same user, so stopping it needs no sudo.
+// pkill exits 1 when nothing matched, which means we're on X11.
 app.post('/api/exit-kiosk', (req, res) => {
-  execFile('sudo', ['/usr/bin/pkill', '-f', '/usr/lib/xorg/Xorg'], { timeout: 5000 }, (err) => {
+  const done = (err) => {
     if (err) return res.status(500).json({ error: 'failed', detail: err.message });
     res.json({ ok: true });
+  };
+  execFile('pkill', ['-x', 'labwc'], { timeout: 5000 }, (err) => {
+    if (!err) return done();
+    if (err.code !== 1) return done(err);
+    execFile('sudo', ['/usr/bin/pkill', '-f', '/usr/lib/xorg/Xorg'], { timeout: 5000 }, done);
   });
 });
 

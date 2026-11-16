@@ -95,6 +95,30 @@ tap, since kiosk mode never gets an initial user gesture the way a normal
 browser tab would), disables screen blanking/DPMS, hides the mouse cursor
 via `unclutter`, and sets the display resolution.
 
+### Optional: Wayland kiosk (recommended on Pi 4/5)
+
+By default the kiosk runs Chromium on X11 + Openbox. On a Pi 4/5 it can
+instead run on Wayland under `labwc` (the compositor Raspberry Pi OS itself
+now defaults to), where Chromium composites straight to the screen through
+the GPU rather than through the X server — usually smoother glass blur and
+weather animation at lower CPU. Same app and same Chromium flags; only the
+display stack underneath changes. Run by hand on the Pi:
+
+```bash
+bash scripts/kiosk-display.sh wayland   # then: sudo reboot
+bash scripts/kiosk-display.sh status
+bash scripts/kiosk-display.sh x11       # switch back, then reboot
+```
+
+It installs `labwc` + `wlr-randr`, installs `system/labwc-autostart` to
+`~/.config/labwc/autostart` (the Wayland counterpart of the Openbox
+autostart; kept in sync by the self-updater from then on), and swaps the
+one-shot `startx` in your login profile for an equivalent one-shot `labwc`
+(backing the profile up to `*.dashboard-bak` first). Exit to Terminal works
+in both modes. Compare before/after with Settings ▸ Debug Options ▸
+Graphics Benchmark. If the screen stays black after switching, SSH in and run
+`bash scripts/kiosk-display.sh x11 && sudo reboot`.
+
 ---
 
 ## Security check-up

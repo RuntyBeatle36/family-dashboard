@@ -279,6 +279,9 @@ html {
   zoom: var(--text-scale, 1);
 }
 
+/* Wayland kiosk (/?kiosk) — stands in for unclutter, which is X11-only */
+html.kiosk, html.kiosk * { cursor: none !important; }
+
 body {
   display: flex;
   flex-direction: column;

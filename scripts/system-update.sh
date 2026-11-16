@@ -44,4 +44,14 @@ if [ -f "$REPO_DIR/system/openbox-autostart" ]; then
   fi
 fi
 
+# ── labwc (Wayland) kiosk autostart ──────────────────────────
+# Only on a Pi switched to Wayland via scripts/kiosk-display.sh (which is
+# what creates this file) — an X11/Openbox Pi never gets one.
+if [ -f "$REPO_DIR/system/labwc-autostart" ] && [ -f "$HOME/.config/labwc/autostart" ]; then
+  if ! cmp -s "$REPO_DIR/system/labwc-autostart" "$HOME/.config/labwc/autostart"; then
+    echo "system-update: labwc autostart changed, installing"
+    cp "$REPO_DIR/system/labwc-autostart" "$HOME/.config/labwc/autostart" || echo "system-update: failed to install labwc autostart, continuing"
+  fi
+fi
+
 echo "system-update: done"
