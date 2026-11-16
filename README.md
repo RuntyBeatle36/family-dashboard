@@ -134,11 +134,13 @@ phone, and each step advances by itself once it's done on the phone:
 
 1. **Connect this dashboard.** Scan, then sign in to Tailscale with a
    Google, Apple or Microsoft account (creates a free account; one time).
-2. **Keep it connected.** Turn off Tailscale's key expiry for the Pi, so it
-   never has to sign in again (otherwise the family link stops after ~6 months;
-   the manage screen shows a reminder with the date if this was skipped).
-3. **Turn on the family link.** Creates the family code and the public link.
+2. **Turn on the family link.** Creates the family code and the public link.
    The first time, Tailscale asks once to allow public links.
+3. *(Optional, shown afterwards)* **Never sign in again.** Turn off
+   Tailscale's key expiry for the Pi. If skipped, Tailscale signs the Pi out
+   about every 6 months; an amber badge on the main screen appears two weeks
+   before (and if the link is ever paused), and tapping it walks through the
+   two-tap re-sign-in.
 
 Then the screen shows a QR code family members scan (it signs them straight
 in), the link to copy/share, and the code (e.g. `K7QM-4XPD`). *Make a new

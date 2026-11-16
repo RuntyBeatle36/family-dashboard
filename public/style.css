@@ -274,7 +274,20 @@
 .remote-details { font-size: 0.85rem; }
 .remote-details summary { cursor: pointer; color: var(--text-dim); padding: 0.3rem 0; }
 .remote-details[open] { display: flex; flex-direction: column; gap: 0.5rem; }
-.remote-warn-soft summary { color: inherit; }
+.remote-optional { border: 1px dashed var(--glass-border); border-radius: 10px; padding: 0.4rem 0.7rem; }
+.remote-optional summary { color: inherit; }
+.remote-tag {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  margin-right: 0.3rem;
+  border-radius: 99px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  border: 1px solid var(--glass-border);
+}
 .remote-details code { user-select: all; overflow-wrap: anywhere; }
 
 /* Software-only dimming — sits above absolutely everything, including
@@ -647,6 +660,7 @@ body {
 
 .update-badge {
   display: inline-flex;
+  align-self: center; /* .top-bar stretches its items to full height — a pill shouldn't */
   align-items: center;
   gap: 0.35rem;
   padding: 0.3rem 0.65rem;
@@ -661,6 +675,17 @@ body {
 }
 .update-badge[hidden] { display: none; }
 .update-badge:hover { filter: brightness(1.15); }
+/* Same pill in the connectivity badge's amber — needs the owner, not "new stuff" */
+.remote-badge {
+  color: #ffb648;
+  background: rgba(255, 182, 72, 0.14);
+  border-color: rgba(255, 182, 72, 0.35);
+}
+[data-theme="light"] .remote-badge {
+  color: #8a4f00; /* the dark-theme amber is unreadable on the light sky */
+  background: rgba(255, 182, 72, 0.32);
+  border-color: rgba(176, 102, 0, 0.45);
+}
 
 .update-list {
   list-style: none;

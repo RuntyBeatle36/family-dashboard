@@ -2946,7 +2946,10 @@ document.getElementById('toggle-gfx-lightning').addEventListener('change', e => 
 
 /* ── Remote Access submenu (opened from Settings) ─────────── */
 // A guided setup for a non-technical owner, one step per screen, then a
-// "share & manage" view once the family link is on. Which screen shows is
+// "share & manage" view once the family link is on. Only two steps are
+// required; turning off Tailscale key expiry is offered afterwards as a
+// clearly optional extra (skipping it means a quick re-sign-in about twice
+// a year, which the main-screen badge below gives advance warning of). Which screen shows is
 // derived entirely from /api/remote/status (polled while open), so steps
 // finished on a phone — Tailscale sign-in, allowing public links, turning
 // off key expiry — advance this screen by themselves. Every link is also a
@@ -2958,7 +2961,7 @@ let remotePollId  = null;
 let remoteStatus  = null;
 let remoteLastHtml = '';
 // Transient UI state that isn't part of the server status
-const remoteUi = { loginUrl: null, approveUrl: null, busy: null, expirySkipped: false, error: '' };
+const remoteUi = { loginUrl: null, approveUrl: null, busy: null, error: '' };
 
 function qrSvg(text, cls = '') {
   const qr = qrcode(0, 'M');
@@ -2974,7 +2977,7 @@ function scanBlock(url, caption) {
 }
 
 const stepHead = (n, title) =>
-  `<p class="remote-step">Step ${n} of 3</p><h4 class="remote-title">${title}</h4>`;
+  `<p class="remote-step">Step ${n} of 2</p><h4 class="remote-title">${title}</h4>`;
 const waitingNote = '<p class="settings-desc remote-center remote-waiting">This screen moves on by itself when you\'re done.</p>';
 const btn = (action, label, cls = 'btn-ghost') =>
   `<button class="btn ${cls} btn-sm" data-action="${action}" ${remoteUi.busy ? 'disabled' : ''}>${remoteUi.busy === action ? 'One moment…' : label}</button>`;
@@ -2993,9 +2996,7 @@ function remoteScreen(s) {
   if (!ts.installed) return 'not-installed';
   if (!ts.running || ['NoState', 'Starting'].includes(ts.state)) return 'starting';
   if (ts.state !== 'Running') return s.code ? 'reconnect' : 'connect';
-  if (s.code && ts.funnelOn) return 'live';
-  if (ts.keyExpiry && !remoteUi.expirySkipped) return 'expiry';
-  return 'link';
+  return s.code && ts.funnelOn ? 'live' : 'link';
 }
 
 function renderRemote() {
@@ -3032,17 +3033,8 @@ function renderRemote() {
       break;
     }
 
-    case 'expiry':
-      html = `${stepHead(2, 'Keep it connected')}
-        <p class="settings-desc">Tailscale normally makes a device sign in again every few months.
-        Turn that off for this dashboard so the family link never stops working:</p>
-        ${expiryInstructions()}
-        ${waitingNote}
-        <div class="remote-actions">${btn('skip-expiry', 'Skip for now')}</div>`;
-      break;
-
     case 'link':
-      html = `${stepHead(3, 'Turn on the family link')}
+      html = `${stepHead(2, 'Turn on the family link')}
         <p class="settings-desc">This makes a private link to <strong>just the calendar</strong>. Nothing
         else on this dashboard can be reached from it, and it only works with your family code.</p>`
         + (remoteUi.approveUrl
@@ -3065,9 +3057,13 @@ function renderRemote() {
         <p class="settings-desc remote-center">Or go to <strong>${escHtml(ts.publicUrl.replace(/^https:\/\//, '').replace(/\/$/, ''))}</strong>
         and enter the family code:</p>
         <div class="remote-code">${escHtml(s.code)}</div>
-        ${ts.keyExpiry ? `<details class="remote-details remote-warn-soft">
-          <summary>⚠️ This will stop working on ${escHtml(new Date(ts.keyExpiry).toLocaleDateString())} unless you change one setting</summary>
-          <p class="settings-desc">Tailscale will ask this dashboard to sign in again on that date. To stop that:</p>
+        ${ts.keyExpiry ? `<details class="remote-details remote-optional">
+          <summary><span class="remote-tag">Optional</span> Never sign in again (about 1 minute)</summary>
+          <p class="settings-desc">Tailscale asks this dashboard to sign in again about every 6 months.
+          The next time is <strong>${escHtml(new Date(ts.keyExpiry).toLocaleDateString())}</strong>.
+          If you skip this, that's fine: a reminder appears at the top of the screen two weeks before,
+          and signing back in takes two taps.</p>
+          <p class="settings-desc">To turn the re-sign-in off for good:</p>
           ${expiryInstructions()}
         </details>` : ''}
         <div class="remote-manage">
@@ -3145,10 +3141,6 @@ remoteBody.addEventListener('click', async e => {
         else if (!r.done) throw new Error('Couldn\'t get a sign-in code. Check the internet connection and try again.');
       });
 
-    case 'skip-expiry':
-      remoteUi.expirySkipped = true;
-      return renderRemote();
-
     case 'enable':
       return remoteAction('enable', async () => {
         if (!s.code) await api('POST', '/api/remote/code');
@@ -3203,9 +3195,36 @@ function closeRemoteModal() {
   remotePollId = null;
   remoteModal.hidden = true;
   settingsModal.hidden = false;
+  checkRemoteHealth();
 }
 document.getElementById('remote-close').addEventListener('click', closeRemoteModal);
 remoteModal.addEventListener('click', e => { if (e.target === remoteModal) closeRemoteModal(); });
+
+// Main-screen badge: only when the family link is on (a code exists) and
+// needs the owner — it's paused because Tailscale signed this dashboard
+// out, or that's due within two weeks (the optional key-expiry step was
+// skipped). Tapping it opens the Remote Access screen, which shows the fix.
+const REMOTE_WARN_DAYS = 14;
+async function checkRemoteHealth() {
+  const badge = document.getElementById('remote-badge');
+  try {
+    const s  = await api('GET', '/api/remote/status');
+    const ts = s.tailscale || {};
+    const paused  = !!s.code && ts.running && ts.state !== 'Running';
+    const expires = ts.keyExpiry ? new Date(ts.keyExpiry) : null;
+    const dueSoon = !!s.code && expires && expires - Date.now() < REMOTE_WARN_DAYS * 86400000;
+    badge.textContent = paused ? '⚠️ Family link paused'
+      : `⚠️ Family link: sign in by ${expires?.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+    badge.hidden = !(paused || dueSoon);
+  } catch { /* server busy/restarting — check again next interval */ }
+}
+setTimeout(checkRemoteHealth, 45000);
+setInterval(checkRemoteHealth, 30 * 60 * 1000);
+
+document.getElementById('remote-badge').addEventListener('click', () => {
+  document.getElementById('settings-btn').click();
+  document.getElementById('remote-open-btn').click();
+});
 
 /* ── Debug submenu (opened from Settings) ─────────────────── */
 const debugModal = document.getElementById('debug-modal');
