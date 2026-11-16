@@ -240,6 +240,22 @@
    stretching the (flex-column) modal — it scrolls inside instead. */
 .bench-results .bench-scroll { overflow-x: auto; width: 0; min-width: 100%; }
 
+/* Settings ▸ Remote Access */
+.remote-status { font-size: 0.85rem; line-height: 1.5; margin-bottom: 0.5rem; overflow-wrap: anywhere; }
+.remote-status code, .remote-link code { user-select: all; }
+.remote-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.remote-actions:empty { display: none; }
+.remote-link { font-size: 0.85rem; margin-top: 0.5rem; overflow-wrap: anywhere; }
+.remote-link a { color: var(--accent); }
+.remote-code {
+  font-family: 'Consolas', 'SF Mono', 'Courier New', monospace;
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  user-select: all;
+}
+#share-link { width: 100%; }
+
 /* Software-only dimming — sits above absolutely everything, including
    modals, so the whole screen dims consistently. pointer-events:none so
    it never blocks touch. Doesn't reduce actual backlight power/wear —

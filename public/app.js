@@ -2944,6 +2944,198 @@ document.getElementById('toggle-gfx-lightning').addEventListener('change', e => 
   }
 });
 
+/* ── Remote Access submenu (opened from Settings) ─────────── */
+// Polls /api/remote/status while open, so Tailscale sign-in and Funnel
+// approval (both finished in a browser elsewhere) show up on their own.
+const remoteModal = document.getElementById('remote-modal');
+let remotePollId = null;
+let remoteState  = null;
+
+function remoteLinkHtml(text, url) {
+  return `${escHtml(text)}<br><a href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>`;
+}
+
+function renderRemote(s) {
+  remoteState = s;
+  const ts = s.tailscale || {};
+  const connected = ts.state === 'Running';
+  const statusEl = document.getElementById('ts-status');
+  const loginBtn = document.getElementById('ts-login-btn');
+  const loginLink = document.getElementById('ts-login-link');
+
+  if (!ts.installed) {
+    statusEl.textContent = 'Not installed yet. It installs automatically with the next update (tap 🔄 Update available, then Update Now).';
+  } else if (!ts.running) {
+    statusEl.textContent = 'Starting…';
+  } else if (connected) {
+    const host = ts.dnsName ? ts.dnsName.split('.')[0] : 'family-dashboard';
+    statusEl.innerHTML = `✅ Connected (${escHtml(ts.ip || '')}).<br>` +
+      `SSH from any of your Tailscale devices: <code>ssh user@${escHtml(host)}</code>`;
+  } else {
+    statusEl.textContent = 'Not signed in.';
+  }
+  loginBtn.hidden = !(ts.installed && ts.running && !connected);
+  if (ts.authUrl && !connected) {
+    loginLink.innerHTML = remoteLinkHtml('Open this link to sign in (one time only):', ts.authUrl);
+    loginLink.hidden = false;
+  } else if (connected) {
+    loginLink.hidden = true;
+  }
+
+  document.getElementById('remote-code-off').hidden = !!s.code;
+  document.getElementById('remote-code-on').hidden  = !s.code;
+  document.getElementById('remote-code').textContent = s.code || '';
+
+  const ready = connected && !!s.code;
+  const desc  = document.getElementById('funnel-desc');
+  document.getElementById('funnel-on-btn').hidden = !ready || ts.funnelOn;
+  document.getElementById('funnel-share').hidden  = !ready || !ts.funnelOn;
+  if (!ready) {
+    desc.textContent = 'Needs steps 1 and 2 first.';
+  } else if (!ts.funnelOn) {
+    desc.textContent = 'Creates a private https:// link that only serves the calendar. Nothing else on this Pi is exposed.';
+  } else {
+    desc.textContent = 'Send this to family. Opening it signs them straight in.';
+    document.getElementById('funnel-approve').hidden = true;
+    const link = `${ts.publicUrl}#code=${s.code}`;
+    document.getElementById('share-link').value = link;
+    document.getElementById('public-url').textContent = ts.publicUrl;
+    document.getElementById('share-native-btn').hidden = !navigator.share;
+  }
+}
+
+async function refreshRemote() {
+  try { renderRemote(await api('GET', '/api/remote/status')); }
+  catch (err) { document.getElementById('ts-status').textContent = 'Could not check status: ' + err.message; }
+}
+
+document.getElementById('remote-open-btn').addEventListener('click', () => {
+  settingsModal.hidden = true;
+  remoteModal.hidden = false;
+  refreshRemote();
+  remotePollId = setInterval(refreshRemote, 3000);
+});
+
+function closeRemoteModal() {
+  clearInterval(remotePollId);
+  remotePollId = null;
+  remoteModal.hidden = true;
+  settingsModal.hidden = false;
+}
+document.getElementById('remote-close').addEventListener('click', closeRemoteModal);
+remoteModal.addEventListener('click', e => { if (e.target === remoteModal) closeRemoteModal(); });
+
+document.getElementById('ts-login-btn').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Getting sign-in link…';
+  try {
+    const r = await api('POST', '/api/remote/tailscale-login');
+    const el = document.getElementById('ts-login-link');
+    if (r.url) {
+      el.innerHTML = remoteLinkHtml('Open this link to sign in (one time only):', r.url);
+      el.hidden = false;
+    } else if (!r.done) {
+      showError('Tailscale sign-in failed: ' + (r.output || 'unknown error'));
+    }
+    refreshRemote();
+  } catch (err) {
+    showError('Tailscale sign-in failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in to Tailscale';
+  }
+});
+
+async function newRemoteCode() {
+  try {
+    await api('POST', '/api/remote/code');
+    refreshRemote();
+  } catch (err) { showError('Could not create a code: ' + err.message); }
+}
+document.getElementById('remote-enable-btn').addEventListener('click', newRemoteCode);
+
+// Two taps for the actions that sign everyone out, like Exit to Terminal
+function armButton(btn, confirmText, action) {
+  const label = btn.textContent;
+  let armed = false, timer = null;
+  btn.addEventListener('click', async () => {
+    if (!armed) {
+      armed = true;
+      btn.textContent = confirmText;
+      timer = setTimeout(() => { armed = false; btn.textContent = label; }, 4000);
+      return;
+    }
+    clearTimeout(timer);
+    armed = false;
+    btn.textContent = label;
+    await action();
+  });
+}
+
+armButton(document.getElementById('remote-reset-btn'), 'Tap again: signs everyone out', async () => {
+  await newRemoteCode();
+  showToast('New code created. Everyone needs the new code or link.', 'success');
+});
+
+armButton(document.getElementById('remote-disable-btn'), 'Tap again to turn off', async () => {
+  try {
+    await api('DELETE', '/api/remote/code');
+    showToast('Remote access turned off.', 'success');
+    refreshRemote();
+  } catch (err) { showError('Could not turn off remote access: ' + err.message); }
+});
+
+document.getElementById('funnel-on-btn').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Creating link…';
+  try {
+    const r = await api('POST', '/api/remote/funnel', { on: true });
+    const el = document.getElementById('funnel-approve');
+    if (r.url) {
+      // First time only: Tailscale asks the account owner to allow public links
+      el.innerHTML = remoteLinkHtml('Tailscale needs you to allow public links once. Open this, approve, and the link appears here:', r.url);
+      el.hidden = false;
+    } else if (!r.done) {
+      showError('Could not create the link: ' + (r.output || 'unknown error'));
+    }
+    refreshRemote();
+  } catch (err) {
+    showError('Could not create the link: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create public link';
+  }
+});
+
+armButton(document.getElementById('funnel-off-btn'), 'Tap again to remove', async () => {
+  try {
+    await api('POST', '/api/remote/funnel', { on: false });
+    refreshRemote();
+  } catch (err) { showError('Could not remove the link: ' + err.message); }
+});
+
+// navigator.clipboard only exists on https/localhost — over plain http
+// from a phone on home Wi-Fi, fall back to selecting the text.
+document.getElementById('share-copy-btn').addEventListener('click', async () => {
+  const input = document.getElementById('share-link');
+  try {
+    await navigator.clipboard.writeText(input.value);
+    showToast('Link copied.', 'success');
+  } catch {
+    input.focus();
+    input.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    showToast(ok ? 'Link copied.' : 'Link selected. Copy it from the box.', 'success');
+  }
+});
+document.getElementById('share-link').addEventListener('focus', e => e.target.select());
+
+document.getElementById('share-native-btn').addEventListener('click', () => {
+  navigator.share({ title: 'Family Calendar', url: document.getElementById('share-link').value }).catch(() => {});
+});
+
 /* ── Debug submenu (opened from Settings) ─────────────────── */
 const debugModal = document.getElementById('debug-modal');
 

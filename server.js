@@ -4,6 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
+const { createRemote } = require('./remote');
+const tailscale = require('./tailscale');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -63,6 +65,17 @@ db.exec(`
     excluded_dates TEXT DEFAULT '',
     is_private INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch())
+  );
+
+  -- Remote access (remote.js): the shared family code, as keyed settings
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS remote_sessions (
+    token_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS gfx_benchmarks (
@@ -190,9 +203,13 @@ app.delete('/api/bulletin/:id', (req, res) => {
 });
 
 // ── Calendar ──────────────────────────────────────────────────
+// A Router (mounted at /api/calendar) rather than app routes, so the
+// remote-access server (remote.js) serves the exact same handlers.
+const calendar = express.Router();
+
 // GET /api/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Returns all events (including expanded recurrences) for the date range
-app.get('/api/calendar', (req, res) => {
+calendar.get('/', (req, res) => {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start and end required' });
 
@@ -206,7 +223,7 @@ app.get('/api/calendar', (req, res) => {
   res.json(out);
 });
 
-app.post('/api/calendar', (req, res) => {
+calendar.post('/', (req, res) => {
   const {
     title, description, person, color, event_date, start_time, end_time, all_day,
     recurrence, recurrence_interval, recurrence_until, is_private,
@@ -244,7 +261,7 @@ app.post('/api/calendar', (req, res) => {
 // is excluded from the series (same mechanism as a single-occurrence
 // delete) and the edits land on a brand-new standalone (non-recurring)
 // event instead, so the rest of the series is untouched.
-app.patch('/api/calendar/:id', (req, res) => {
+calendar.patch('/:id', (req, res) => {
   const existing = stmt.calendarGet.get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
@@ -317,7 +334,7 @@ app.patch('/api/calendar/:id', (req, res) => {
 //   (weekday/nth-weekday/month-day) is preserved automatically since `date` is itself a
 //   real occurrence of the existing pattern. If `date` is past the series' end, that
 //   leaves nothing, so the whole series is dropped.
-app.delete('/api/calendar/:id', (req, res) => {
+calendar.delete('/:id', (req, res) => {
   const { date, mode } = req.query;
 
   if (date) {
@@ -364,6 +381,8 @@ app.delete('/api/calendar/:id', (req, res) => {
   if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
 });
+
+app.use('/api/calendar', calendar);
 
 // ── System stats (debug performance overlay) ───────────────────
 // Raspberry Pi's VideoCore GPU has no load-percentage metric (unlike a
@@ -679,6 +698,47 @@ function expandEvent(ev, weekStart, weekEnd) {
   }
   return results;
 }
+
+// ── Remote access (Settings ▸ Remote Access) ──────────────────────
+// These live on the main app (port 3000), which is only reachable at home
+// or from the owner's own Tailscale devices — never through Funnel, which
+// only ever points at the remote calendar server below.
+const remoteAccess = createRemote({ db, calendarRouter: calendar });
+
+app.get('/api/remote/status', async (req, res) => {
+  res.json({ code: remoteAccess.code(), tailscale: await tailscale.status() });
+});
+
+// Turns remote access on (first time) or replaces the code, signing out
+// everyone who used the old one.
+app.post('/api/remote/code', (req, res) => {
+  res.json({ code: remoteAccess.resetCode() });
+});
+
+// Turning remote access off: with no code the remote server refuses every
+// sign-in and request, and the public link is taken down too.
+app.delete('/api/remote/code', async (req, res) => {
+  remoteAccess.clearCode();
+  try { await tailscale.disableFunnel(); } catch { /* not running / nothing to reset */ }
+  res.json({ ok: true });
+});
+
+app.post('/api/remote/tailscale-login', async (req, res) => {
+  res.json(await tailscale.login());
+});
+
+app.post('/api/remote/funnel', async (req, res) => {
+  if (!req.body?.on) {
+    try { await tailscale.disableFunnel(); res.json({ ok: true }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+    return;
+  }
+  if (!remoteAccess.code()) return res.status(400).json({ error: 'Turn on remote access first.' });
+  res.json(await tailscale.enableFunnel(remoteAccess.port));
+});
+
+remoteAccess.listen();
+tailscale.startDaemon();
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Family Dashboard running at http://0.0.0.0:${PORT}`);

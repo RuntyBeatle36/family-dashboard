@@ -1,0 +1,293 @@
+/* Family Calendar (remote) — mobile-first, follows the phone's light/dark
+   setting. Sized for small phones up; safe-area insets keep controls clear
+   of notches and home indicators. Inputs are 16px so iOS doesn't zoom. */
+
+:root {
+  --bg:        #f4f6fb;
+  --surface:   #ffffff;
+  --surface-2: #eef1f7;
+  --border:    #dde2ec;
+  --text:      #151a26;
+  --text-dim:  #5b6476;
+  --accent:    #2f6fe4;
+  --accent-fg: #ffffff;
+  --danger:    #d33c3c;
+  --today:     rgba(47, 111, 228, 0.08);
+  --shadow:    0 10px 30px rgba(20, 30, 60, 0.18);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #0b1224;
+    --surface:   #141c31;
+    --surface-2: #1c2640;
+    --border:    #2a3554;
+    --text:      #e8ecf5;
+    --text-dim:  #98a2b8;
+    --accent:    #5ab4ff;
+    --accent-fg: #06101f;
+    --danger:    #ff6b6b;
+    --today:     rgba(90, 180, 255, 0.10);
+    --shadow:    0 10px 30px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2 { margin: 0; font-weight: 650; }
+.muted { color: var(--text-dim); }
+.error { color: var(--danger); min-height: 1.2em; margin: 0.25rem 0 0; font-size: 0.9rem; }
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn {
+  min-height: 44px;
+  padding: 0 1.1rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.btn:disabled { opacity: 0.6; }
+.btn-primary { background: var(--accent); color: var(--accent-fg); }
+.btn-danger  { background: transparent; color: var(--danger); border-color: var(--border); }
+.btn-ghost   { background: transparent; border-color: var(--border); }
+.btn-small   { min-height: 36px; padding: 0 0.8rem; font-size: 0.9rem; }
+.btn-block   { width: 100%; }
+
+.icon-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+/* ── Sign in ─────────────────────────────────────────────── */
+.login {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2rem 1.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  text-align: center;
+}
+.login-icon { font-size: 2.5rem; }
+.login-card .muted { margin: 0; }
+
+input, select, textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* below 16px, iOS Safari zooms the page on focus */
+}
+textarea { resize: vertical; min-height: 80px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* iOS renders empty date/time inputs collapsed without this */
+input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; display: block; }
+
+/* ── Top bar ─────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: calc(env(safe-area-inset-top) + 6px) max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.topbar h1 {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Agenda ──────────────────────────────────────────────── */
+.agenda {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0.5rem max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+}
+/* Bottom padding clears the floating + button */
+.agenda-footer { text-align: center; padding: 1.5rem 16px calc(96px + env(safe-area-inset-bottom)); }
+#logout-btn { color: var(--text-dim); }
+.day { padding: 0.75rem 0 0.25rem; }
+.day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  font-weight: 650;
+}
+.day-head .muted { font-weight: 400; font-size: 0.9rem; }
+.day.today .day-head { color: var(--accent); }
+.day.today .day-events { background: var(--today); border-radius: 14px; }
+
+.day-events { display: flex; flex-direction: column; gap: 0.4rem; }
+.event {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 52px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.event-bar { width: 4px; border-radius: 4px; flex: none; }
+.event-body { min-width: 0; flex: 1; }
+.event-title { font-weight: 600; overflow-wrap: anywhere; }
+.event-meta { font-size: 0.85rem; color: var(--text-dim); }
+
+.empty, .loading { text-align: center; color: var(--text-dim); padding: 3rem 1rem; }
+
+.fab {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 1.9rem;
+  line-height: 1;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+/* ── Sheets (bottom on phones, centered on wider screens) ── */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding: 1.25rem max(16px, env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+@media (min-width: 600px) {
+  .sheet-backdrop { align-items: center; }
+  .sheet { border-radius: 20px; }
+}
+.sheet h2 { font-size: 1.2rem; overflow-wrap: anywhere; }
+.hint { margin: 0; font-size: 0.9rem; color: var(--text-dim); }
+
+.sheet-actions { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; margin-top: 0.25rem; }
+.sheet-actions .btn { flex: 1 1 auto; }
+
+.field { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; flex: 1; }
+.field > span:first-child { font-size: 0.85rem; font-weight: 600; color: var(--text-dim); }
+.inline { display: flex; align-items: center; gap: 0.5rem; }
+.inline input { width: 5rem; flex: none; }
+.row { display: flex; gap: 0.75rem; }
+.check { display: flex; align-items: center; gap: 0.6rem; min-height: 44px; cursor: pointer; }
+.check input { width: 22px; height: 22px; min-height: 0; flex: none; accent-color: var(--accent); }
+
+.swatches { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.swatch[aria-checked="true"] { border-color: var(--text); box-shadow: inset 0 0 0 2px var(--surface); }
+
+.detail-bar { height: 6px; border-radius: 6px; }
+.detail-list { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.9rem; }
+.detail-list dt { color: var(--text-dim); font-size: 0.9rem; }
+.detail-list dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.choice-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+/* ── Toast ───────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(90px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 100;
+  max-width: calc(100vw - 32px);
+  padding: 0.65rem 1rem;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.95rem;
+  box-shadow: var(--shadow);
+}
+.toast.error-toast { background: var(--danger); color: #fff; }
+
+/* Very narrow phones (e.g. iPhone SE 1st gen, 320px) */
+@media (max-width: 360px) {
+  .row { flex-direction: column; gap: 0.85rem; }
+  .topbar h1 { font-size: 1rem; }
+}
+
+.code-input { text-align: center; letter-spacing: 0.15em; font-weight: 600; text-transform: uppercase; }
+.code-input::placeholder { letter-spacing: 0.15em; font-weight: 400; }

@@ -54,6 +54,45 @@ if [ -f "$REPO_DIR/system/labwc-autostart" ] && [ -f "$HOME/.config/labwc/autost
   fi
 fi
 
+# ── Tailscale (remote access) ────────────────────────────────
+# Official static binaries into tailscale/ (gitignored), run unprivileged by
+# the dashboard server itself (see tailscale.js) — no root or system service
+# needed, so it installs and stays current through self-update alone.
+# Checksum-verified; replaced via rename so a running copy is never
+# half-overwritten. The server restarts right after this script, picking up
+# a new version.
+install_tailscale() {
+  local arch dir latest_file latest current tmp sum
+  case "$(uname -m)" in
+    aarch64) arch=arm64 ;;
+    armv7l)  arch=arm ;;
+    x86_64)  arch=amd64 ;;
+    *) echo "system-update: no Tailscale build for $(uname -m), skipping"; return 0 ;;
+  esac
+  dir="$REPO_DIR/tailscale"
+  latest_file="$(curl -fsSL --max-time 20 'https://pkgs.tailscale.com/stable/?mode=json' \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).Tarballs[process.argv[1]]||"")}catch{}})' "$arch")" || return 1
+  [ -n "$latest_file" ] || return 1
+  latest="$(echo "$latest_file" | sed -E 's/^tailscale_([^_]+)_.*/\1/')"
+  current="$("$dir/tailscale" version 2>/dev/null | head -1 || true)"
+  [ "$current" = "$latest" ] && return 0
+
+  echo "system-update: installing Tailscale $latest (was: ${current:-none})"
+  tmp="$(mktemp -d)"
+  curl -fsSL --max-time 300 -o "$tmp/ts.tgz" "https://pkgs.tailscale.com/stable/$latest_file" || { rm -rf "$tmp"; return 1; }
+  sum="$(curl -fsSL --max-time 20 "https://pkgs.tailscale.com/stable/$latest_file.sha256" | cut -d' ' -f1)"
+  if [ -z "$sum" ] || [ "$(sha256sum "$tmp/ts.tgz" | cut -d' ' -f1)" != "$sum" ]; then
+    echo "system-update: Tailscale checksum mismatch, not installing"; rm -rf "$tmp"; return 1
+  fi
+  tar -xzf "$tmp/ts.tgz" -C "$tmp" --strip-components=1 || { rm -rf "$tmp"; return 1; }
+  mkdir -p "$dir"
+  for bin in tailscale tailscaled; do
+    install -m 755 "$tmp/$bin" "$dir/.$bin.new" && mv -f "$dir/.$bin.new" "$dir/$bin"
+  done
+  rm -rf "$tmp"
+}
+install_tailscale || echo "system-update: Tailscale install/update failed, continuing"
+
 # ── One-time database backup ─────────────────────────────────
 # Deletes itself after a successful run, so this only fires once per Pi.
 if [ -f "$REPO_DIR/scripts/backup-db.sh" ]; then

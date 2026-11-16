@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1224" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Family Calendar" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Family Calendar</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/remote.css" />
+</head>
+<body>
+
+<!-- ── Sign in ─────────────────────────────────────────────── -->
+<main id="login-view" class="login" hidden>
+  <form id="login-form" class="login-card" autocomplete="on">
+    <div class="login-icon" aria-hidden="true">🏠</div>
+    <h1>Family Calendar</h1>
+    <p class="muted" id="login-msg">Enter the family code.</p>
+    <input id="login-code" type="text" name="code" placeholder="XXXX-XXXX" maxlength="12" required
+           autocomplete="one-time-code" autocapitalize="characters" autocorrect="off" spellcheck="false"
+           inputmode="text" class="code-input" />
+    <button class="btn btn-primary" type="submit" id="login-btn">Sign in</button>
+    <p class="error" id="login-error" role="alert"></p>
+  </form>
+</main>
+
+<!-- ── Calendar ────────────────────────────────────────────── -->
+<div id="cal-view" hidden>
+  <header class="topbar">
+    <button class="icon-btn" id="prev-month" aria-label="Previous month">‹</button>
+    <h1 id="month-label"></h1>
+    <button class="icon-btn" id="next-month" aria-label="Next month">›</button>
+    <button class="btn btn-ghost btn-small" id="today-btn">Today</button>
+  </header>
+
+  <main id="agenda" class="agenda" aria-live="polite"></main>
+  <footer class="agenda-footer">
+    <button class="btn btn-ghost btn-small" id="logout-btn">Sign out</button>
+  </footer>
+
+  <button class="fab" id="add-btn" aria-label="Add event">＋</button>
+</div>
+
+<!-- ── Event details ───────────────────────────────────────── -->
+<div class="sheet-backdrop" id="detail-sheet" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+    <div class="detail-bar" id="detail-bar"></div>
+    <h2 id="detail-title"></h2>
+    <dl class="detail-list" id="detail-list"></dl>
+    <div class="sheet-actions">
+      <button class="btn btn-danger" id="detail-delete">Delete</button>
+      <button class="btn btn-ghost" id="detail-close">Close</button>
+      <button class="btn btn-primary" id="detail-edit">Edit</button>
+    </div>
+  </section>
+</div>
+
+<!-- ── Choice (recurring edit/delete scope) ────────────────── -->
+<div class="sheet-backdrop" id="choice-sheet" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="choice-title">
+    <h2 id="choice-title"></h2>
+    <div class="choice-list" id="choice-list"></div>
+    <button class="btn btn-ghost btn-block" id="choice-cancel">Cancel</button>
+  </section>
+</div>
+
+<!-- ── Add / edit form ─────────────────────────────────────── -->
+<div class="sheet-backdrop" id="form-sheet" hidden>
+  <form class="sheet" id="event-form" role="dialog" aria-modal="true" aria-labelledby="form-title" novalidate>
+    <h2 id="form-title">New Event</h2>
+    <p class="hint" id="form-hint" hidden></p>
+
+    <label class="field">
+      <span>Title</span>
+      <input id="f-title" type="text" maxlength="120" required autocomplete="off" />
+    </label>
+
+    <label class="field">
+      <span>Date</span>
+      <input id="f-date" type="date" required />
+    </label>
+
+    <label class="check">
+      <input id="f-allday" type="checkbox" /> All day
+    </label>
+
+    <div class="row" id="f-times">
+      <label class="field">
+        <span>Start</span>
+        <input id="f-start" type="time" />
+      </label>
+      <label class="field">
+        <span>End</span>
+        <input id="f-end" type="time" />
+      </label>
+    </div>
+
+    <label class="field">
+      <span>Who</span>
+      <input id="f-person" type="text" maxlength="40" list="people" autocomplete="off" placeholder="Optional" />
+      <datalist id="people"></datalist>
+    </label>
+
+    <div class="field">
+      <span>Color</span>
+      <div class="swatches" id="f-colors" role="radiogroup" aria-label="Color"></div>
+    </div>
+
+    <div id="f-repeat-block">
+      <label class="field">
+        <span>Repeat</span>
+        <select id="f-recur">
+          <option value="none">Does not repeat</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly (same date)</option>
+          <option value="monthly_weekday">Monthly (same weekday)</option>
+          <option value="yearly">Yearly</option>
+        </select>
+      </label>
+      <div class="row" id="f-recur-extra" hidden>
+        <label class="field">
+          <span>Every</span>
+          <span class="inline">
+            <input id="f-interval" type="number" min="1" max="99" value="1" inputmode="numeric" />
+            <span class="muted" id="f-interval-unit"></span>
+          </span>
+        </label>
+        <label class="field">
+          <span>Until</span>
+          <input id="f-until" type="date" />
+        </label>
+      </div>
+    </div>
+
+    <label class="check">
+      <input id="f-private" type="checkbox" /> Private (hidden on the lock screen)
+    </label>
+
+    <label class="field">
+      <span>Notes</span>
+      <textarea id="f-desc" rows="3" maxlength="500" placeholder="Optional"></textarea>
+    </label>
+
+    <p class="error" id="form-error" role="alert"></p>
+
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" type="button" id="form-cancel">Cancel</button>
+      <button class="btn btn-primary" type="submit" id="form-save">Save</button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="/remote-app.js"></script>
+</body>
+</html>

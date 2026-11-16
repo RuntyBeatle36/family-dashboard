@@ -121,6 +121,46 @@ Graphics Benchmark. If the screen stays black after switching, SSH in and run
 
 ---
 
+## Remote access
+
+Family members can view, add and edit **calendar events only** from
+anywhere, using a shared family code. You get SSH to the Pi from anywhere
+too. Everything is set up from **Settings ▸ Remote Access**, ideally on your
+phone on home Wi-Fi (`http://<PI_IP>:3000`), since a couple of steps open a
+Tailscale web page:
+
+1. **Connect to Tailscale.** Tap *Sign in to Tailscale* and open the link
+   (one time). Use a free Tailscale account; this Pi joins it as
+   `family-dashboard`.
+2. **Turn on remote access.** This creates the family code (e.g.
+   `K7QM-4XPD`). *Reset code* makes a new one and signs everyone out.
+3. **Create the public link.** The first time, Tailscale asks you to allow
+   public links (Funnel) for your account; approve it, and the link appears.
+   Share the sign-in link: it has the code built in, so opening it signs
+   family straight in. They stay signed in as long as they open it at
+   least every month or two.
+
+How it works:
+
+- **Tailscale is installed by the normal self-update.** `scripts/system-update.sh`
+  downloads the official, checksum-verified static binaries into `tailscale/`
+  (gitignored) and keeps them current. The dashboard server runs `tailscaled`
+  itself, unprivileged, in userspace-networking mode (`tailscale.js`). No
+  root, no extra system service.
+- **The public link only reaches the calendar.** Funnel points at a second,
+  localhost-only server (`remote.js`, port 3001) that serves just the calendar
+  page and `/api/calendar`, behind the family code. The main dashboard (port
+  3000: settings, updates, Exit to Terminal) is never reachable from the
+  internet. Wrong codes are throttled (5 per device, 30 overall, per 15 minutes).
+- **SSH from anywhere:** install Tailscale on your laptop/phone, sign in to the
+  same account, then `ssh user@family-dashboard`. Your existing SSH keys
+  work as on the LAN, and Tailscale SSH is also enabled. The dashboard is
+  also at `http://family-dashboard:3000` from your Tailscale devices.
+- Turning remote access off (Settings) deletes the code, signs everyone out,
+  and takes the public link down.
+
+---
+
 ## Security check-up
 
 ```bash
