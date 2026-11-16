@@ -202,6 +202,44 @@
 .perf-overlay .perf-warn { color: #ff8a5c; }
 .perf-overlay .perf-bad  { color: #ff5c5c; }
 
+/* Graphics benchmark progress — deliberately plain (no blur/shadow) so it
+   doesn't add to the very GPU cost being measured. */
+.bench-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 300;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-family: 'Consolas', 'SF Mono', 'Courier New', monospace;
+  font-size: 0.8rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  max-width: calc(100vw - 32px);
+}
+.bench-banner[hidden] { display: none; }
+
+.bench-results { margin-top: 0.6rem; font-size: 0.78rem; }
+.bench-results:empty { display: none; }
+.bench-results table { width: 100%; border-collapse: collapse; }
+.bench-results th, .bench-results td {
+  text-align: left;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--glass-border);
+  white-space: nowrap;
+}
+.bench-results th { color: var(--text-dim); font-weight: 600; white-space: normal; vertical-align: bottom; }
+.bench-results .bench-smooth { color: var(--success, #4caf7d); }
+.bench-results .bench-ok     { color: #e0b341; }
+.bench-results .bench-choppy { color: var(--danger); }
+.bench-results .bench-invalid { color: var(--text-dim); }
+.bench-results .bench-rec    { margin: 0.5rem 0; line-height: 1.4; }
+/* width:0 + min-width:100% keeps the table's intrinsic width from
+   stretching the (flex-column) modal — it scrolls inside instead. */
+.bench-results .bench-scroll { overflow-x: auto; width: 0; min-width: 100%; }
+
 /* Software-only dimming — sits above absolutely everything, including
    modals, so the whole screen dims consistently. pointer-events:none so
    it never blocks touch. Doesn't reduce actual backlight power/wear —

@@ -1494,6 +1494,7 @@ function detectIntensity(d) {
 }
 
 function setWxMode(desc) {
+  if (benchRunning) return; // a weather refresh mid-benchmark would swap the scene being measured
   const day = isCurrentlyDay();
   if (!desc) return applyWxMode(day ? 'clear-day' : 'clear-night');
   const d = desc.toLowerCase();
@@ -3063,6 +3064,199 @@ document.getElementById('toggle-perf-overlay').addEventListener('change', e => {
 });
 
 if (getPerfOverlayEnabled()) startPerfOverlay();
+
+/* ══════════════════════════════════════════════════════════
+   DEBUG: GRAPHICS BENCHMARK
+   Steps through every Glass Blur × Weather Animation combination and
+   measures the page's real frame rate via rAF — so it includes compositing
+   the blurred panels over the canvas, not just the canvas's own capped
+   loop. Weather Animation = Off has no canvas, so the scene doesn't matter
+   there and it's measured once per glass tier.
+   ══════════════════════════════════════════════════════════ */
+const BENCH_GLASS  = ['off', 'reduced', 'full'];
+const BENCH_WX     = ['off', 'reduced', 'full'];
+// Heavy rain is the most particles; overcast is the biggest/most overdraw
+// cloud scene — together they bracket the realistic worst cases.
+const BENCH_SCENES = [
+  { mode: 'rain',     intensity: 'heavy',    label: 'Heavy rain' },
+  { mode: 'overcast', intensity: 'moderate', label: 'Overcast' },
+];
+const BENCH_WARMUP_MS  = 2000;
+const BENCH_MEASURE_MS = 8000;
+const BENCH_JANK_MS    = 25; // a frame this long is a visible hitch at 60Hz
+let benchRunning = false;
+
+const benchSleep = ms => new Promise(r => setTimeout(r, ms));
+
+function benchVerdict(avgFps, lowFps) {
+  if (avgFps >= 50 && lowFps >= 30) return 'smooth';
+  if (avgFps >= 30) return 'ok';
+  return 'choppy';
+}
+
+function benchMeasure(ms) {
+  return new Promise(resolve => {
+    const deltas = [];
+    let start = 0, last = 0;
+    // Browsers throttle rAF to ~1fps (or pause it) for a hidden/occluded
+    // tab, which would read as "choppy" — flag it rather than trust it.
+    let wasHidden = document.hidden;
+    const onVis = () => { if (document.hidden) wasHidden = true; };
+    document.addEventListener('visibilitychange', onVis);
+    function tick(ts) {
+      if (!start) start = ts;
+      else deltas.push(ts - last);
+      last = ts;
+      if (ts - start < ms) return requestAnimationFrame(tick);
+      document.removeEventListener('visibilitychange', onVis);
+      resolve({ deltas, elapsed: ts - start, wasHidden });
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+async function benchRunOne(glass, wx, scene) {
+  localStorage.setItem('gfxGlass', glass);
+  localStorage.setItem('gfxWxQuality', wx);
+  applyGlassSetting();
+  wxIntensity = scene.intensity;
+  applyWxMode(scene.mode);
+  if (getLockScreenEnabled()) revealPrivacy(); // measure the dashboard, not the lock screen
+
+  // Warm-up so particle init and the first blur passes after a switch don't
+  // skew the numbers; the sysstats call resets the server's CPU baseline so
+  // the second one reports CPU over exactly the measured window.
+  await benchSleep(BENCH_WARMUP_MS);
+  await api('GET', '/api/sysstats').catch(() => null);
+  const { deltas, elapsed, wasHidden } = await benchMeasure(BENCH_MEASURE_MS);
+  const stats = await api('GET', '/api/sysstats').catch(() => null);
+
+  const worst  = [...deltas].sort((a, b) => b - a).slice(0, Math.max(1, Math.ceil(deltas.length / 100)));
+  const avgFps = deltas.length * 1000 / elapsed;
+  const lowFps = 1000 / (worst.reduce((a, b) => a + b, 0) / worst.length);
+  const round1 = n => Math.round(n * 10) / 10;
+  return {
+    glass, wx,
+    scene:      wx === 'off' ? null : scene.label,
+    avgFps:     round1(avgFps),
+    lowFps:     round1(lowFps),
+    jankPct:    round1(deltas.filter(d => d > BENCH_JANK_MS).length / deltas.length * 100),
+    cpuPercent: stats?.cpuPercent ?? null,
+    tempC:      stats?.tempC ?? null,
+    throttled:  stats?.gpu?.throttled ?? null,
+    verdict:    wasHidden ? 'invalid' : benchVerdict(avgFps, lowFps),
+  };
+}
+
+// Highest-cost combo that's smooth in every scene; ties go to the higher
+// weather tier, since the animated sky is the more noticeable of the two.
+function benchRecommend(runs) {
+  let best = null;
+  for (const glass of BENCH_GLASS) for (const wx of BENCH_WX) {
+    const rs = runs.filter(r => r.glass === glass && r.wx === wx);
+    if (!rs.length || !rs.every(r => r.verdict === 'smooth' || r.verdict === 'invalid')) continue;
+    if (rs.every(r => r.verdict === 'invalid')) continue;
+    const score = BENCH_GLASS.indexOf(glass) + BENCH_WX.indexOf(wx);
+    if (!best || score > best.score || (score === best.score && BENCH_WX.indexOf(wx) > BENCH_WX.indexOf(best.wx)))
+      best = { glass, wx, score };
+  }
+  return best ? { glass: best.glass, wx: best.wx } : null;
+}
+
+function renderBenchResults(res) {
+  const el = document.getElementById('bench-results');
+  if (!res) { el.innerHTML = ''; return; }
+  const cap = s => s[0].toUpperCase() + s.slice(1);
+  const rec = res.recommended;
+  const when = new Date(res.ranAt).toLocaleString();
+  const rows = res.runs.map(r => `
+    <tr>
+      <td>${cap(r.glass)}</td><td>${cap(r.wx)}</td><td>${r.scene || '—'}</td>
+      <td>${r.avgFps}</td><td>${r.lowFps}</td><td>${r.jankPct}%</td>
+      <td>${r.cpuPercent != null ? r.cpuPercent + '%' : '—'}</td>
+      <td class="bench-${r.verdict}">${cap(r.verdict)}</td>
+    </tr>`).join('');
+  el.innerHTML = `
+    <div class="bench-rec">
+      ${rec
+        ? `<strong>Recommended:</strong> Glass Blur <strong>${cap(rec.glass)}</strong>, Weather Animation <strong>${cap(rec.wx)}</strong>
+           <button class="btn btn-ghost btn-sm" id="bench-apply">Apply</button>`
+        : '<strong>Nothing stayed smooth</strong> — keep Glass Blur and Weather Animation both Off.'}
+      ${res.runs.some(r => r.verdict === 'invalid') ? '<br>⚠️ The screen was hidden or covered during some runs (marked Invalid), so those were skipped. Re-run for a complete result.' : ''}
+      ${res.runs.some(r => r.throttled) ? '<br>⚠️ The Pi reported throttling (heat or undervoltage) during the run, so these numbers may be pessimistic.' : ''}
+      <br><span class="settings-desc">${when} · ${res.screen}</span>
+    </div>
+    <div class="bench-scroll"><table>
+      <tr><th>Glass</th><th>Weather</th><th>Scene</th><th>Avg FPS</th><th>1% low</th><th>Jank</th><th>CPU</th><th></th></tr>
+      ${rows}
+    </table></div>`;
+  document.getElementById('bench-apply')?.addEventListener('click', () => {
+    localStorage.setItem('gfxGlass', rec.glass);
+    localStorage.setItem('gfxWxQuality', rec.wx);
+    applyGlassSetting();
+    applyWxMode(wxMode);
+    showToast('Recommended graphics settings applied.', 'success');
+  });
+}
+
+async function runGraphicsBenchmark() {
+  if (benchRunning) return;
+  benchRunning = true;
+  const saved = {
+    glass: localStorage.getItem('gfxGlass'), wx: localStorage.getItem('gfxWxQuality'),
+    mode: wxMode, intensity: wxIntensity,
+  };
+  // The overlay's polling would reset the server's CPU baseline mid-window
+  const perfWasOn = !perfOverlay.hidden;
+  stopPerfOverlay();
+  document.querySelectorAll('.modal-overlay').forEach(m => { m.hidden = true; });
+
+  const plan = [];
+  for (const glass of BENCH_GLASS) for (const wx of BENCH_WX)
+    for (const scene of (wx === 'off' ? BENCH_SCENES.slice(0, 1) : BENCH_SCENES)) plan.push({ glass, wx, scene });
+
+  const banner = document.getElementById('bench-banner');
+  banner.hidden = false;
+  const runs = [];
+  try {
+    for (const [i, p] of plan.entries()) {
+      banner.textContent = `Benchmark ${i + 1}/${plan.length}: Glass ${p.glass} · Weather ${p.wx}` +
+        (p.wx === 'off' ? '' : ` · ${p.scene.label}`) + ' — please don\'t touch the screen';
+      runs.push(await benchRunOne(p.glass, p.wx, p.scene));
+    }
+  } finally {
+    const restore = (key, val) => val == null ? localStorage.removeItem(key) : localStorage.setItem(key, val);
+    restore('gfxGlass', saved.glass);
+    restore('gfxWxQuality', saved.wx);
+    applyGlassSetting();
+    wxIntensity = saved.intensity;
+    benchRunning = false;
+    applyWxMode(saved.mode);
+    banner.hidden = true;
+    if (perfWasOn) startPerfOverlay();
+  }
+
+  const res = {
+    ranAt:       new Date().toISOString(),
+    screen:      `${window.innerWidth}×${window.innerHeight} @${Math.round(window.devicePixelRatio * 100) / 100}x`,
+    userAgent:   navigator.userAgent,
+    runs,
+    recommended: benchRecommend(runs),
+  };
+  renderBenchResults(res);
+  debugModal.hidden = false;
+  try { await api('POST', '/api/benchmark', res); }
+  catch { showToast('Benchmark finished, but saving results to the server failed.'); }
+}
+
+document.getElementById('debug-run-bench').addEventListener('click', () => {
+  runGraphicsBenchmark().catch(err => showToast(`Benchmark failed: ${err.message}`));
+});
+
+document.getElementById('debug-open-btn').addEventListener('click', async () => {
+  if (benchRunning) return;
+  try { renderBenchResults(await api('GET', '/api/benchmark')); } catch { /* keep whatever's shown */ }
+});
 
 /* ══════════════════════════════════════════════════════════
    CALENDAR — helpers

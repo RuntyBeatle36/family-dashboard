@@ -23,6 +23,7 @@
 
 <!-- ── Debug: performance overlay ───────────────────────────── -->
 <div id="perf-overlay" class="perf-overlay" hidden></div>
+<div id="bench-banner" class="bench-banner" hidden></div>
 
 <!-- ── Brightness dimming overlay (above everything, incl. modals) ──── -->
 <div id="brightness-overlay"></div>
@@ -586,6 +587,20 @@
         <input type="checkbox" id="toggle-perf-overlay">
         Show performance overlay
       </label>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">⏱️ Graphics Benchmark</div>
+      <p class="settings-desc">
+        Runs every Glass Blur × Weather Animation combination on this screen
+        (heavy rain and overcast clouds for each weather tier), measures frame
+        rate and CPU, and recommends the highest settings that stay smooth.
+        Takes about 3 minutes. Don't touch the screen while it runs. Your
+        settings are restored when it finishes. The latest results are saved
+        on the server at <code>/api/benchmark</code>.
+      </p>
+      <button class="btn btn-ghost btn-sm" id="debug-run-bench">▶ Run Graphics Benchmark</button>
+      <div id="bench-results" class="bench-results"></div>
     </div>
 
     <div class="settings-section">

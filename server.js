@@ -64,6 +64,12 @@ db.exec(`
     is_private INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch())
   );
+
+  CREATE TABLE IF NOT EXISTS gfx_benchmarks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    results TEXT NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch())
+  );
 `);
 
 // Lightweight migrations for DBs created before these columns existed.
@@ -594,6 +600,20 @@ app.get('/api/sysstats', (req, res) => {
     gpu:        getGpuInfo(),
     uptimeSec:  os.uptime(),
   });
+});
+
+// Graphics benchmark results (Debug Options > Graphics Benchmark). Stored
+// server-side, not in localStorage, so a run on the Pi's own screen can be
+// read back later from a phone/laptop via GET /api/benchmark.
+app.post('/api/benchmark', (req, res) => {
+  if (!req.body || !Array.isArray(req.body.runs)) return res.status(400).json({ error: 'runs required' });
+  const info = db.prepare('INSERT INTO gfx_benchmarks (results) VALUES (?)').run(JSON.stringify(req.body));
+  res.json({ ok: true, id: Number(info.lastInsertRowid) });
+});
+
+app.get('/api/benchmark', (req, res) => {
+  const row = db.prepare('SELECT results, created_at FROM gfx_benchmarks ORDER BY id DESC LIMIT 1').get();
+  res.json(row ? { ...JSON.parse(row.results), savedAt: row.created_at } : null);
 });
 
 // ── Recurrence expansion helpers ──────────────────────────────
