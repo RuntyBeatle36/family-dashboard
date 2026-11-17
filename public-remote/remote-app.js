@@ -162,10 +162,13 @@ $('logout-btn').addEventListener('click', async () => {
 function showCalendar() {
   $('login-view').hidden = true;
   $('cal-view').hidden = false;
-  loadMonth();
+  loadMonth({ toToday: true });
 }
 
-async function loadMonth() {
+// toToday: in the current month, open scrolled to today — earlier days stay
+// above it, a scroll up away. Refreshes after adding/editing pass nothing,
+// so the list stays where the person was.
+async function loadMonth({ toToday = false } = {}) {
   const first = new Date(viewYear, viewMonth, 1);
   const last  = new Date(viewYear, viewMonth + 1, 0);
   // "Nov 2026" on narrow phones, where "November 2026" gets cut off
@@ -175,6 +178,7 @@ async function loadMonth() {
     events = await api('GET', `/api/calendar?start=${toDateStr(first)}&end=${toDateStr(last)}`);
     renderAgenda();
     refreshPeople();
+    if (toToday) $('today')?.scrollIntoView({ block: 'start' });
   } catch (err) {
     handleError(err);
   }
@@ -277,8 +281,7 @@ $('today-btn').addEventListener('click', async () => {
   const now = new Date();
   viewYear = now.getFullYear();
   viewMonth = now.getMonth();
-  await loadMonth();
-  $('today')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  loadMonth({ toToday: true });
 });
 
 function shiftMonth(delta) {
@@ -286,7 +289,7 @@ function shiftMonth(delta) {
   viewYear = d.getFullYear();
   viewMonth = d.getMonth();
   window.scrollTo(0, 0);
-  loadMonth();
+  loadMonth({ toToday: true }); // only does anything when landing back on the current month
 }
 
 /* ── Detail ───────────────────────────────────────────────── */
