@@ -158,7 +158,7 @@ let selectedColor = COLORS[0].hex;
    reveal target: a family member who won't remember "which thing do I tap"
    just needs "tap the screen".
    ══════════════════════════════════════════════════════════ */
-const getLockScreenEnabled = () => localStorage.getItem('lockScreenEnabled') === 'true';
+const getLockScreenEnabled = () => localStorage.getItem('lockScreenEnabled') !== 'false'; // default on
 const getLockRevealSecs    = () => parseInt(localStorage.getItem('lockRevealSecs'), 10) || 60;
 const getLockAgendaEnabled = () => localStorage.getItem('lockAgendaEnabled') !== 'false'; // default on
 const getLockAgendaStyle   = () => localStorage.getItem('lockAgendaStyle') || 'week'; // 'week' | 'days'
@@ -582,12 +582,11 @@ const INTENSITY_SCALE = {
   heavy:    { count: 1.7,  speed: 1.4,  opac: 1.25 },
 };
 
-// Graphics setting (Settings > Graphics > Weather Animation): 'off' | 'reduced' | 'full'
-// Defaults to the lowest tier — this runs on a wide range of Pi hardware
-// (including much weaker boards than whatever it was originally tuned on),
-// so out-of-the-box it should never risk a choppy first impression. Anyone
-// whose hardware can handle more can opt up via Settings > Graphics.
-const getWxQuality = () => localStorage.getItem('gfxWxQuality') || 'off';
+// Graphics setting (Settings > Graphics > Animated Sky): 'off' | 'reduced' | 'full'
+// Defaults to Full, the owner's chosen look (with Frosted Glass Off, which
+// is what keeps a Pi 4 smooth at 1080p). A weaker board can be turned down
+// in Settings > Graphics, or by the Graphics Benchmark.
+const getWxQuality = () => localStorage.getItem('gfxWxQuality') || 'full';
 // Scales a particle count by the current quality setting; 'off' is handled
 // separately in applyWxMode (skips animation entirely), not via a 0-count here.
 function qCount(base) {
@@ -2798,8 +2797,8 @@ const getOskEnabled = () => localStorage.getItem('oskEnabled') === 'true';
    Attributes on <html> drive the CSS; with both hidden the whole sidebar
    goes away and the calendar takes the full width. Hidden panels also
    stop polling the server (see loadTodo/loadBulletin). */
-const getTodoEnabled     = () => localStorage.getItem('todoEnabled')     !== 'false'; // default on
-const getBulletinEnabled = () => localStorage.getItem('bulletinEnabled') !== 'false'; // default on
+const getTodoEnabled     = () => localStorage.getItem('todoEnabled')     === 'true'; // default off
+const getBulletinEnabled = () => localStorage.getItem('bulletinEnabled') === 'true'; // default off
 
 function applySidebarPanels() {
   document.documentElement.toggleAttribute('data-hide-todo',     !getTodoEnabled());
