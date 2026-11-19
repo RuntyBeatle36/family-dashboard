@@ -875,7 +875,7 @@ function drawSun(dc, sx, sy, R, e, k = 1) {
 
 // Sun or moon behind weather that hides its shape (overcast, fog, rain,
 // snow...): just a dim, diffuse bright patch, strength per kind of sky.
-// Storms hide it completely. Pre-rendered; drawn on top of the weather sky.
+// Storms hide it completely.
 const VEILED_LIGHT = {
   overcast: 0.45, fog: 0.6, smoke: 0.55, dust: 0.5, snow: 0.35, sleet: 0.25,
   rain: 0.3, 'extreme-cold': 0.6,
@@ -886,49 +886,62 @@ const NIGHT_DIM = {
   rain: 0.35, storm: 0.3, 'storm-severe': 0.25, hurricane: 0.25, tornado: 0.25,
   hail: 0.25, thundersnow: 0.35, blizzard: 0.4, 'extreme-cold': 0.5, 'extreme-heat': 0.55,
 };
-let veilOC = null, veilKey = '';
 
-function drawSkyTimeOverlay() {
+// Night darkening, sunrise/sunset warmth and the veiled sun/moon, painted
+// over a weather sky
+function paintSkyTimeOverlay(ctx) {
   const s = skyState;
-  if (!s || !(wxMode in NIGHT_DIM)) return; // clear/cloudy/windy skies already follow the time of day
+  if (!s) return;
   const W = wxCanvas.width, H = wxCanvas.height;
-  const dim = NIGHT_DIM[wxMode] * s.stars;
-  const warm = s.warm * (wxMode === 'rain' && wxIntensity === 'heavy' ? 0.3 : 1) * (VEILED_LIGHT[wxMode] ? 1 : 0.4);
-  let light = (VEILED_LIGHT[wxMode] ?? 0) * (wxMode === 'rain' && wxIntensity === 'heavy' ? 0.4 : 1);
+  const heavyRain = wxMode === 'rain' && wxIntensity === 'heavy';
+  const dim = (NIGHT_DIM[wxMode] ?? 0) * s.stars;
+  const warm = s.warm * (heavyRain ? 0.3 : 1) * (VEILED_LIGHT[wxMode] ? 1 : 0.4);
   const body = s.sun ?? (s.stars > 0.5 ? s.moon : null);
-  if (!body) light = 0;
-  if (dim < 0.02 && warm < 0.05 && light < 0.02) return;
-
-  const key = [W, H, wxMode, wxIntensity, s.key].join('|');
-  if (veilKey !== key) {
-    veilKey = key;
-    veilOC = new OffscreenCanvas(W, H);
-    const v = veilOC.getContext('2d');
-    if (dim >= 0.02) {
-      v.fillStyle = `rgba(3,6,20,${dim.toFixed(3)})`;
-      v.fillRect(0, 0, W, H);
-    }
-    if (warm >= 0.05) {
-      const g = v.createLinearGradient(0, H * 0.35, 0, H);
-      g.addColorStop(0, 'rgba(255,140,90,0)');
-      g.addColorStop(1, `rgba(255,140,90,${(0.22 * Math.min(1, warm)).toFixed(3)})`);
-      v.fillStyle = g;
-      v.fillRect(0, H * 0.35, W, H * 0.65);
-    }
-    if (light >= 0.02) {
-      const isSun = body === s.sun;
-      const bx = W * body.x, by = H * body.y, R = Math.min(W, H) * (isSun ? 0.42 : 0.3);
-      const c = isSun ? `255,${Math.round(200 + 50 * body.e)},${Math.round(150 + 90 * body.e)}` : '215,225,255';
-      const a = light * (isSun ? 0.55 : 0.3) * (isSun ? 1 : s.moon.age > 7 && s.moon.age < 22 ? 1 : 0.5);
-      const g = v.createRadialGradient(bx, by, 0, bx, by, R);
-      g.addColorStop(0,    `rgba(${c},${a.toFixed(3)})`);
-      g.addColorStop(0.25, `rgba(${c},${(a * 0.45).toFixed(3)})`);
-      g.addColorStop(1,    `rgba(${c},0)`);
-      v.fillStyle = g;
-      v.fillRect(bx - R, by - R, R * 2, R * 2);
-    }
+  const light = body ? (VEILED_LIGHT[wxMode] ?? 0) * (heavyRain ? 0.4 : 1) : 0;
+  if (dim >= 0.02) {
+    ctx.fillStyle = `rgba(3,6,20,${dim.toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
   }
-  wxCtx.drawImage(veilOC, 0, 0);
+  if (warm >= 0.05) {
+    const g = ctx.createLinearGradient(0, H * 0.35, 0, H);
+    g.addColorStop(0, 'rgba(255,140,90,0)');
+    g.addColorStop(1, `rgba(255,140,90,${(0.22 * Math.min(1, warm)).toFixed(3)})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H * 0.35, W, H * 0.65);
+  }
+  if (light >= 0.02) {
+    const isSun = body === s.sun;
+    const bx = W * body.x, by = H * body.y, R = Math.min(W, H) * (isSun ? 0.42 : 0.3);
+    const c = isSun ? `255,${Math.round(200 + 50 * body.e)},${Math.round(150 + 90 * body.e)}` : '215,225,255';
+    const a = light * (isSun ? 0.55 : 0.3) * (isSun ? 1 : s.moon.age > 7 && s.moon.age < 22 ? 1 : 0.5);
+    const g = ctx.createRadialGradient(bx, by, 0, bx, by, R);
+    g.addColorStop(0,    `rgba(${c},${a.toFixed(3)})`);
+    g.addColorStop(0.25, `rgba(${c},${(a * 0.45).toFixed(3)})`);
+    g.addColorStop(1,    `rgba(${c},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(bx - R, by - R, R * 2, R * 2);
+  }
+}
+
+// Weather skies are fixed gradients, so the sky plus its time-of-day
+// overlay is drawn once into an image and reused every frame: one
+// full-screen draw per frame, same as a plain gradient fill. (Drawing the
+// overlay separately each frame cost ~10-15 FPS on a Pi 4 at 1080p.)
+// Rebuilt when the weather, size or sky (refreshSky, once a minute) changes.
+let wxSkyOC = null, wxSkyKey = '';
+function drawWeatherSky(drawBase) {
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const key = [W, H, wxMode, wxIntensity, skyState?.key].join('|');
+  if (wxSkyKey !== key) {
+    wxSkyKey = key;
+    wxSkyOC = new OffscreenCanvas(W, H);
+    wxCtx.clearRect(0, 0, W, H);
+    drawBase();
+    paintSkyTimeOverlay(wxCtx);
+    wxSkyOC.getContext('2d').drawImage(wxCanvas, 0, 0);
+    return; // already on screen for this frame
+  }
+  wxCtx.drawImage(wxSkyOC, 0, 0);
 }
 
 // The moon's darker "seas" (maria) as seen from the Northern Hemisphere:
@@ -1058,8 +1071,10 @@ function drawTornadoSky() {
 // just different coloring, since all three are fundamentally "reduced
 // visibility, hazy air" rather than distinct cloud shapes or precipitation.
 function drawHazeSky(key, baseStops, highlightRgba) {
-  wxCtx.fillStyle = getSkyGrad(key, baseStops);
-  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+  drawWeatherSky(() => {
+    wxCtx.fillStyle = getSkyGrad(key, baseStops);
+    wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+  });
   const W = wxCanvas.width, H = wxCanvas.height;
   const t = performance.now() * 0.00004;
   [[0.25, 0.4], [0.7, 0.55]].forEach(([cfx, cfy], i) => {
@@ -1530,7 +1545,7 @@ function drawFrame(ts = 0) {
       break;
 
     case 'overcast':
-      drawOvercastSky();
+      drawWeatherSky(drawOvercastSky);
       drawClouds(dt);
       break;
 
@@ -1562,60 +1577,60 @@ function drawFrame(ts = 0) {
 
     case 'rain':
     case 'storm':
-      drawRainSky();
+      drawWeatherSky(drawRainSky);
       drawRain(dt);
       break;
 
     case 'storm-severe':
-      drawStormDarkSky();
+      drawWeatherSky(drawStormDarkSky);
       drawRain(dt);
       break;
 
     case 'hurricane':
-      drawStormDarkSky();
+      drawWeatherSky(drawStormDarkSky);
       drawRain(dt);
       drawStreaks(dt);
       break;
 
     case 'tornado':
-      drawTornadoSky();
+      drawWeatherSky(drawTornadoSky);
       drawRain(dt);
       drawFunnel(ts);
       break;
 
     case 'sleet':
-      drawSnowSky();
+      drawWeatherSky(drawSnowSky);
       drawSleet(dt);
       break;
 
     case 'hail':
-      drawStormDarkSky();
+      drawWeatherSky(drawStormDarkSky);
       drawHail(ts, dt);
       break;
 
     case 'snow':
-      drawSnowSky();
+      drawWeatherSky(drawSnowSky);
       drawSnow(ts, dt);
       break;
 
     case 'thundersnow':
-      drawSnowSky();
+      drawWeatherSky(drawSnowSky);
       drawSnow(ts, dt);
       break;
 
     case 'blizzard':
-      drawBlizzardSky();
+      drawWeatherSky(drawBlizzardSky);
       drawStreaks(dt);
       drawBlizzard(dt);
       break;
 
     case 'extreme-heat':
-      drawHeatSky();
+      drawWeatherSky(drawHeatSky);
       drawHeatShimmer(ts);
       break;
 
     case 'extreme-cold':
-      drawColdSky();
+      drawWeatherSky(drawColdSky);
       drawFrostSparkle(ts);
       break;
 
@@ -1627,10 +1642,6 @@ function drawFrame(ts = 0) {
       wxAnimId = null;
       return;
   }
-
-  // Night darkening, sunrise/sunset warmth and a veiled sun/moon for the
-  // weather skies (no-op for the clear/cloudy/windy ones)
-  drawSkyTimeOverlay();
 
   // Bolt overlays everything (any mode with lightning scheduled — storm,
   // storm-severe, thundersnow, hurricane); JS controls boltAlpha
