@@ -287,6 +287,17 @@ The app will launch fullscreen like a native app.
 
 ---
 
+## Backups
+
+Every time the dashboard starts (each update, restart and reboot) it saves a
+copy of all its data to `db/backups/dashboard-YYYYMMDD-HHMMSS.db`, keeping
+the newest 14. To restore one: stop the service, copy the backup over
+`db/dashboard.db` (delete any `dashboard.db-wal`/`-shm` next to it), and
+start the service again. **Reset for a New Owner** and `prepare-image.sh`
+delete these backups, since they hold the family's data.
+
+---
+
 ## Updating
 
 Normally automatic: the dashboard checks for updates every 5 minutes and

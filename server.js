@@ -33,7 +33,30 @@ try {
 
 const dbDir = path.join(__dirname, 'db');
 fs.mkdirSync(dbDir, { recursive: true });
-const db = new DatabaseSync(path.join(dbDir, 'dashboard.db'));
+const dbPath = path.join(dbDir, 'dashboard.db');
+const dbExisted = fs.existsSync(dbPath);
+const db = new DatabaseSync(dbPath);
+
+// A copy of the data every time the dashboard starts (each update, restart
+// and reboot), in db/backups/, keeping the newest BACKUPS_KEPT. VACUUM INTO
+// writes a clean, consistent copy even while the app has the file open.
+// Never blocks startup: a failed backup is logged and the app carries on.
+const BACKUPS_KEPT = 14;
+function backupOnStart() {
+  if (!dbExisted) return; // brand-new install: nothing to save yet
+  try {
+    const dir = path.join(dbDir, 'backups');
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+    db.prepare('VACUUM INTO ?').run(path.join(dir, `dashboard-${stamp}.db`));
+    const old = fs.readdirSync(dir).filter(f => /^dashboard-\d{8}-\d{6}\.db$/.test(f)).sort().slice(0, -BACKUPS_KEPT);
+    for (const f of old) fs.unlinkSync(path.join(dir, f));
+    console.log(`Backed up data to db/backups/dashboard-${stamp}.db`);
+  } catch (err) {
+    console.error('Startup backup failed:', err.message);
+  }
+}
+backupOnStart();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS todo_items (
@@ -771,7 +794,8 @@ app.post('/api/setup/complete', (req, res) => {
 
 // "Reset for a new owner": snapshots the database to the home folder (just
 // in case), then erases everything personal — events, to-dos, bulletin,
-// remote access code/sessions, Tailscale account, saved Wi-Fi — and puts the
+// remote access code/sessions, the startup backups in db/backups (they hold
+// the previous owner's data), Tailscale account, saved Wi-Fi — and puts the
 // dashboard back into first-run setup. The browser side clears its own
 // saved settings and reloads.
 app.post('/api/setup/reset', async (req, res) => {
@@ -787,6 +811,7 @@ app.post('/api/setup/reset', async (req, res) => {
       DELETE FROM app_settings;
       DELETE FROM gfx_benchmarks;
     `);
+    fs.rmSync(path.join(dbDir, 'backups'), { recursive: true, force: true });
     await tailscale.logout();
     setup.markFirstRun();
     res.json({ ok: true, backup });

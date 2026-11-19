@@ -37,6 +37,7 @@ sudo systemctl stop dashboard.service
 
 echo "-- Erasing dashboard data, turning first-run setup on --"
 rm -f "$REPO_DIR"/db/dashboard.db "$REPO_DIR"/db/dashboard.db-*
+rm -rf "$REPO_DIR"/db/backups
 mkdir -p "$REPO_DIR/db"
 date -u +%FT%TZ > "$REPO_DIR/db/first-run"
 rm -f "$HOME"/dashboard-backup-*.db "$HOME"/dashboard-reset-backup-*.db
