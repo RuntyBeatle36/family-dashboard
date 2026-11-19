@@ -2223,13 +2223,11 @@ document.getElementById('exit-kiosk-btn').addEventListener('click', async () => 
 });
 
 /* ── Which alerts were already announced ────────────────────
-   Kept in localStorage (alert id → its event and when last seen), so an
+   Kept in localStorage (alert id → when last seen), so an
    update, restart or page reload doesn't beep and read out alerts that
-   were already announced. When NWS updates an alert (extends it, edits the
-   counties) the new one lists the old one in `references`; that counts as
-   already announced too, unless the event itself changed (a Watch
-   upgraded to a Warning is announced). Entries are dropped 3 days after
-   the alert was last active. The very first load starts quietly. */
+   were already announced. When NWS extends or edits an alert it issues it
+   under a new id, so that is announced again. Entries are dropped 3 days
+   after the alert was last active. The very first load starts quietly. */
 const ANNOUNCED_KEY = 'announcedAlerts';
 const ANNOUNCED_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -2243,12 +2241,8 @@ function takeUnannounced(features) {
   // whatever is already active is on the banner, but isn't announced, so
   // the update itself doesn't set off the beeps
   const firstRun = stored === null;
-  const fresh = firstRun ? [] : features.filter(f => {
-    const p = f.properties;
-    if (seen[p.id]) return false;
-    return !(p.references || []).some(r => seen[r.identifier]?.event === p.event);
-  });
-  for (const f of features) seen[f.properties.id] = { event: f.properties.event, t: now };
+  const fresh = firstRun ? [] : features.filter(f => !seen[f.properties.id]);
+  for (const f of features) seen[f.properties.id] = { t: now };
   for (const [id, v] of Object.entries(seen)) if (now - v.t > ANNOUNCED_KEEP_MS) delete seen[id];
   try { localStorage.setItem(ANNOUNCED_KEY, JSON.stringify(seen)); } catch { /* storage full/blocked */ }
   return fresh;
