@@ -2486,3 +2486,39 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 .ui-panel .debug-alert-tier { grid-column: 1 / -1; }
 .ui-panel .reset-list { color: var(--text); }
 .panel-head-left > .panel-title { justify-self: start; }
+
+/* ── Weather alert banner: tap for details ─────────────────── */
+#alert-banner { cursor: pointer; }
+.alert-more {
+  flex: none;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.22);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.alert-card { border-left: 5px solid #c8a200 !important; }
+.alert-card-moderate { border-left-color: #e07a10 !important; }
+.alert-card-severe, .alert-card-extreme { border-left-color: #d63030 !important; }
+.alert-card-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.alert-sev {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #a88a00;
+}
+.alert-card-moderate .alert-sev { background: #c86a08; }
+.alert-card-severe .alert-sev, .alert-card-extreme .alert-sev { background: #c42a2a; }
+.alert-headline { font-size: 0.95rem; font-weight: 600; line-height: 1.4; }
+.alert-text {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-line;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--card-border);
+}
+.alert-card-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.2rem; }

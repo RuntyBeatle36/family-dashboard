@@ -2152,14 +2152,19 @@ function speakAlerts(sorted) {
   // only the spoken readout is filtered here.
   const minRank   = ALERT_SEV[getTtsMinSeverity()] ?? 3;
   const speakable = sorted.filter(f => (ALERT_SEV[f.properties.severity] ?? 4) <= minRank);
-  if (!speakable.length) return;
+  if (speakable.length) speakAlertList(speakable);
+}
+
+// Reads the given alerts out, regardless of the Read Aloud setting (also
+// used by the Read Aloud button in the alert details)
+function speakAlertList(list) {
   cancelTts();
   speakText(
     'The National Weather Service has issued the following alert' +
-    (speakable.length > 1 ? 's' : '') + '.',
+    (list.length > 1 ? 's' : '') + '.',
     showError
   );
-  for (const f of speakable) {
+  for (const f of list) {
     const p     = f.properties;
     const areas = p.areaDesc
       ? p.areaDesc.split(';').map(s => s.trim()).filter(Boolean).join(', ')
@@ -2217,26 +2222,68 @@ document.getElementById('exit-kiosk-btn').addEventListener('click', async () => 
   // (and this page along with it) is about to disappear.
 });
 
+/* ── Which alerts were already announced ────────────────────
+   Kept in localStorage (alert id → its event and when last seen), so an
+   update, restart or page reload doesn't beep and read out alerts that
+   were already announced. When NWS updates an alert (extends it, edits the
+   counties) the new one lists the old one in `references`; that counts as
+   already announced too, unless the event itself changed (a Watch
+   upgraded to a Warning is announced). Entries are dropped 3 days after
+   the alert was last active. */
+const ANNOUNCED_KEY = 'announcedAlerts';
+const ANNOUNCED_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
+
+function takeUnannounced(features) {
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem(ANNOUNCED_KEY)) || {}; } catch { /* start fresh */ }
+  const now = Date.now();
+  const fresh = features.filter(f => {
+    const p = f.properties;
+    if (seen[p.id]) return false;
+    return !(p.references || []).some(r => seen[r.identifier]?.event === p.event);
+  });
+  for (const f of features) seen[f.properties.id] = { event: f.properties.event, t: now };
+  for (const [id, v] of Object.entries(seen)) if (now - v.t > ANNOUNCED_KEEP_MS) delete seen[id];
+  try { localStorage.setItem(ANNOUNCED_KEY, JSON.stringify(seen)); } catch { /* storage full/blocked */ }
+  return fresh;
+}
+
 /* ── Render alert banner (scrolling ticker) ───────────────── */
 let lastAlertKey = '';
+let currentAlerts = []; // most severe first, for the details view
 
-function renderAlerts(features) {
+// simulated: Debug Tools ▸ Simulate Alerts, which announces every time
+function renderAlerts(features, { simulated = false } = {}) {
   const banner = document.getElementById('alert-banner');
   if (!features.length) {
     banner.hidden = true;
     lastAlertKey = '';
+    currentAlerts = [];
+    if (!alertModal.hidden) renderAlertDetails();
     return;
   }
 
   const sorted = [...features].sort((a, b) =>
     (ALERT_SEV[a.properties.severity] ?? 4) - (ALERT_SEV[b.properties.severity] ?? 4));
+  currentAlerts = sorted;
+  if (!alertModal.hidden) renderAlertDetails();
+  const toAnnounce = simulated ? sorted : takeUnannounced(sorted);
 
-  // Detect new/changed alerts so we only sound once per change
+  // Redraw the ticker only when the alerts change, so it doesn't jump
+  // back to the start every 5-minute refresh
   const key = sorted.map(f => f.properties.id || f.properties.event).join('|');
-  const isNew = key !== lastAlertKey;
+  if (key !== lastAlertKey) banner.innerHTML = alertTickerHtml(sorted);
   lastAlertKey = key;
+  banner.hidden = false;
 
-  banner.innerHTML = sorted.map(f => {
+  if (toAnnounce.length) {
+    playAlertSound();
+    setTimeout(() => speakAlerts(toAnnounce), ALERT_BEEP_TOTAL_MS + 500); // beeps first, then voice
+  }
+}
+
+function alertTickerHtml(sorted) {
+  return sorted.map(f => {
     const p        = f.properties;
     const cls      = ALERT_CLS[p.severity]  || 'alert-minor';
     const ico      = ALERT_ICON[p.severity] || '⚠️';
@@ -2256,15 +2303,67 @@ function renderAlerts(features) {
       <div class="alert-ticker-wrap">
         <div class="alert-ticker-inner" style="animation-duration:${dur}s">${escHtml(doubled)}</div>
       </div>
+      <span class="alert-more">Details ›</span>
     </div>`;
   }).join('');
-  banner.hidden = false;
-
-  if (isNew) {
-    playAlertSound();
-    setTimeout(() => speakAlerts(sorted), ALERT_BEEP_TOTAL_MS + 500); // beeps first, then voice
-  }
 }
+
+/* ── Alert details (tap the banner) ──────────────────────────
+   Every active alert in full, most severe first, with buttons to read it
+   aloud again or replay the alert sound. Those play even when the alert
+   sound / read-aloud settings are off, since someone asked for them. */
+const alertModal = document.getElementById('alert-modal');
+const alertModalBody = document.getElementById('alert-modal-body');
+
+function fmtAlertTime(iso) {
+  return new Date(iso).toLocaleString([], {
+    weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: getTimeFormat() !== '24h',
+  });
+}
+
+function renderAlertDetails() {
+  alertModalBody.innerHTML = currentAlerts.map((f, i) => {
+    const p = f.properties;
+    const areas = p.areaDesc ? p.areaDesc.split(';').map(a => a.trim()).filter(Boolean).join(', ') : '';
+    const ends = p.ends || p.expires;
+    const when = [p.effective && `From ${fmtAlertTime(p.effective)}`, ends && `until ${fmtAlertTime(ends)}`]
+      .filter(Boolean).join(' ');
+    const sev = (p.severity || 'Minor').toLowerCase();
+    return `<div class="settings-section alert-card alert-card-${sev}">
+      <div class="alert-card-head">
+        <span class="alert-sev">${escHtml(p.severity || 'Alert')}</span>
+        <div class="settings-section-title">${escHtml(p.event)}</div>
+      </div>
+      ${when ? `<p class="settings-desc">${escHtml(when)}</p>` : ''}
+      ${p.headline && p.headline !== p.event ? `<p class="alert-headline">${escHtml(p.headline)}</p>` : ''}
+      ${areas ? `<p class="settings-desc"><strong>Areas:</strong> ${escHtml(areas)}</p>` : ''}
+      ${p.description ? `<div class="alert-text">${escHtml(p.description)}</div>` : ''}
+      ${p.instruction ? `<div class="alert-text"><strong>What to do</strong><br>${escHtml(p.instruction)}</div>` : ''}
+      <div class="alert-card-actions">
+        <button class="btn btn-accent btn-sm" data-alert-say="${i}">Read Aloud</button>
+        <button class="btn btn-ghost btn-sm" data-alert-beep>Play Alert Sound</button>
+        <button class="btn btn-ghost btn-sm" data-alert-stop>Stop</button>
+      </div>
+    </div>`;
+  }).join('') || '<p class="panel-hint">There are no weather alerts right now.</p>';
+}
+
+document.getElementById('alert-banner').addEventListener('click', e => {
+  e.stopPropagation(); // not also a tap on the Lock Screen behind
+  renderAlertDetails();
+  alertModal.hidden = false;
+});
+alertModalBody.addEventListener('click', e => {
+  const say = e.target.closest('[data-alert-say]');
+  if (say) return speakAlertList([currentAlerts[+say.dataset.alertSay]].filter(Boolean));
+  if (e.target.closest('[data-alert-beep]')) {
+    try { playBeepSequence(getAudioCtx()); } catch { /* AudioContext unavailable */ }
+    return;
+  }
+  if (e.target.closest('[data-alert-stop]')) cancelTts();
+});
+document.getElementById('alert-modal-close').addEventListener('click', () => { alertModal.hidden = true; });
+alertModal.addEventListener('click', e => { if (e.target === alertModal) alertModal.hidden = true; });
 
 async function fetchAlerts() {
   const loc = getActiveLocation();
@@ -3206,9 +3305,9 @@ document.getElementById('debug-alert-grid').addEventListener('click', e => {
     renderAlerts([
       { properties: { severity: 'Severe',   event: 'Severe Thunderstorm Warning', headline: 'Severe Thunderstorm Warning in effect until 6:30 PM CDT. Quarter-size hail and 70 mph winds.', areaDesc: 'Nueces; San Patricio; Kleberg' } },
       { properties: { severity: 'Moderate', event: 'Flash Flood Watch',            headline: 'Flash Flood Watch in effect through tomorrow morning. Heavy rainfall may produce flash flooding.', areaDesc: 'Nueces; San Patricio; Bee; Kleberg; Aransas' } },
-    ]);
+    ], { simulated: true });
   } else {
-    renderAlerts([{ properties: { severity: sev, event, headline, areaDesc: DEFAULT_AREA } }]);
+    renderAlerts([{ properties: { severity: sev, event, headline, areaDesc: DEFAULT_AREA } }], { simulated: true });
   }
   document.querySelectorAll('.debug-alert-btn').forEach(b =>
     b.classList.toggle('active', b === btn && sev !== 'none'));
