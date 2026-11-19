@@ -2266,7 +2266,7 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 .settings-pane.active { display: flex; }
 
 /* Each group is a card */
-.settings-shell .settings-section {
+:is(.settings-shell, .ui-panel) .settings-section {
   gap: 0.6rem;
   margin: 0;
   padding: 0.95rem 1.05rem;
@@ -2274,26 +2274,26 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
   border: 1px solid var(--card-border);
   border-radius: 14px;
 }
-.settings-shell .settings-section-title {
+:is(.settings-shell, .ui-panel) .settings-section-title {
   font-size: 0.98rem;
   font-weight: 700;
   color: var(--text);
   text-transform: none;
   letter-spacing: 0;
 }
-.settings-shell .settings-desc { font-size: 0.84rem; line-height: 1.45; }
+:is(.settings-shell, .ui-panel) .settings-desc { font-size: 0.84rem; line-height: 1.45; }
 
 /* Switch rows: label on the left, switch on the right, full-width tap target */
-.settings-shell .settings-toggle {
+:is(.settings-shell, .ui-panel) .settings-toggle {
   flex-direction: row-reverse;
   justify-content: space-between;
   min-height: 40px;
   padding: 0.2rem 0;
   font-size: 0.93rem;
 }
-.settings-shell .settings-toggle input[type="checkbox"] { width: 46px; height: 28px; border-radius: 14px; }
-.settings-shell .settings-toggle input[type="checkbox"]::after { width: 22px; height: 22px; }
-.settings-shell .settings-toggle input[type="checkbox"]:checked::after { transform: translateX(18px); }
+:is(.settings-shell, .ui-panel) .settings-toggle input[type="checkbox"] { width: 46px; height: 28px; border-radius: 14px; }
+:is(.settings-shell, .ui-panel) .settings-toggle input[type="checkbox"]::after { width: 22px; height: 22px; }
+:is(.settings-shell, .ui-panel) .settings-toggle input[type="checkbox"]:checked::after { transform: translateX(18px); }
 
 .settings-row {
   display: flex;
@@ -2307,8 +2307,8 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 .range-row { display: flex; align-items: center; gap: 0.75rem; }
 .range-row input[type="range"] { flex: 1; min-width: 0; }
 .range-cap { flex: none; color: var(--text-dim); font-size: 0.78rem; font-weight: 600; text-transform: none; letter-spacing: 0; }
-.settings-shell .zip-coords { font-family: inherit; font-size: 0.86rem; color: var(--text); }
-.settings-shell #wx-use-location-btn { margin: 0; }
+:is(.settings-shell, .ui-panel) .zip-coords { font-family: inherit; font-size: 0.86rem; color: var(--text); }
+:is(.settings-shell, .ui-panel) #wx-use-location-btn { margin: 0; }
 
 .settings-update { border-color: var(--accent) !important; }
 
@@ -2391,3 +2391,98 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 .hs-phone .hs-white   { fill: #fff; font-size: 6px; }
 .hs-phone .hs-hl      { fill: none; stroke: #ff8a00; stroke-width: 2.5; animation: hs-pulse 1.6s ease-in-out infinite; }
 @keyframes hs-pulse { 50% { stroke-opacity: 0.35; } }
+
+/* ══════════════════════════════════════════════════════════
+   PANELS — every popup menu shares the Settings look: a header
+   (back/cancel, title, action), a scrolling body of cards, and
+   an optional footer of buttons.
+   ══════════════════════════════════════════════════════════ */
+.ui-panel {
+  --card:        rgba(255,255,255,0.05);
+  --card-border: rgba(255,255,255,0.08);
+  padding: 0;
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+}
+[data-theme="light"] .ui-panel {
+  --card:        rgba(255,255,255,0.55);
+  --card-border: rgba(255,255,255,0.85);
+}
+.ui-panel-sm { max-width: 440px; }
+.ui-panel-md { max-width: 580px; }
+.ui-panel-lg { max-width: 880px; }
+
+.panel-form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.panel-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.95rem 1.2rem 0.8rem;
+  border-bottom: 1px solid var(--glass-border2);
+}
+.panel-head > :first-child { justify-self: start; }
+.panel-head > :last-child  { justify-self: end; }
+.panel-title { font-size: 1.1rem; font-weight: 700; text-align: center; }
+/* Title on the left, one button on the right */
+.panel-head-left { grid-template-columns: 1fr auto; }
+.panel-head-left .panel-title { text-align: left; overflow-wrap: anywhere; }
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem 1.2rem 1.2rem;
+}
+.panel-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.8rem 1.2rem;
+  border-top: 1px solid var(--glass-border2);
+}
+.panel-foot:has(> :only-child) { justify-content: flex-end; }
+.panel-hint { font-size: 0.84rem; color: var(--text-dim); line-height: 1.45; }
+
+/* Plain inputs inside a card (title, person, notes) */
+.panel-input {
+  width: 100%;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.6rem 0.75rem;
+  resize: vertical;
+}
+.panel-input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.panel-input::placeholder { color: var(--text-dimmer); }
+[data-theme="light"] .panel-input::placeholder { color: rgba(20, 30, 50, 0.42); }
+.panel-input-lg { font-size: 1.15rem; font-weight: 600; }
+
+/* A switch with a second, smaller line under its label */
+.toggle-sub { display: block; font-size: 0.78rem; color: var(--text-dim); margin-top: 0.1rem; }
+.dt-input-icon.ico { width: 1.1rem; height: 1.1rem; color: var(--text-dim); }
+
+/* Event details */
+.ui-panel .detail-color-bar { height: 6px; margin: 0; border-radius: 0; box-shadow: none; }
+.ui-panel .detail-body { margin: 0; line-height: 1.45; color: var(--text); font-size: 0.95rem; }
+.detail-row { display: flex; align-items: flex-start; gap: 0.7rem; }
+.detail-row .ico { flex: none; width: 1.15rem; height: 1.15rem; margin-top: 0.1rem; color: var(--text-dim); }
+.detail-sub { display: block; font-size: 0.8rem; color: var(--text-dim); }
+.ui-panel .detail-desc { margin-top: 0.2rem; }
+.ui-panel .detail-created { margin-top: 0; }
+
+/* "Which events?" choices as full-width rows */
+.ui-panel .recur-scope-options .btn { min-height: 48px; font-size: 0.95rem; }
+
+/* Debug Tools: the many preview buttons in a tidier grid */
+.ui-panel .debug-wx-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.ui-panel .debug-wx-grid > [style*="span 2"] { grid-column: 1 / -1 !important; }
+.ui-panel .debug-alert-tier { grid-column: 1 / -1; }
+.ui-panel .reset-list { color: var(--text); }
+.panel-head-left > .panel-title { justify-self: start; }

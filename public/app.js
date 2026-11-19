@@ -3380,7 +3380,7 @@ function renderRemote() {
   switch (remoteScreen(s)) {
     case 'not-installed':
       html = `<h4 class="remote-title">Almost ready</h4>
-        <p class="settings-desc">This needs the latest update first. Tap <strong>🔄 Update available</strong>
+        <p class="settings-desc">This needs the latest update first. Tap <strong>Update available</strong>
         at the top of the screen, then <strong>Update Now</strong>. When the dashboard comes back, open this again.</p>`;
       break;
 
@@ -4451,15 +4451,15 @@ function renderBenchResults(res) {
   el.innerHTML = `
     <div class="bench-rec">
       ${rec
-        ? `<strong>Recommended:</strong> Glass Blur <strong>${cap(rec.glass)}</strong>, Weather Animation <strong>${cap(rec.wx)}</strong>
+        ? `<strong>Recommended:</strong> Frosted Glass <strong>${cap(rec.glass)}</strong>, Animated Sky <strong>${cap(rec.wx)}</strong>
            <button class="btn btn-ghost btn-sm" id="bench-apply">Apply</button>`
-        : '<strong>Nothing stayed smooth</strong> — keep Glass Blur and Weather Animation both Off.'}
+        : '<strong>Nothing stayed smooth</strong> — keep Frosted Glass and Animated Sky both Off.'}
       ${res.runs.some(r => r.verdict === 'invalid') ? '<br>⚠️ The screen was hidden or covered during some runs (marked Invalid), so those were skipped. Re-run for a complete result.' : ''}
       ${res.runs.some(r => r.throttled) ? '<br>⚠️ The Pi reported throttling (heat or undervoltage) during the run, so these numbers may be pessimistic.' : ''}
       <br><span class="settings-desc">${when} · ${res.screen}</span>
     </div>
     <div class="bench-scroll"><table>
-      <tr><th>Glass</th><th>Weather</th><th>Scene</th><th>Avg FPS</th><th>1% low</th><th>Jank</th><th>CPU</th><th></th></tr>
+      <tr><th>Glass</th><th>Sky</th><th>Scene</th><th>Avg FPS</th><th>1% low</th><th>Jank</th><th>CPU</th><th></th></tr>
       ${rows}
     </table></div>`;
   document.getElementById('bench-apply')?.addEventListener('click', () => {
@@ -4502,7 +4502,7 @@ async function runGraphicsBenchmark({ fromSetup = false } = {}) {
     for (const [i, p] of plan.entries()) {
       banner.textContent = fromSetup
         ? `Tuning the display for this screen (${i + 1} of ${plan.length}). This takes about 3 minutes. The screen is locked until it's done.`
-        : `Benchmark ${i + 1}/${plan.length}: Glass ${p.glass} · Weather ${p.wx}` +
+        : `Benchmark ${i + 1}/${plan.length}: Glass ${p.glass} · Sky ${p.wx}` +
           (p.wx === 'off' ? '' : ` · ${p.scene.label}`) + ' — touch is locked until it\'s done';
       runs.push(await benchRunOne(p.glass, p.wx, p.scene));
     }
@@ -5330,6 +5330,12 @@ function describeRecurrence(ev) {
   }
 }
 
+// Event details rows (the rest come from ICON)
+const DETAIL_ICON = {
+  clock:  '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  person: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+};
+
 function showEventDetail(ev) {
   detailEventId   = ev.id;
   detailEventDate = ev.display_date;
@@ -5342,20 +5348,17 @@ function showEventDetail(ev) {
   const DNLONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const dateFmt = fmtLongDate(dateObj, { weekday: DNLONG[dateObj.getDay()] });
 
-  let info = `<strong>Date:</strong> ${dateFmt}<br>`;
-  if (ev.start_time) {
-    info += `<strong>Time:</strong> ${fmt12h(ev.start_time)}`;
-    if (ev.end_time) info += ` – ${fmt12h(ev.end_time)}`;
-    info += '<br>';
-  } else {
-    info += `<strong>Time:</strong> All day<br>`;
-  }
-  if (ev.person) info += `<strong>Person:</strong> ${escHtml(ev.person)}<br>`;
-  if (ev.is_private) info += `<strong>🔒 Private</strong> (shows as "Busy" until tapped)<br>`;
+  const row = (icon, text) => `<div class="detail-row">${icon}<span>${text}</span></div>`;
+  let info = row(ICON.calendar, dateFmt);
+  info += row(DETAIL_ICON.clock, ev.start_time
+    ? fmt12h(ev.start_time) + (ev.end_time ? ` – ${fmt12h(ev.end_time)}` : '')
+    : 'All day');
+  if (ev.person) info += row(DETAIL_ICON.person, escHtml(ev.person));
+  if (ev.is_private) info += row(ICON.lock, 'Private <span class="detail-sub">Shows as "Busy" until someone taps it</span>');
 
   const isRecurring = ev.recurrence && ev.recurrence !== 'none';
   if (isRecurring) {
-    info += `<strong>Recurrence:</strong> ${describeRecurrence(ev)}<br>`;
+    info += row(ICON.refresh, describeRecurrence(ev));
     document.getElementById('detail-delete').textContent = 'Delete…';
   } else {
     document.getElementById('detail-delete').textContent = 'Delete Event';

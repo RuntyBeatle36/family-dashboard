@@ -165,135 +165,140 @@
   </aside>
 </div>
 
-<!-- ── Add Event Modal ───────────────────────────────────────── -->
+<!-- ── Add / Edit Event ──────────────────────────────────────── -->
+<!-- Same panel style as Settings: header with Cancel / title / Save,
+     settings grouped into cards. Field IDs are what app.js uses. -->
 <div id="add-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h3 class="modal-title" id="add-modal-title">Add Event</h3>
-    <p class="settings-desc" id="edit-recur-hint" hidden>
-      Editing a recurring event updates the entire series (all occurrences).
-    </p>
-    <form id="add-event-form" class="modal-form" autocomplete="off">
+  <div class="modal ui-panel ui-panel-md">
+    <form id="add-event-form" class="panel-form" autocomplete="off">
+      <header class="panel-head">
+        <button type="button" class="btn btn-ghost btn-sm" id="add-modal-cancel">Cancel</button>
+        <h3 class="panel-title" id="add-modal-title">Add Event</h3>
+        <button type="submit" class="btn btn-accent btn-sm" id="add-modal-submit">Save Event</button>
+      </header>
 
-      <label class="field-label">Title
-        <input id="ev-title" type="text" placeholder="Event name" maxlength="120" required />
-      </label>
+      <div class="panel-body">
+        <p class="panel-hint" id="edit-recur-hint" hidden>
+          Editing a recurring event updates the entire series (all occurrences).
+        </p>
 
-      <label class="field-label">Person
-        <input id="ev-person" type="text" placeholder="Whose event? (optional)" maxlength="40" />
-      </label>
-
-      <label class="field-label">Description
-        <textarea id="ev-desc" placeholder="Optional details…" maxlength="500" rows="2"></textarea>
-      </label>
-
-      <div class="field-label">Color
-        <div class="color-swatches" id="color-swatches"></div>
-        <input id="ev-color" type="hidden" value="#4f8ef7" />
-      </div>
-
-      <label class="field-label">Date
-        <div class="dt-input-wrap">
-          <input id="ev-date" type="date" required class="dt-input-native" />
-          <button type="button" class="dt-input-display" id="ev-date-btn">
-            <span class="dt-input-icon">📅</span>
-            <span id="ev-date-text" class="dt-input-text"></span>
-          </button>
+        <div class="settings-section">
+          <input id="ev-title" class="panel-input panel-input-lg" type="text" placeholder="Title" aria-label="Title" maxlength="120" required />
+          <input id="ev-person" class="panel-input" type="text" placeholder="Whose event? (optional)" aria-label="Person" maxlength="40" />
+          <textarea id="ev-desc" class="panel-input" placeholder="Notes (optional)" aria-label="Notes" maxlength="500" rows="2"></textarea>
         </div>
-      </label>
 
-      <label class="field-label allday-row">
-        <input id="ev-allday" type="checkbox" />
-        All day
-      </label>
+        <div class="settings-section">
+          <label class="field-label">Date
+            <div class="dt-input-wrap">
+              <input id="ev-date" type="date" required class="dt-input-native" />
+              <button type="button" class="dt-input-display" id="ev-date-btn">
+                <svg class="ico dt-input-icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+                <span id="ev-date-text" class="dt-input-text"></span>
+              </button>
+            </div>
+          </label>
 
-      <label class="field-label allday-row">
-        <input id="ev-private" type="checkbox" />
-        🔒 Private (shows as "Busy" until tapped)
-      </label>
+          <label class="settings-toggle">
+            <input id="ev-allday" type="checkbox" />
+            All day
+          </label>
 
-      <div id="ev-time-fields" class="modal-row">
-        <label class="field-label">Start
-          <div class="dt-input-wrap">
-            <input id="ev-start" type="time" class="dt-input-native" />
-            <button type="button" class="dt-input-display" id="ev-start-btn">
-              <span class="dt-input-icon">🕐</span>
-              <span id="ev-start-text" class="dt-input-text"></span>
-            </button>
+          <div id="ev-time-fields" class="modal-row">
+            <label class="field-label">Starts
+              <div class="dt-input-wrap">
+                <input id="ev-start" type="time" class="dt-input-native" />
+                <button type="button" class="dt-input-display" id="ev-start-btn">
+                  <svg class="ico dt-input-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                  <span id="ev-start-text" class="dt-input-text"></span>
+                </button>
+              </div>
+            </label>
+            <label class="field-label">Ends
+              <div class="dt-input-wrap">
+                <input id="ev-end" type="time" class="dt-input-native" />
+                <button type="button" class="dt-input-display" id="ev-end-btn">
+                  <svg class="ico dt-input-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                  <span id="ev-end-text" class="dt-input-text"></span>
+                </button>
+              </div>
+            </label>
           </div>
-        </label>
-        <label class="field-label">End
-          <div class="dt-input-wrap">
-            <input id="ev-end" type="time" class="dt-input-native" />
-            <button type="button" class="dt-input-display" id="ev-end-btn">
-              <span class="dt-input-icon">🕐</span>
-              <span id="ev-end-text" class="dt-input-text"></span>
-            </button>
-          </div>
-        </label>
-      </div>
-
-      <div class="modal-row" id="ev-repeat-row">
-        <label class="field-label" style="flex:1.6">Repeat
-          <select id="ev-recur">
-            <option value="none">Does not repeat</option>
-            <option value="daily">Day(s)</option>
-            <option value="weekly">Week(s)</option>
-            <option value="monthly">Month(s), same date</option>
-            <option value="monthly_weekday">Month(s), same weekday</option>
-            <option value="yearly">Year(s)</option>
-          </select>
-        </label>
-        <label class="field-label" id="ev-interval-row" style="display:none;flex:0 0 150px">Every
-          <div class="interval-input-group">
-            <input id="ev-recur-interval" type="number" min="1" max="99" value="1" />
-            <span id="ev-interval-unit" class="interval-unit">week(s)</span>
-          </div>
-        </label>
-      </div>
-
-      <label class="field-label" id="ev-until-row" style="display:none">Repeat until
-        <div class="dt-input-wrap">
-          <input id="ev-until" type="date" class="dt-input-native" />
-          <button type="button" class="dt-input-display" id="ev-until-btn">
-            <span class="dt-input-icon">📅</span>
-            <span id="ev-until-text" class="dt-input-text"></span>
-          </button>
         </div>
-      </label>
 
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="add-modal-cancel">Cancel</button>
-        <button type="submit" class="btn btn-accent" id="add-modal-submit">Save Event</button>
+        <div class="settings-section" id="ev-repeat-row">
+          <div class="modal-row">
+            <label class="field-label" style="flex:1.6">Repeat
+              <select id="ev-recur">
+                <option value="none">Does not repeat</option>
+                <option value="daily">Day(s)</option>
+                <option value="weekly">Week(s)</option>
+                <option value="monthly">Month(s), same date</option>
+                <option value="monthly_weekday">Month(s), same weekday</option>
+                <option value="yearly">Year(s)</option>
+              </select>
+            </label>
+            <label class="field-label" id="ev-interval-row" style="display:none;flex:0 0 150px">Every
+              <div class="interval-input-group">
+                <input id="ev-recur-interval" type="number" min="1" max="99" value="1" />
+                <span id="ev-interval-unit" class="interval-unit">week(s)</span>
+              </div>
+            </label>
+          </div>
+
+          <label class="field-label" id="ev-until-row" style="display:none">Repeat until
+            <div class="dt-input-wrap">
+              <input id="ev-until" type="date" class="dt-input-native" />
+              <button type="button" class="dt-input-display" id="ev-until-btn">
+                <svg class="ico dt-input-icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+                <span id="ev-until-text" class="dt-input-text"></span>
+              </button>
+            </div>
+          </label>
+        </div>
+
+        <div class="settings-section">
+          <div class="field-label">Color
+            <div class="color-swatches" id="color-swatches"></div>
+            <input id="ev-color" type="hidden" value="#4f8ef7" />
+          </div>
+          <label class="settings-toggle">
+            <input id="ev-private" type="checkbox" />
+            <span>Private<small class="toggle-sub">Shows as "Busy" until someone taps it</small></span>
+          </label>
+        </div>
       </div>
     </form>
   </div>
 </div>
 
-<!-- ── Event Detail Modal ────────────────────────────────────── -->
+<!-- ── Event Details ─────────────────────────────────────────── -->
 <div id="detail-modal" class="modal-overlay" hidden>
-  <div class="modal modal-sm">
+  <div class="modal ui-panel ui-panel-sm">
     <div id="detail-color-bar" class="detail-color-bar"></div>
-    <h3 id="detail-title" class="modal-title"></h3>
-    <div id="detail-body" class="detail-body"></div>
-    <div class="modal-actions detail-actions">
-      <div class="detail-safe-actions">
-        <button class="btn btn-ghost" id="detail-close">Close</button>
-        <button class="btn btn-accent" id="detail-edit">✏️ Edit</button>
-      </div>
-      <div class="detail-delete-group">
-        <button class="btn btn-danger" id="detail-delete">Delete Event</button>
-      </div>
+    <header class="panel-head panel-head-left">
+      <h3 id="detail-title" class="panel-title"></h3>
+      <button class="btn btn-ghost btn-sm" id="detail-close">Close</button>
+    </header>
+    <div class="panel-body">
+      <div id="detail-body" class="detail-body settings-section"></div>
     </div>
+    <footer class="panel-foot">
+      <button class="btn btn-danger-outline" id="detail-delete">Delete Event</button>
+      <button class="btn btn-accent" id="detail-edit">Edit</button>
+    </footer>
   </div>
 </div>
 
 <!-- ── Recurring Event Scope Picker (shared by Edit & Delete) ──── -->
 <div id="recur-scope-modal" class="modal-overlay" hidden>
-  <div class="modal modal-sm">
-    <h3 class="modal-title" id="recur-scope-title">Apply to…</h3>
-    <div class="recur-scope-options" id="recur-scope-options"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="recur-scope-cancel">Cancel</button>
+  <div class="modal ui-panel ui-panel-sm">
+    <header class="panel-head panel-head-left">
+      <h3 class="panel-title" id="recur-scope-title">Apply to…</h3>
+      <button class="btn btn-ghost btn-sm" id="recur-scope-cancel">Cancel</button>
+    </header>
+    <div class="panel-body">
+      <div class="recur-scope-options" id="recur-scope-options"></div>
     </div>
   </div>
 </div>
@@ -650,69 +655,85 @@
 
 <!-- ── Home-screen guide (opened from Settings ▸ Family Link) ── -->
 <div id="homescreen-modal" class="modal-overlay" hidden>
-  <div class="modal homescreen-modal">
-    <h3 class="modal-title">Add Family Link to a home screen</h3>
-    <div id="homescreen-body"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="homescreen-close">‹ Back</button>
-    </div>
+  <div class="modal ui-panel ui-panel-lg">
+    <header class="panel-head">
+      <button class="btn btn-ghost btn-sm" id="homescreen-close">‹ Back</button>
+      <h3 class="panel-title">Add Family Link to a Home Screen</h3>
+      <span></span>
+    </header>
+    <div class="panel-body" id="homescreen-body"></div>
   </div>
 </div>
 
 <!-- ── Wi-Fi submenu (opened from Settings) ─────────────────── -->
 <div id="wifi-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h3 class="modal-title">Wi-Fi</h3>
-    <div id="wifi-modal-body"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="wifi-close">‹ Back</button>
-    </div>
+  <div class="modal ui-panel ui-panel-md">
+    <header class="panel-head">
+      <button class="btn btn-ghost btn-sm" id="wifi-close">‹ Back</button>
+      <h3 class="panel-title">Wi-Fi</h3>
+      <span></span>
+    </header>
+    <div class="panel-body"><div id="wifi-modal-body" class="settings-section"></div></div>
   </div>
 </div>
 
 <!-- ── Reset for a new owner (opened from Settings) ─────────── -->
 <div id="reset-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h3 class="modal-title">Reset for a New Owner</h3>
-    <p class="settings-desc">This permanently erases from this dashboard:</p>
-    <ul class="settings-desc reset-list">
-      <li>All calendar events, to-dos and bulletin posts</li>
-      <li>All settings (location, display, alerts…)</li>
-      <li>The family code and phone access</li>
-      <li>The Tailscale connection</li>
-    </ul>
-    <label class="settings-toggle">
-      <input type="checkbox" id="reset-forget-wifi" checked>
-      Also forget Wi-Fi networks (for a different home)
-    </label>
-    <p class="settings-desc">A backup copy of the data is kept on the device, just in case.</p>
-    <div class="modal-actions">
+  <div class="modal ui-panel ui-panel-md">
+    <header class="panel-head panel-head-left">
+      <h3 class="panel-title">Reset for a New Owner</h3>
+    </header>
+    <div class="panel-body">
+      <div class="settings-section">
+        <div class="settings-section-title">This permanently erases</div>
+        <ul class="settings-desc reset-list">
+          <li>All calendar events, to-dos and bulletin posts</li>
+          <li>All settings (location, display, alerts…)</li>
+          <li>The family code and Family Link</li>
+          <li>The Tailscale connection</li>
+        </ul>
+      </div>
+      <div class="settings-section">
+        <label class="settings-toggle">
+          <input type="checkbox" id="reset-forget-wifi" checked>
+          <span>Also forget Wi-Fi networks<small class="toggle-sub">For a dashboard moving to a different home</small></span>
+        </label>
+      </div>
+      <p class="panel-hint">A backup copy of the data is kept on the device, just in case.</p>
+    </div>
+    <footer class="panel-foot">
       <button class="btn btn-ghost" id="reset-cancel">Cancel</button>
       <button class="btn btn-danger" id="reset-confirm">Erase Everything</button>
-    </div>
+    </footer>
   </div>
 </div>
 
-<!-- ── Remote Access submenu (opened from Settings) ─────────── -->
+<!-- ── Family Link setup and sharing (opened from Settings) ── -->
 <!-- Content is drawn by app.js as a guided, one-step-at-a-time setup
      (then a "share & manage" view once it's on) — see renderRemote(). -->
 <div id="remote-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h3 class="modal-title">Family Link</h3>
-    <div id="remote-body" class="remote-body"><p class="settings-desc">Checking…</p></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="remote-close">‹ Back</button>
-    </div>
+  <div class="modal ui-panel ui-panel-md">
+    <header class="panel-head">
+      <button class="btn btn-ghost btn-sm" id="remote-close">‹ Back</button>
+      <h3 class="panel-title">Family Link</h3>
+      <span></span>
+    </header>
+    <div class="panel-body"><div id="remote-body" class="remote-body settings-section"><p class="settings-desc">Checking…</p></div></div>
   </div>
 </div>
 
 <!-- ── Debug submenu (opened from Settings) ─────────────────── -->
 <div id="debug-modal" class="modal-overlay" hidden>
-  <div class="modal">
-    <h3 class="modal-title">🧪 Debug Options</h3>
+  <div class="modal ui-panel ui-panel-md">
+    <header class="panel-head">
+      <button class="btn btn-ghost btn-sm" id="debug-close">‹ Back</button>
+      <h3 class="panel-title">Debug Tools</h3>
+      <span></span>
+    </header>
+    <div class="panel-body">
 
     <div class="settings-section">
-      <div class="settings-section-title">📊 Performance Overlay</div>
+      <div class="settings-section-title">Performance Overlay</div>
       <p class="settings-desc">Shows FPS, CPU, memory, disk, and temperature (plus GPU info on a Pi, where available).</p>
       <label class="settings-toggle">
         <input type="checkbox" id="toggle-perf-overlay">
@@ -721,21 +742,21 @@
     </div>
 
     <div class="settings-section">
-      <div class="settings-section-title">⏱️ Graphics Benchmark</div>
+      <div class="settings-section-title">Graphics Benchmark</div>
       <p class="settings-desc">
-        Runs every Glass Blur × Weather Animation combination on this screen
+        Runs every Frosted Glass × Animated Sky combination on this screen
         (heavy rain and overcast clouds for each weather tier), measures frame
         rate and CPU, and recommends the highest settings that stay smooth.
         Takes about 3 minutes; touch is locked while it runs. Your
         settings are restored when it finishes. The latest results are saved
         on the server at <code>/api/benchmark</code>.
       </p>
-      <button class="btn btn-ghost btn-sm" id="debug-run-bench">▶ Run Graphics Benchmark</button>
+      <button class="btn btn-ghost btn-sm" id="debug-run-bench">Run Graphics Benchmark</button>
       <div id="bench-results" class="bench-results"></div>
     </div>
 
     <div class="settings-section">
-      <div class="settings-section-title">🔑 Device Login</div>
+      <div class="settings-section-title">Device Login</div>
       <p class="settings-desc">
         The username and password for signing in to this Pi itself (console or
         SSH). Each unit gets its own random password on its first boot. Only
@@ -746,20 +767,20 @@
     </div>
 
     <div class="settings-section">
-      <div class="settings-section-title">🔊 Debug: Test Audio</div>
+      <div class="settings-section-title">Test Audio</div>
       <p class="settings-desc">
-        Plays/speaks immediately, ignoring the Alert Sound / Read Aloud toggles above.
+        Plays/speaks immediately, ignoring the alert sound and read-aloud settings.
         Use this to check the Pi's audio output itself, separate from alert settings.
       </p>
       <div class="debug-wx-grid">
-        <button class="btn btn-ghost btn-sm" id="debug-test-beep">🔔 Test Alert Beep</button>
-        <button class="btn btn-ghost btn-sm" id="debug-test-tts">🗣️ Test Text-to-Speech</button>
+        <button class="btn btn-ghost btn-sm" id="debug-test-beep">Test Alert Beep</button>
+        <button class="btn btn-ghost btn-sm" id="debug-test-tts">Test Text-to-Speech</button>
       </div>
     </div>
 
     <div class="settings-section">
-      <div class="settings-section-title">🌅 Debug: Preview Sky Time</div>
-      <p class="settings-desc">See the sky, sun and moon at another time of day. Needs Weather Animation set to Reduced or Full. Live returns to the real time.</p>
+      <div class="settings-section-title">Preview Sky Time</div>
+      <p class="settings-desc">See the sky, sun and moon at another time of day. Needs Animated Sky (Settings ▸ Graphics) set to Reduced or Full. Live returns to the real time.</p>
       <div class="debug-wx-grid" id="debug-sky-grid">
         <button class="btn btn-ghost btn-sm debug-sky-btn" data-sky="dawn">Dawn</button>
         <button class="btn btn-ghost btn-sm debug-sky-btn" data-sky="sunrise">Sunrise</button>
@@ -772,108 +793,108 @@
       </div>
     </div>
 
-    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
-      <div class="settings-section-title">🧪 Debug: Simulate Weather</div>
+    <div class="settings-section">
+      <div class="settings-section-title">Simulate Weather</div>
       <p class="settings-desc">Force a visual to preview animations. Resets on next weather refresh.</p>
       <div class="debug-wx-grid" id="debug-wx-grid">
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="clear-day">☀️ Clear Day</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="clear-night">🌙 Clear Night</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="cloudy-day">⛅ Cloudy Day</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="cloudy-night">🌥️ Cloudy Night</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="overcast">☁️ Overcast</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="fog">🌫️ Fog</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="windy-day">💨 Windy Day</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="windy-night">💨 Windy Night</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="clear-day">Clear Day</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="clear-night">Clear Night</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="cloudy-day">Cloudy Day</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="cloudy-night">Cloudy Night</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="overcast">Overcast</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="fog">Fog</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="windy-day">Windy Day</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="windy-night">Windy Night</button>
 
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="light">🌦️ Light Rain</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="moderate">🌧️ Rain</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="heavy">🌧️ Heavy Rain</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="light">🌨️ Light Snow</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="moderate">❄️ Snow</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="heavy">❄️ Heavy Snow</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="sleet">🧊 Sleet / Ice</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="hail">🧊 Hail</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="blizzard" style="grid-column:span 2">🌬️❄️ Blizzard</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="light">Light Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="moderate">Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="rain" data-intensity="heavy">Heavy Rain</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="light">Light Snow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="moderate">Snow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="snow" data-intensity="heavy">Heavy Snow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="sleet">Sleet / Ice</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="hail">Hail</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="blizzard" style="grid-column:span 2">Blizzard</button>
 
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="storm">⛈️ Storm</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="storm-severe">⛈️ Severe Storm</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="thundersnow">⛈️ Thundersnow</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="hurricane">🌀 Hurricane</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="tornado">🌪️ Tornado</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="storm">Storm</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="storm-severe">Severe Storm</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="thundersnow">Thundersnow</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="hurricane">Hurricane</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="tornado">Tornado</button>
 
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="dust">💨 Dust</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="smoke">🌫️ Smoke</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="extreme-heat">🥵 Extreme Heat</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="extreme-cold">🥶 Extreme Cold</button>
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="eclipse" style="grid-column:span 2">🌑 Eclipse</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="dust">Dust</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="smoke">Smoke</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="extreme-heat">Extreme Heat</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="extreme-cold">Extreme Cold</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="eclipse" style="grid-column:span 2">Eclipse</button>
 
-        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="none" style="grid-column:span 2">✕ Reset</button>
+        <button class="btn btn-ghost btn-sm debug-wx-btn" data-mode="none" style="grid-column:span 2">Reset</button>
       </div>
     </div>
 
     <div class="settings-section">
-      <div class="settings-section-title">🚨 Debug: Simulate Alerts</div>
+      <div class="settings-section-title">Simulate Alerts</div>
       <p class="settings-desc">Show a fake alert banner to preview each severity level. Clears on next alert refresh.</p>
       <div class="debug-wx-grid" id="debug-alert-grid">
 
-        <div class="debug-alert-tier">🚨 Extreme</div>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Tornado Warning"          data-headline="Tornado Warning in effect until 8:00 PM CDT. A large and destructive tornado was located near the area.">🌪️ Tornado Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Flash Flood Emergency"    data-headline="Flash Flood Emergency in effect. Catastrophic and life-threatening flooding is occurring.">🆘 Flash Flood Emergency</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Hurricane Warning"        data-headline="Hurricane Warning in effect. Hurricane-force winds expected within 24 hours.">🌀 Hurricane Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Extreme Wind Warning"     data-headline="Extreme Wind Warning in effect until 5:15 PM CDT. Winds to 130 mph expected.">💨 Extreme Wind Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Tsunami Warning"          data-headline="Tsunami Warning in effect for coastal areas. Evacuate immediately.">🌊 Tsunami Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Dust Storm Warning"       data-headline="Dust Storm Warning in effect. Zero visibility possible within the next 30 minutes.">🌫️ Dust Storm Warning</button>
+        <div class="debug-alert-tier">Extreme</div>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Tornado Warning"          data-headline="Tornado Warning in effect until 8:00 PM CDT. A large and destructive tornado was located near the area.">Tornado Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Flash Flood Emergency"    data-headline="Flash Flood Emergency in effect. Catastrophic and life-threatening flooding is occurring.">Flash Flood Emergency</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Hurricane Warning"        data-headline="Hurricane Warning in effect. Hurricane-force winds expected within 24 hours.">Hurricane Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Extreme Wind Warning"     data-headline="Extreme Wind Warning in effect until 5:15 PM CDT. Winds to 130 mph expected.">Extreme Wind Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Tsunami Warning"          data-headline="Tsunami Warning in effect for coastal areas. Evacuate immediately.">Tsunami Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Extreme" data-event="Dust Storm Warning"       data-headline="Dust Storm Warning in effect. Zero visibility possible within the next 30 minutes.">Dust Storm Warning</button>
 
-        <div class="debug-alert-tier">🚨 Severe</div>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Severe Thunderstorm Warning"  data-headline="Severe Thunderstorm Warning in effect until 6:30 PM CDT. Quarter-size hail and 70 mph winds possible.">⛈️ Svr Thunderstorm Warn.</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Tornado Watch"                data-headline="Tornado Watch in effect until midnight CDT. Conditions are favorable for tornado development.">🌪️ Tornado Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Flash Flood Warning"          data-headline="Flash Flood Warning in effect until 9:00 PM CDT. Turn around, don't drown.">🌊 Flash Flood Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Winter Storm Warning"         data-headline="Winter Storm Warning in effect from 6 PM tonight through 6 AM Wednesday. 8 to 14 inches of snow expected.">❄️ Winter Storm Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Blizzard Warning"             data-headline="Blizzard Warning in effect from 9 PM tonight through Tuesday morning. Blizzard conditions with whiteout visibility.">🌨️ Blizzard Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Ice Storm Warning"            data-headline="Ice Storm Warning in effect. Ice accumulations of 0.5 to 0.75 inches expected.">🧊 Ice Storm Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="High Wind Warning"            data-headline="High Wind Warning in effect until 9 PM CDT. Sustained winds of 50 mph with gusts up to 70 mph.">💨 High Wind Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Hurricane Watch"              data-headline="Hurricane Watch in effect. Hurricane conditions possible within 48 hours.">🌀 Hurricane Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Tropical Storm Warning"       data-headline="Tropical Storm Warning in effect. Tropical storm conditions expected within 36 hours.">🌀 Tropical Storm Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Storm Surge Warning"          data-headline="Storm Surge Warning in effect. Life-threatening inundation of 4 to 6 feet above ground level expected.">🌊 Storm Surge Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Excessive Heat Warning"       data-headline="Excessive Heat Warning in effect through 8 PM CDT Thursday. Dangerously hot conditions with heat index values up to 115°F.">🥵 Excessive Heat Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Freeze Warning"               data-headline="Freeze Warning in effect from 2 AM to 8 AM CDT Tuesday. Sub-freezing temperatures as low as 28°F expected.">🧊 Freeze Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Red Flag Warning"             data-headline="Red Flag Warning in effect. Critical fire weather conditions expected. Low humidity and strong winds.">🔥 Red Flag Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Avalanche Warning"            data-headline="Avalanche Warning in effect. Dangerous avalanche conditions exist. Human-triggered avalanches very likely.">🏔️ Avalanche Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Dense Fog Warning"            data-headline="Dense Fog Warning in effect until 10 AM CDT. Visibility near zero in dense fog.">🌫️ Dense Fog Warning</button>
+        <div class="debug-alert-tier">Severe</div>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Severe Thunderstorm Warning"  data-headline="Severe Thunderstorm Warning in effect until 6:30 PM CDT. Quarter-size hail and 70 mph winds possible.">Svr Thunderstorm Warn.</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Tornado Watch"                data-headline="Tornado Watch in effect until midnight CDT. Conditions are favorable for tornado development.">Tornado Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Flash Flood Warning"          data-headline="Flash Flood Warning in effect until 9:00 PM CDT. Turn around, don't drown.">Flash Flood Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Winter Storm Warning"         data-headline="Winter Storm Warning in effect from 6 PM tonight through 6 AM Wednesday. 8 to 14 inches of snow expected.">Winter Storm Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Blizzard Warning"             data-headline="Blizzard Warning in effect from 9 PM tonight through Tuesday morning. Blizzard conditions with whiteout visibility.">Blizzard Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Ice Storm Warning"            data-headline="Ice Storm Warning in effect. Ice accumulations of 0.5 to 0.75 inches expected.">Ice Storm Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="High Wind Warning"            data-headline="High Wind Warning in effect until 9 PM CDT. Sustained winds of 50 mph with gusts up to 70 mph.">High Wind Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Hurricane Watch"              data-headline="Hurricane Watch in effect. Hurricane conditions possible within 48 hours.">Hurricane Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Tropical Storm Warning"       data-headline="Tropical Storm Warning in effect. Tropical storm conditions expected within 36 hours.">Tropical Storm Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Storm Surge Warning"          data-headline="Storm Surge Warning in effect. Life-threatening inundation of 4 to 6 feet above ground level expected.">Storm Surge Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Excessive Heat Warning"       data-headline="Excessive Heat Warning in effect through 8 PM CDT Thursday. Dangerously hot conditions with heat index values up to 115°F.">Excessive Heat Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Freeze Warning"               data-headline="Freeze Warning in effect from 2 AM to 8 AM CDT Tuesday. Sub-freezing temperatures as low as 28°F expected.">Freeze Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Red Flag Warning"             data-headline="Red Flag Warning in effect. Critical fire weather conditions expected. Low humidity and strong winds.">Red Flag Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Avalanche Warning"            data-headline="Avalanche Warning in effect. Dangerous avalanche conditions exist. Human-triggered avalanches very likely.">Avalanche Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Severe" data-event="Dense Fog Warning"            data-headline="Dense Fog Warning in effect until 10 AM CDT. Visibility near zero in dense fog.">Dense Fog Warning</button>
 
-        <div class="debug-alert-tier">⚠️ Moderate</div>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Flash Flood Watch"          data-headline="Flash Flood Watch in effect through tomorrow morning. Heavy rainfall may produce flash flooding.">🌊 Flash Flood Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Winter Storm Watch"         data-headline="Winter Storm Watch in effect from Tuesday evening through Wednesday afternoon. Heavy mixed precipitation possible.">❄️ Winter Storm Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Tropical Storm Watch"       data-headline="Tropical Storm Watch in effect. Tropical storm conditions possible within 48 hours.">🌀 Tropical Storm Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Storm Surge Watch"          data-headline="Storm Surge Watch in effect. Life-threatening inundation possible of 3 to 5 feet above ground level.">🌊 Storm Surge Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Freeze Watch"               data-headline="Freeze Watch in effect from late Tuesday night through Wednesday morning. Sub-freezing temperatures possible.">🧊 Freeze Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Fire Weather Watch"         data-headline="Fire Weather Watch in effect Wednesday through Wednesday evening. Low relative humidity and gusty winds expected.">🔥 Fire Weather Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Wind Chill Warning"         data-headline="Wind Chill Warning in effect until noon CDT Monday. Wind chill values as low as minus 40°F expected.">🌬️ Wind Chill Warning</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Blizzard Watch"             data-headline="Blizzard Watch in effect from Tuesday evening through Wednesday morning. Potential for blizzard conditions.">🌨️ Blizzard Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Avalanche Watch"            data-headline="Avalanche Watch in effect. Dangerous avalanche conditions developing. Human-triggered avalanches likely.">🏔️ Avalanche Watch</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Dense Fog Advisory"         data-headline="Dense Fog Advisory in effect until 10 AM CDT. Visibility will be reduced to one-quarter mile or less.">🌫️ Dense Fog Advisory</button>
+        <div class="debug-alert-tier">Moderate</div>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Flash Flood Watch"          data-headline="Flash Flood Watch in effect through tomorrow morning. Heavy rainfall may produce flash flooding.">Flash Flood Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Winter Storm Watch"         data-headline="Winter Storm Watch in effect from Tuesday evening through Wednesday afternoon. Heavy mixed precipitation possible.">Winter Storm Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Tropical Storm Watch"       data-headline="Tropical Storm Watch in effect. Tropical storm conditions possible within 48 hours.">Tropical Storm Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Storm Surge Watch"          data-headline="Storm Surge Watch in effect. Life-threatening inundation possible of 3 to 5 feet above ground level.">Storm Surge Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Freeze Watch"               data-headline="Freeze Watch in effect from late Tuesday night through Wednesday morning. Sub-freezing temperatures possible.">Freeze Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Fire Weather Watch"         data-headline="Fire Weather Watch in effect Wednesday through Wednesday evening. Low relative humidity and gusty winds expected.">Fire Weather Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Wind Chill Warning"         data-headline="Wind Chill Warning in effect until noon CDT Monday. Wind chill values as low as minus 40°F expected.">Wind Chill Warning</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Blizzard Watch"             data-headline="Blizzard Watch in effect from Tuesday evening through Wednesday morning. Potential for blizzard conditions.">Blizzard Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Avalanche Watch"            data-headline="Avalanche Watch in effect. Dangerous avalanche conditions developing. Human-triggered avalanches likely.">Avalanche Watch</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Moderate" data-event="Dense Fog Advisory"         data-headline="Dense Fog Advisory in effect until 10 AM CDT. Visibility will be reduced to one-quarter mile or less.">Dense Fog Advisory</button>
 
-        <div class="debug-alert-tier">💛 Minor</div>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Wind Advisory"                 data-headline="Wind Advisory in effect from 6 PM this evening to 6 AM CDT Tuesday. Southwest winds 25 to 35 mph with gusts up to 50 mph.">💨 Wind Advisory</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Heat Advisory"                 data-headline="Heat Advisory in effect until 8 PM CDT this evening. Heat index values up to 105°F expected.">🌡️ Heat Advisory</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Frost Advisory"                data-headline="Frost Advisory in effect from 2 AM to 8 AM CDT Tuesday. Temperatures in the mid 30s with frost formation likely.">🌱 Frost Advisory</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Wind Chill Advisory"           data-headline="Wind Chill Advisory in effect until noon CDT Monday. Wind chill values as low as minus 20°F expected.">🌬️ Wind Chill Advisory</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Winter Weather Advisory"       data-headline="Winter Weather Advisory in effect from midnight tonight to noon CDT Tuesday. Mixed precipitation expected with 2 to 4 inches of snow.">🌨️ Winter Weather Advisory</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Lake Wind Advisory"            data-headline="Lake Wind Advisory in effect until 6 PM CDT this evening. North winds 20 to 30 mph over Lake waters.">🌊 Lake Wind Advisory</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Beach Hazards Statement"       data-headline="Beach Hazards Statement in effect through this evening. Dangerous swimming and surfing conditions. Rip currents likely.">🏖️ Beach Hazards</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Rip Current Statement"         data-headline="Rip Current Statement in effect. Dangerous rip currents. If caught in a rip current, swim parallel to shore.">🌊 Rip Current Statement</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Air Quality Alert"             data-headline="Air Quality Alert in effect. Air quality index values may reach Unhealthy levels. Sensitive groups should limit outdoor activity.">😷 Air Quality Alert</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Special Weather Statement"     data-headline="Special Weather Statement. Locally heavy rainfall and gusty winds possible with afternoon storms today.">⚠️ Special Weather Stmt</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Small Craft Advisory"          data-headline="Small Craft Advisory in effect until 6 PM CDT. Seas 4 to 6 feet. Winds to 25 knots.">⛵ Small Craft Advisory</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Hazardous Seas Warning"        data-headline="Hazardous Seas Warning in effect. Combined seas 12 to 18 feet.">🌊 Hazardous Seas Warning</button>
+        <div class="debug-alert-tier">Minor</div>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Wind Advisory"                 data-headline="Wind Advisory in effect from 6 PM this evening to 6 AM CDT Tuesday. Southwest winds 25 to 35 mph with gusts up to 50 mph.">Wind Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Heat Advisory"                 data-headline="Heat Advisory in effect until 8 PM CDT this evening. Heat index values up to 105°F expected.">Heat Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Frost Advisory"                data-headline="Frost Advisory in effect from 2 AM to 8 AM CDT Tuesday. Temperatures in the mid 30s with frost formation likely.">Frost Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Wind Chill Advisory"           data-headline="Wind Chill Advisory in effect until noon CDT Monday. Wind chill values as low as minus 20°F expected.">Wind Chill Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Winter Weather Advisory"       data-headline="Winter Weather Advisory in effect from midnight tonight to noon CDT Tuesday. Mixed precipitation expected with 2 to 4 inches of snow.">Winter Weather Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Lake Wind Advisory"            data-headline="Lake Wind Advisory in effect until 6 PM CDT this evening. North winds 20 to 30 mph over Lake waters.">Lake Wind Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Beach Hazards Statement"       data-headline="Beach Hazards Statement in effect through this evening. Dangerous swimming and surfing conditions. Rip currents likely.">Beach Hazards</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Rip Current Statement"         data-headline="Rip Current Statement in effect. Dangerous rip currents. If caught in a rip current, swim parallel to shore.">Rip Current Statement</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Air Quality Alert"             data-headline="Air Quality Alert in effect. Air quality index values may reach Unhealthy levels. Sensitive groups should limit outdoor activity.">Air Quality Alert</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Special Weather Statement"     data-headline="Special Weather Statement. Locally heavy rainfall and gusty winds possible with afternoon storms today.">Special Weather Stmt</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Small Craft Advisory"          data-headline="Small Craft Advisory in effect until 6 PM CDT. Seas 4 to 6 feet. Winds to 25 knots.">Small Craft Advisory</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="Minor" data-event="Hazardous Seas Warning"        data-headline="Hazardous Seas Warning in effect. Combined seas 12 to 18 feet.">Hazardous Seas Warning</button>
 
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="multi" style="grid-column:span 2">🔀 Multi-Alert Test (Svr Thunderstorm Warning + Flash Flood Watch)</button>
-        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="none"  style="grid-column:span 2">✕ Clear Alerts</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="multi" style="grid-column:span 2">Multi-Alert Test (Svr Thunderstorm Warning + Flash Flood Watch)</button>
+        <button class="btn btn-ghost btn-sm debug-alert-btn" data-sev="none"  style="grid-column:span 2">Clear Alerts</button>
       </div>
     </div>
 
-    <div class="settings-section" style="margin-bottom:0;border-bottom:none">
-      <div class="settings-section-title">🖥️ Exit to Terminal</div>
+    <div class="settings-section">
+      <div class="settings-section-title">Exit to Terminal</div>
       <p class="settings-desc">
         Closes Chromium and the whole graphical session, dropping straight to a
         plain console login on this screen. Personal use only, for the rare
@@ -882,8 +903,6 @@
       <button class="btn btn-ghost btn-sm" id="exit-kiosk-btn">Exit to Terminal</button>
     </div>
 
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="debug-close">‹ Back</button>
     </div>
   </div>
 </div>
