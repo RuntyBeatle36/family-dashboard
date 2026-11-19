@@ -2229,15 +2229,21 @@ document.getElementById('exit-kiosk-btn').addEventListener('click', async () => 
    counties) the new one lists the old one in `references`; that counts as
    already announced too, unless the event itself changed (a Watch
    upgraded to a Warning is announced). Entries are dropped 3 days after
-   the alert was last active. */
+   the alert was last active. The very first load starts quietly. */
 const ANNOUNCED_KEY = 'announcedAlerts';
 const ANNOUNCED_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
 
 function takeUnannounced(features) {
+  let stored = null;
+  try { stored = localStorage.getItem(ANNOUNCED_KEY); } catch { /* storage blocked */ }
   let seen = {};
-  try { seen = JSON.parse(localStorage.getItem(ANNOUNCED_KEY)) || {}; } catch { /* start fresh */ }
+  try { seen = JSON.parse(stored) || {}; } catch { /* start fresh */ }
   const now = Date.now();
-  const fresh = features.filter(f => {
+  // No record at all (first load after installing this, or a fresh unit):
+  // whatever is already active is on the banner, but isn't announced, so
+  // the update itself doesn't set off the beeps
+  const firstRun = stored === null;
+  const fresh = firstRun ? [] : features.filter(f => {
     const p = f.properties;
     if (seen[p.id]) return false;
     return !(p.references || []).some(r => seen[r.identifier]?.event === p.event);
