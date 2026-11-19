@@ -2541,7 +2541,10 @@ async function fetchWeather() {
   }
 }
 
+// A refresh someone taps isn't a startup, so it skips the startup chime
+// (see Boot below). Updates and real restarts still chime.
 document.getElementById('wx-refresh').addEventListener('click', () => {
+  sessionStorage.setItem('quietReload', '1');
   location.reload();
 });
 
@@ -5688,7 +5691,9 @@ updateLockUI(); // shows the Lock Screen immediately on load if it's enabled
 // Chromium's autoplay policy can block audio before any user gesture, so
 // this tries immediately and — only if that was actually blocked — falls
 // back to the very first tap/click anywhere on the page.
-if (getBootSoundEnabled()) {
+const quietReload = sessionStorage.getItem('quietReload') === '1';
+sessionStorage.removeItem('quietReload');
+if (getBootSoundEnabled() && !quietReload) {
   let bootSoundPlayed = false;
   const tryBootChime = () => {
     if (bootSoundPlayed) return;
