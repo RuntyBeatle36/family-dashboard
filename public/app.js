@@ -811,7 +811,7 @@ function refreshSky() {
 function drawTimeSky() {
   const W = wxCanvas.width, H = wxCanvas.height;
   if (!skyState) refreshSky();
-  if (!daySkyOC || daySkyOC.width !== W || daySkyOC.height !== H) {
+  if (!daySkyOC || daySkyOC.width !== W || daySkyOC.height !== H || daySkyOC.mode !== wxMode) {
     daySkyOC = new OffscreenCanvas(W, H);
     const dc = daySkyOC.getContext('2d');
     // Stops are deep and fairly opaque on purpose: on the TN panel this app
@@ -831,17 +831,22 @@ function drawTimeSky() {
       });
     }
     const sun = skyState.sun;
-    if (sun) drawSun(dc, W * sun.x, H * sun.y, Math.min(W, H), sun.e);
+    if (sun) drawSun(dc, W * sun.x, H * sun.y, Math.min(W, H), sun.e, SUN_STRENGTH[wxMode] ?? 1);
+    daySkyOC.mode = wxMode;
   }
   wxCtx.drawImage(daySkyOC, 0, 0);
 }
 
-// The sun as light, not a sticker: a white-hot core with no hard edge,
-// a tight bloom, and a wide atmospheric glow. Low in the sky it turns
-// deep orange and its glow spreads out along the horizon.
-function drawSun(dc, sx, sy, R, e) {
+// How much of the sun comes through each kind of sky (1 = clear)
+const SUN_STRENGTH = { 'clear-day': 1, 'windy-day': 0.9, 'cloudy-day': 0.75 };
+
+// The sun as light, not a shape: a bright center that fades out smoothly
+// with no visible edge, inside a wide atmospheric glow. Low in the sky it
+// turns deep orange and its glow spreads out along the horizon. `k` dims
+// it for hazier skies.
+function drawSun(dc, sx, sy, R, e, k = 1) {
   const gr = Math.round(140 + 105 * e), b = Math.round(50 + 160 * e); // orange → near-white
-  const tint = a => `rgba(255,${gr},${b},${a})`;
+  const tint = a => `rgba(255,${gr},${b},${(a * k).toFixed(3)})`;
 
   const glowR = R * (0.62 - 0.22 * e);
   dc.save();
@@ -856,17 +861,74 @@ function drawSun(dc, sx, sy, R, e) {
   dc.fillRect(-glowR, -glowR, glowR * 2, glowR * 2);
   dc.restore();
 
-  // Core: white overhead, deep gold near the horizon
+  // Center: white overhead, deep gold near the horizon. Many stops on a
+  // bell-shaped falloff, so there's no flat disc and no ring.
   const low = 1 - e;
-  const core = a => `rgba(255,${Math.round(252 - 80 * low)},${Math.round(240 - 170 * low)},${a})`;
-  const bloomR = R * (0.11 + 0.03 * low);
+  const core = a => `rgba(255,${Math.round(252 - 80 * low)},${Math.round(240 - 170 * low)},${(a * k).toFixed(3)})`;
+  const bloomR = R * (0.16 + 0.04 * low);
   const bloom = dc.createRadialGradient(sx, sy, 0, sx, sy, bloomR);
-  bloom.addColorStop(0,    core(0.9));
-  bloom.addColorStop(0.22, core(0.8));
-  bloom.addColorStop(0.30, tint(0.35));
-  bloom.addColorStop(1,    tint(0));
+  [[0, 0.95], [0.05, 0.85], [0.10, 0.62], [0.17, 0.38], [0.27, 0.20], [0.42, 0.09], [0.65, 0.03], [1, 0]]
+    .forEach(([p, a]) => bloom.addColorStop(p, core(a)));
   dc.fillStyle = bloom;
   dc.fillRect(sx - bloomR, sy - bloomR, bloomR * 2, bloomR * 2);
+}
+
+// Sun or moon behind weather that hides its shape (overcast, fog, rain,
+// snow...): just a dim, diffuse bright patch, strength per kind of sky.
+// Storms hide it completely. Pre-rendered; drawn on top of the weather sky.
+const VEILED_LIGHT = {
+  overcast: 0.45, fog: 0.6, smoke: 0.55, dust: 0.5, snow: 0.35, sleet: 0.25,
+  rain: 0.3, 'extreme-cold': 0.6,
+};
+// How much the weather sky darkens at night (its colors are daytime ones)
+const NIGHT_DIM = {
+  overcast: 0.5, fog: 0.55, smoke: 0.5, dust: 0.5, snow: 0.45, sleet: 0.4,
+  rain: 0.35, storm: 0.3, 'storm-severe': 0.25, hurricane: 0.25, tornado: 0.25,
+  hail: 0.25, thundersnow: 0.35, blizzard: 0.4, 'extreme-cold': 0.5, 'extreme-heat': 0.55,
+};
+let veilOC = null, veilKey = '';
+
+function drawSkyTimeOverlay() {
+  const s = skyState;
+  if (!s || !(wxMode in NIGHT_DIM)) return; // clear/cloudy/windy skies already follow the time of day
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const dim = NIGHT_DIM[wxMode] * s.stars;
+  const warm = s.warm * (wxMode === 'rain' && wxIntensity === 'heavy' ? 0.3 : 1) * (VEILED_LIGHT[wxMode] ? 1 : 0.4);
+  let light = (VEILED_LIGHT[wxMode] ?? 0) * (wxMode === 'rain' && wxIntensity === 'heavy' ? 0.4 : 1);
+  const body = s.sun ?? (s.stars > 0.5 ? s.moon : null);
+  if (!body) light = 0;
+  if (dim < 0.02 && warm < 0.05 && light < 0.02) return;
+
+  const key = [W, H, wxMode, wxIntensity, s.key].join('|');
+  if (veilKey !== key) {
+    veilKey = key;
+    veilOC = new OffscreenCanvas(W, H);
+    const v = veilOC.getContext('2d');
+    if (dim >= 0.02) {
+      v.fillStyle = `rgba(3,6,20,${dim.toFixed(3)})`;
+      v.fillRect(0, 0, W, H);
+    }
+    if (warm >= 0.05) {
+      const g = v.createLinearGradient(0, H * 0.35, 0, H);
+      g.addColorStop(0, 'rgba(255,140,90,0)');
+      g.addColorStop(1, `rgba(255,140,90,${(0.22 * Math.min(1, warm)).toFixed(3)})`);
+      v.fillStyle = g;
+      v.fillRect(0, H * 0.35, W, H * 0.65);
+    }
+    if (light >= 0.02) {
+      const isSun = body === s.sun;
+      const bx = W * body.x, by = H * body.y, R = Math.min(W, H) * (isSun ? 0.42 : 0.3);
+      const c = isSun ? `255,${Math.round(200 + 50 * body.e)},${Math.round(150 + 90 * body.e)}` : '215,225,255';
+      const a = light * (isSun ? 0.55 : 0.3) * (isSun ? 1 : s.moon.age > 7 && s.moon.age < 22 ? 1 : 0.5);
+      const g = v.createRadialGradient(bx, by, 0, bx, by, R);
+      g.addColorStop(0,    `rgba(${c},${a.toFixed(3)})`);
+      g.addColorStop(0.25, `rgba(${c},${(a * 0.45).toFixed(3)})`);
+      g.addColorStop(1,    `rgba(${c},0)`);
+      v.fillStyle = g;
+      v.fillRect(bx - R, by - R, R * 2, R * 2);
+    }
+  }
+  wxCtx.drawImage(veilOC, 0, 0);
 }
 
 // The moon's darker "seas" (maria) as seen from the Northern Hemisphere:
@@ -894,9 +956,12 @@ function renderMoon(r, age) {
   const pad = r * 3.2, S = Math.ceil((r + pad) * 2), c = S / 2;
   const oc = new OffscreenCanvas(S, S), m = oc.getContext('2d');
 
-  const halo = m.createRadialGradient(c, c, r * 0.95, c, c, r + pad);
-  halo.addColorStop(0,    `rgba(215,225,255,${(0.05 + 0.20 * lit).toFixed(3)})`);
-  halo.addColorStop(0.25, `rgba(215,225,255,${(0.02 + 0.07 * lit).toFixed(3)})`);
+  // Halo: bright right at the moon, so it seems to glow rather than sit
+  // on the sky as a cut-out circle
+  const halo = m.createRadialGradient(c, c, r * 0.6, c, c, r + pad);
+  halo.addColorStop(0,    `rgba(225,232,255,${(0.10 + 0.40 * lit).toFixed(3)})`);
+  halo.addColorStop(0.10, `rgba(220,228,255,${(0.06 + 0.22 * lit).toFixed(3)})`);
+  halo.addColorStop(0.30, `rgba(215,225,255,${(0.02 + 0.08 * lit).toFixed(3)})`);
   halo.addColorStop(1,    'rgba(215,225,255,0)');
   m.fillStyle = halo;
   m.fillRect(0, 0, S, S);
@@ -918,21 +983,24 @@ function renderMoon(r, age) {
   s.filter = 'none';
 
   // Earthshine: the unlit part is faintly visible, especially near new moon
-  m.globalAlpha = 0.10 + 0.08 * (1 - lit);
+  m.globalAlpha = 0.05 + 0.06 * (1 - lit);
   m.drawImage(surf, 0, 0);
   m.globalAlpha = 1;
 
   // Phase mask: the lit half plus (gibbous) or minus (crescent) the
-  // terminator ellipse, blurred slightly so the terminator is soft
+  // terminator ellipse, blurred so the terminator fades like the real one
   const mask = new OffscreenCanvas(S, S), q = mask.getContext('2d');
   q.fillStyle = '#000';
   q.beginPath(); q.arc(c, c, r, -Math.PI / 2, Math.PI / 2, phase >= 0.5); q.fill();
   q.globalCompositeOperation = k > 0 ? 'destination-out' : 'source-over';
   q.beginPath(); q.ellipse(c, c, Math.max(0.01, r * Math.abs(k)), r, 0, 0, Math.PI * 2); q.fill();
   s.globalCompositeOperation = 'destination-in';
-  s.filter = `blur(${Math.max(0.5, r * 0.05).toFixed(1)}px)`;
+  s.filter = `blur(${Math.max(1, r * 0.12).toFixed(1)}px)`;
   s.drawImage(mask, 0, 0);
+  // Soft outer edge too: seen through air, the moon's rim isn't razor sharp
+  m.filter = `blur(${Math.max(0.8, r * 0.06).toFixed(1)}px)`;
   m.drawImage(surf, 0, 0);
+  m.filter = 'none';
   return oc;
 }
 
@@ -943,7 +1011,8 @@ function drawMoon() {
   const r = Math.round(Math.min(W, H) * 0.032);
   const key = `${r}:${moon.age}`;
   if (moonOCKey !== key) { moonOC = renderMoon(r, moon.age); moonOCKey = key; }
-  wxCtx.globalAlpha = Math.min(1, skyState.stars);
+  // Thin clouds still let it through, a little dimmer
+  wxCtx.globalAlpha = Math.min(1, skyState.stars) * (wxMode === 'cloudy-night' ? 0.75 : 1);
   wxCtx.drawImage(moonOC, W * moon.x - moonOC.width / 2, H * moon.y - moonOC.height / 2);
   wxCtx.globalAlpha = 1;
 }
@@ -1558,6 +1627,10 @@ function drawFrame(ts = 0) {
       wxAnimId = null;
       return;
   }
+
+  // Night darkening, sunrise/sunset warmth and a veiled sun/moon for the
+  // weather skies (no-op for the clear/cloudy/windy ones)
+  drawSkyTimeOverlay();
 
   // Bolt overlays everything (any mode with lightning scheduled — storm,
   // storm-severe, thundersnow, hurricane); JS controls boltAlpha
@@ -2808,7 +2881,8 @@ fetch('/api/version').then(r => r.json()).then(({ build, commit }) => {
 // everything. Tapping the version text 7 times in a row reveals them, same "developer options" convention
 // Android uses. Stored in localStorage so it stays unlocked across
 // reloads once found; taps more than 2s apart don't count toward the streak.
-const ADVANCED_SECTION_IDS = ['debug-section', 'graphics-section', 'reset-section'];
+const ADVANCED_SECTION_IDS = ['debug-section', 'graphics-section', 'reset-section',
+  'nav-advanced-title', 'nav-graphics', 'nav-debug', 'nav-reset'];
 let debugTapCount = 0;
 let debugTapTimer = null;
 if (localStorage.getItem('debugUnlocked') === 'true') {
@@ -2821,7 +2895,7 @@ document.getElementById('app-version').addEventListener('click', () => {
     debugTapCount = 0;
     localStorage.setItem('debugUnlocked', 'true');
     ADVANCED_SECTION_IDS.forEach(id => { document.getElementById(id).hidden = false; });
-    showToast('Debug Options and Graphics unlocked.', 'success');
+    showToast('Advanced settings unlocked.', 'success');
   } else {
     debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 2000);
   }
@@ -2829,6 +2903,7 @@ document.getElementById('app-version').addEventListener('click', () => {
 document.getElementById('debug-lock-btn').addEventListener('click', () => {
   localStorage.removeItem('debugUnlocked');
   ADVANCED_SECTION_IDS.forEach(id => { document.getElementById(id).hidden = true; });
+  showSettingsPane('general');
 });
 
 /* ══════════════════════════════════════════════════════════
@@ -2855,6 +2930,7 @@ async function checkForUpdate() {
     const r = await api('GET', '/api/update-check');
     document.getElementById('update-badge').hidden = !r.updateAvailable;
     document.getElementById('update-section').hidden = !r.updateAvailable;
+    document.getElementById('update-nav-dot').hidden = !r.updateAvailable;
     if (r.updateAvailable) {
       lastUpdateCommits = r.commits;
       document.getElementById('update-list').innerHTML = r.commits
@@ -2876,6 +2952,7 @@ setInterval(checkForUpdate, 5 * 60 * 1000);
 
 document.getElementById('update-badge').addEventListener('click', () => {
   document.getElementById('settings-btn').click();
+  showSettingsPane('general');
 });
 
 document.getElementById('update-see-more-btn').addEventListener('click', () => {
@@ -3137,10 +3214,63 @@ document.getElementById('debug-alert-grid').addEventListener('click', e => {
     b.classList.toggle('active', b === btn && sev !== 'none'));
 });
 document.getElementById('settings-close').addEventListener('click', () => { settingsModal.hidden = true; });
+
+// Two-pane Settings: categories on the left, one category's settings on
+// the right. On a narrow screen only one side shows at a time ("in-pane"
+// = a category is open), with a Back button to the list.
+const settingsShell = document.getElementById('settings-shell');
+const settingsNarrow = () => window.matchMedia('(max-width: 720px)').matches;
+let settingsPane = 'general';
+
+function showSettingsPane(name, { enter = true } = {}) {
+  settingsPane = name;
+  settingsShell.querySelectorAll('.settings-nav-item').forEach(b =>
+    b.classList.toggle('active', b.dataset.pane === name));
+  let title = '';
+  settingsShell.querySelectorAll('.settings-pane').forEach(p => {
+    p.classList.toggle('active', p.dataset.pane === name);
+    if (p.dataset.pane === name) title = p.dataset.title;
+  });
+  document.getElementById('settings-pane-title').textContent = title;
+  document.getElementById('settings-panes').scrollTop = 0;
+  settingsShell.classList.toggle('in-pane', enter);
+  if (name === 'graphics') syncGraphicsOptions();
+  if (name === 'family') refreshFamilyStatus();
+}
+
+settingsShell.querySelector('.settings-nav').addEventListener('click', e => {
+  const item = e.target.closest('.settings-nav-item');
+  if (item) showSettingsPane(item.dataset.pane);
+});
+document.getElementById('settings-back').addEventListener('click', () => settingsShell.classList.remove('in-pane'));
+// Opening Settings: the last category on a big screen, the list on a phone
+document.getElementById('settings-btn').addEventListener('click', () =>
+  showSettingsPane(settingsPane, { enter: !settingsNarrow() }));
+
+// Settings ▸ Family Link: on / off / paused, from the same status the
+// setup guide uses
+async function refreshFamilyStatus() {
+  const chip = document.getElementById('family-status');
+  const openBtn = document.getElementById('remote-open-btn');
+  try {
+    const s = await api('GET', '/api/remote/status');
+    const screen = remoteScreen(s);
+    const [cls, label, action] =
+      screen === 'live'      ? ['on', 'On', 'Share & Manage'] :
+      screen === 'reconnect' ? ['paused', 'Paused: needs attention', 'Fix It'] :
+      s.code                 ? ['', 'Not finished', 'Continue Setup'] :
+                               ['', 'Off', 'Set Up Family Link'];
+    chip.className = `family-status ${cls}`;
+    chip.textContent = label;
+    openBtn.textContent = action;
+  } catch {
+    chip.className = 'family-status';
+    chip.textContent = 'Status unavailable';
+  }
+}
 settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.hidden = true; });
 
-/* ── Graphics submenu (opened from Settings) ──────────────── */
-const graphicsModal = document.getElementById('graphics-modal');
+/* ── Graphics (Settings ▸ Advanced ▸ Graphics) ────────────── */
 // Same reasoning as getWxQuality above — defaults to lowest, not full.
 const getGlassMode = () => localStorage.getItem('gfxGlass') || 'off';
 
@@ -3149,25 +3279,14 @@ function applyGlassSetting() {
 }
 applyGlassSetting();
 
-document.getElementById('graphics-open-btn').addEventListener('click', () => {
+// Settings ▸ Graphics pane: show the current choices whenever it opens
+function syncGraphicsOptions() {
   document.querySelectorAll('#gfx-glass .theme-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.val === getGlassMode()));
   document.getElementById('toggle-gfx-lightning').checked = getLightningEnabled();
   document.querySelectorAll('#gfx-wx-quality .theme-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.val === getWxQuality()));
-  settingsModal.hidden = true;
-  graphicsModal.hidden = false;
-});
-
-document.getElementById('graphics-close').addEventListener('click', () => {
-  graphicsModal.hidden = true;
-  settingsModal.hidden = false;
-});
-graphicsModal.addEventListener('click', e => {
-  if (e.target !== graphicsModal) return;
-  graphicsModal.hidden = true;
-  settingsModal.hidden = false;
-});
+}
 
 document.getElementById('gfx-glass').addEventListener('click', e => {
   const btn = e.target.closest('.theme-opt');
@@ -3301,11 +3420,12 @@ function renderRemote() {
       const link = `${ts.publicUrl}#code=${s.code}`;
       html = `<div class="remote-ok">${ICON.check} <strong>The family link is on.</strong></div>
         <p class="settings-desc">Family members scan this with their phone's camera. It opens the calendar
-        already signed in. (Tip: they can use "Add to Home Screen" to make it an app icon.)</p>
+        already signed in. No app or account needed.</p>
         ${qrSvg(link, 'qr-large')}
         <div class="remote-actions remote-center-row">
           ${btn('copy', 'Copy link')}
           ${navigator.share ? btn('share', 'Share…') : ''}
+          ${btn('homescreen', 'Add to a home screen: how')}
         </div>
         <p class="settings-desc remote-center">Or go to <strong>${escHtml(ts.publicUrl.replace(/^https:\/\//, '').replace(/\/$/, ''))}</strong>
         and enter the family code:</p>
@@ -3415,6 +3535,10 @@ remoteBody.addEventListener('click', async e => {
       return showToast('Link copied.', 'success');
     }
 
+    case 'homescreen':
+      closeRemoteModal();
+      return document.getElementById('homescreen-guide-btn').click();
+
     case 'share':
       return navigator.share({ title: 'Family Calendar', url: `${s.tailscale.publicUrl}#code=${s.code}` }).catch(() => {});
 
@@ -3435,6 +3559,7 @@ remoteBody.addEventListener('click', async e => {
 });
 
 document.getElementById('remote-open-btn').addEventListener('click', () => {
+  showSettingsPane('family');
   settingsModal.hidden = true;
   remoteModal.hidden = false;
   remoteUi.error = '';
@@ -3449,9 +3574,159 @@ function closeRemoteModal() {
   remoteModal.hidden = true;
   settingsModal.hidden = false;
   checkRemoteHealth();
+  refreshFamilyStatus();
 }
 document.getElementById('remote-close').addEventListener('click', closeRemoteModal);
 remoteModal.addEventListener('click', e => { if (e.target === remoteModal) closeRemoteModal(); });
+
+/* ── Home-screen guide (Settings ▸ Family Link ▸ Show me how) ──
+   Illustrated steps for adding the Family Link to an iPhone or Android
+   home screen, so it opens like an app. The pictures are simple drawn
+   phones (inline SVG), with the thing to tap circled. */
+const homescreenModal = document.getElementById('homescreen-modal');
+const homescreenBody  = document.getElementById('homescreen-body');
+let homescreenTab = 'ios';
+let hsClipId = 0;
+
+function hsFrame(inner) {
+  const id = `hs-clip-${++hsClipId}`;
+  return `<svg class="hs-phone" viewBox="0 0 150 280" aria-hidden="true">
+    <defs><clipPath id="${id}"><rect x="6" y="6" width="138" height="268" rx="20"/></clipPath></defs>
+    <rect x="1" y="1" width="148" height="278" rx="24" class="hs-body"/>
+    <g clip-path="url(#${id})">
+      <rect x="6" y="6" width="138" height="268" class="hs-screen"/>${inner}
+    </g></svg>`;
+}
+const hsRing = (x, y, w, h, r = 8) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" class="hs-hl"/>`;
+const hsText = (x, y, t, cls = '') => `<text x="${x}" y="${y}" class="hs-t ${cls}">${t}</text>`;
+// The Family Calendar app icon, top-left corner at x,y
+const hsAppIcon = (x, y, s = 22) => `<g transform="translate(${x},${y}) scale(${s / 22})">
+  <rect width="22" height="22" rx="5" class="hs-appicon"/>
+  <rect x="5" y="6" width="12" height="11" rx="1.5" fill="none" stroke="#fff" stroke-width="1.6"/>
+  <path d="M5 9.5h12M8.5 4.5v3M13.5 4.5v3" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></g>`;
+
+// The calendar page itself, between y0 and y1
+function hsPage(y0, y1) {
+  const colors = ['#2f7cf6', '#2fb35a', '#a64fd8', '#f08a00', '#e5483e'];
+  let out = hsText(16, y0 + 12, 'Family Calendar', 'hs-bold');
+  for (let i = 0; ; i++) {
+    const y = y0 + 22 + i * 28;
+    if (y + 22 > y1) break;
+    out += `<rect x="14" y="${y}" width="122" height="22" rx="5" class="hs-card"/>
+      <rect x="18" y="${y + 4}" width="3" height="14" rx="1.5" fill="${colors[i % 5]}"/>
+      <rect x="26" y="${y + 6}" width="${50 + (i * 17) % 40}" height="4" rx="2" class="hs-line"/>
+      <rect x="26" y="${y + 13}" width="34" height="3" rx="1.5" class="hs-line2"/>`;
+  }
+  return out;
+}
+
+function hsHome() {
+  const tiles = ['#f2385a', '#2fb35a', '#f08a00', '#0a9fe0', '#a64fd8', '#7c8597', '#2f7cf6', '#e5483e', '#2fb35a', '#f08a00', '#0a9fe0'];
+  let out = '<rect x="6" y="6" width="138" height="268" class="hs-wall"/>';
+  tiles.forEach((c, i) => {
+    const col = i % 4, row = Math.floor(i / 4);
+    out += `<rect x="${17 + col * 31}" y="${30 + row * 38}" width="22" height="22" rx="5" fill="${c}" opacity="0.85"/>`;
+  });
+  // Ours, in the next free spot
+  out += hsAppIcon(17 + 3 * 31, 30 + 2 * 38) + hsText(17 + 3 * 31 + 11, 30 + 2 * 38 + 31, 'Family Cal…', 'hs-white hs-mid');
+  out += hsRing(17 + 3 * 31 - 5, 30 + 2 * 38 - 5, 32, 42, 9);
+  return out;
+}
+
+const HS_STEPS = {
+  ios: [
+    [() => hsPage(20, 220)
+        + '<rect x="6" y="226" width="138" height="48" class="hs-bar"/>'
+        + '<rect x="20" y="231" width="110" height="14" rx="7" class="hs-pill"/>'
+        + hsText(75, 241, 'family-dashboard…', 'hs-mid hs-small')
+        + '<path d="M22 256l-4 4 4 4M44 256l4 4-4 4" class="hs-ico"/>'
+        + '<path d="M70 259v7h10v-7M75 252v10M71.5 255.5 75 252l3.5 3.5" class="hs-ico"/>'
+        + '<path d="M98 254h8v10h-8zM118 256h8v8h-8z" class="hs-ico"/>'
+        + hsRing(64, 248, 22, 22, 6),
+     'Open the Family Link in <strong>Safari</strong>. Tap the <strong>Share</strong> button (a square with an arrow).'],
+    [() => hsPage(20, 220)
+        + '<rect x="6" y="6" width="138" height="268" class="hs-dim"/>'
+        + '<rect x="6" y="104" width="138" height="170" rx="14" class="hs-sheet"/>'
+        + ['Copy', 'Add to Reading List', 'Add Bookmark', 'Add to Favorites', 'Add to Home Screen', 'Find on Page']
+            .map((t, i) => `<rect x="14" y="${118 + i * 23}" width="122" height="19" rx="5" class="hs-card"/>`
+              + hsText(20, 131 + i * 23, t, 'hs-small')).join('')
+        + '<path d="M123 207h8v8h-8zM127 209v4M125 211h4" class="hs-ico"/>'
+        + hsRing(11, 207 - 4, 128, 25, 7),
+     'Scroll down and tap <strong>Add to Home Screen</strong>.'],
+    [() => '<rect x="6" y="6" width="138" height="268" class="hs-screen2"/>'
+        + hsText(16, 30, 'Cancel', 'hs-blue hs-small') + hsText(75, 30, 'Add to Home', 'hs-bold hs-mid hs-small')
+        + hsText(122, 30, 'Add', 'hs-blue hs-bold hs-small') + hsRing(113, 19, 26, 16, 6)
+        + '<rect x="14" y="46" width="122" height="44" rx="8" class="hs-card"/>'
+        + hsAppIcon(22, 57) + hsText(52, 66, 'Family Calendar', 'hs-small hs-bold')
+        + '<rect x="52" y="73" width="70" height="3" rx="1.5" class="hs-line2"/>'
+        + '<rect x="6" y="170" width="138" height="104" class="hs-keys"/>',
+     'Tap <strong>Add</strong> in the top corner.'],
+    [hsHome, '<strong>Family Calendar</strong> is on the home screen. Tap it to open, just like an app.'],
+  ],
+  android: [
+    [() => '<rect x="6" y="6" width="138" height="36" class="hs-bar"/>'
+        + '<rect x="14" y="16" width="102" height="16" rx="8" class="hs-pill"/>'
+        + hsText(65, 27, 'family-dashboard…', 'hs-mid hs-small')
+        + '<circle cx="130" cy="18" r="1.6" class="hs-dot"/><circle cx="130" cy="24" r="1.6" class="hs-dot"/><circle cx="130" cy="30" r="1.6" class="hs-dot"/>'
+        + hsRing(122, 12, 16, 24, 6) + hsPage(48, 268),
+     'Open the Family Link in <strong>Chrome</strong>. Tap the <strong>⋮</strong> menu at the top right.'],
+    [() => hsPage(48, 268) + '<rect x="6" y="6" width="138" height="268" class="hs-dim"/>'
+        + '<rect x="56" y="14" width="84" height="146" rx="8" class="hs-sheet"/>'
+        + ['New tab', 'History', 'Downloads', 'Share…', 'Add to Home screen', 'Settings']
+            .map((t, i) => hsText(63, 34 + i * 22, t, 'hs-small')).join('')
+        + hsRing(58, 114, 80, 20, 6),
+     'Tap <strong>Add to Home screen</strong>. (It may say <strong>Install app</strong>.)'],
+    [() => hsPage(48, 268) + '<rect x="6" y="6" width="138" height="268" class="hs-dim"/>'
+        + '<rect x="18" y="90" width="114" height="92" rx="12" class="hs-sheet"/>'
+        + hsText(28, 110, 'Install app', 'hs-bold')
+        + hsAppIcon(28, 120) + hsText(56, 134, 'Family Calendar', 'hs-small')
+        + hsText(70, 166, 'Cancel', 'hs-blue hs-small') + hsText(102, 166, 'Install', 'hs-blue hs-bold hs-small')
+        + hsRing(96, 155, 34, 16, 6),
+     'Tap <strong>Install</strong> (or <strong>Add</strong>).'],
+    [hsHome, '<strong>Family Calendar</strong> is on the home screen. Tap it to open, just like an app.'],
+  ],
+};
+
+async function renderHomescreenGuide() {
+  const steps = HS_STEPS[homescreenTab].map(([pic, text], i) => `
+    <div class="hs-step">${hsFrame(pic())}<span class="hs-num">${i + 1}</span><p>${text}</p></div>`).join('');
+  let extra = '';
+  try {
+    const s = await api('GET', '/api/remote/status');
+    if (remoteScreen(s) === 'live') {
+      extra = `<div class="hs-qr">${qrSvg(`${s.tailscale.publicUrl}#code=${s.code}`)}
+        <p class="settings-desc">Scan this with the phone's camera to open the Family Link, then follow the steps above.
+        ${homescreenTab === 'ios' ? `If the home-screen icon asks for the family code the first time, it's
+        <strong>${escHtml(s.code)}</strong>.` : ''}</p></div>`;
+    } else {
+      extra = '<p class="hs-note">Family Link isn\'t on yet. Turn it on first, then open it on the phone.</p>';
+    }
+  } catch { /* the steps still make sense without the code */ }
+  homescreenBody.innerHTML = `
+    <div class="hs-tabs" role="tablist">
+      <button class="theme-opt ${homescreenTab === 'ios' ? 'active' : ''}" data-hs-tab="ios">iPhone and iPad</button>
+      <button class="theme-opt ${homescreenTab === 'android' ? 'active' : ''}" data-hs-tab="android">Android</button>
+    </div>
+    <div class="hs-steps">${steps}</div>${extra}`;
+}
+
+homescreenBody.addEventListener('click', e => {
+  const tab = e.target.closest('[data-hs-tab]');
+  if (!tab) return;
+  homescreenTab = tab.dataset.hsTab;
+  renderHomescreenGuide();
+});
+document.getElementById('homescreen-guide-btn').addEventListener('click', () => {
+  settingsModal.hidden = true;
+  homescreenModal.hidden = false;
+  renderHomescreenGuide();
+});
+function closeHomescreenGuide() {
+  homescreenModal.hidden = true;
+  settingsModal.hidden = false;
+}
+document.getElementById('homescreen-close').addEventListener('click', closeHomescreenGuide);
+homescreenModal.addEventListener('click', e => { if (e.target === homescreenModal) closeHomescreenGuide(); });
 
 // Main-screen badge: only when the family link is on (a code exists) and
 // needs the owner — it's paused because Tailscale signed this dashboard

@@ -163,6 +163,7 @@ function showCalendar() {
   $('login-view').hidden = true;
   $('cal-view').hidden = false;
   loadMonth({ toToday: true });
+  offerInstall();
 }
 
 // toToday: in the current month, open scrolled to today — earlier days stay
@@ -486,6 +487,68 @@ $('event-form').addEventListener('submit', async e => {
     save.disabled = false;
     save.textContent = 'Save';
   }
+});
+
+/* ── Add to Home Screen ───────────────────────────────────── */
+// Offered once after signing in (the footer button brings it back), never
+// when already opened from the home screen. Android Chrome can install
+// straight from a button; iPhone needs the Share menu, so it gets steps.
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/.test(navigator.userAgent);
+let installPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); // shown from our own sheet instead
+  installPrompt = e;
+});
+
+const ICO_SHARE = '<svg class="step-ico" viewBox="0 0 24 24"><path d="M7 10v10h10V10M12 3v12M8 7l4-4 4 4"/></svg>';
+const ICO_ADD   = '<svg class="step-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>';
+const ICO_MENU  = '<svg class="step-ico" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg>';
+
+function openInstallSheet() {
+  const steps = isIOS ? [
+    `Tap the Share button ${ICO_SHARE} in Safari's toolbar. On newer iPhones, tap <strong>⋯</strong> first.`,
+    `Scroll down and tap <strong>Add to Home Screen</strong> ${ICO_ADD}.`,
+    'Tap <strong>Add</strong>.',
+  ] : [
+    `Tap the menu ${ICO_MENU} at the top right of Chrome.`,
+    `Tap <strong>Add to Home screen</strong> or <strong>Install app</strong> ${ICO_ADD}.`,
+    'Tap <strong>Install</strong> (or <strong>Add</strong>).',
+  ];
+  $('install-steps').innerHTML = steps.map(s => `<li>${s}</li>`).join('');
+  $('install-note').textContent = isIOS
+    ? 'The first time you open it from the home screen, enter the family code once.'
+    : '';
+  $('install-go').hidden = !installPrompt;
+  $('install-sheet').hidden = false;
+}
+
+function closeInstallSheet() {
+  $('install-sheet').hidden = true;
+  try { localStorage.setItem('installTipSeen', '1'); } catch { /* private mode */ }
+}
+
+function offerInstall() {
+  if (isStandalone() || !(isIOS || isAndroid)) return;
+  $('install-help-btn').hidden = false;
+  let seen = false;
+  try { seen = localStorage.getItem('installTipSeen') === '1'; } catch { /* private mode */ }
+  if (!seen) setTimeout(openInstallSheet, 1500);
+}
+
+$('install-help-btn').addEventListener('click', openInstallSheet);
+$('install-later').addEventListener('click', closeInstallSheet);
+$('install-sheet').addEventListener('click', e => { if (e.target === $('install-sheet')) closeInstallSheet(); });
+$('install-go').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => {});
+  installPrompt = null;
+  closeInstallSheet();
 });
 
 /* ── Start ────────────────────────────────────────────────── */

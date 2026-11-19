@@ -2175,3 +2175,219 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 
 .device-pw { margin-top: 0.5rem; font-size: 0.9rem; line-height: 1.7; }
 .device-pw code { font-size: 1rem; user-select: all; }
+
+/* ══════════════════════════════════════════════════════════
+   SETTINGS — two panes: categories left, the chosen one right.
+   On narrow screens it becomes a list you tap into (.in-pane).
+   ══════════════════════════════════════════════════════════ */
+.settings-shell {
+  --card:        rgba(255,255,255,0.05);
+  --card-border: rgba(255,255,255,0.08);
+  --nav-active:  rgba(90,180,255,0.16);
+  max-width: 900px;
+  height: min(660px, calc(100vh - 2rem));
+  padding: 0;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  overflow: hidden;
+}
+[data-theme="light"] .settings-shell {
+  --card:        rgba(255,255,255,0.55);
+  --card-border: rgba(255,255,255,0.85);
+  --nav-active:  rgba(28,104,224,0.14);
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 1.1rem 0.6rem 0.8rem;
+  border-right: 1px solid var(--glass-border2);
+  overflow-y: auto;
+}
+.settings-nav-title { font-size: 1.35rem; font-weight: 750; padding: 0 0.6rem 0.75rem; }
+.settings-nav-group {
+  margin: 0.85rem 0.7rem 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.settings-nav-group[hidden], .settings-nav-item[hidden] { display: none; }
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 46px;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.93rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-nav-item:hover  { background: var(--card); }
+.settings-nav-item.active { background: var(--nav-active); }
+.settings-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--tile, #7c8597);
+  color: #fff;
+}
+.settings-tile .ico { width: 18px; height: 18px; vertical-align: 0; }
+.settings-nav-dot {
+  width: 9px; height: 9px; margin-left: auto;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.settings-nav-dot[hidden] { display: none; }
+.settings-nav-foot { margin-top: auto; padding: 0.9rem 0.7rem 0; }
+
+.settings-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.settings-main-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.05rem 1.4rem 0.75rem;
+}
+.settings-main-head h4 { flex: 1; font-size: 1.2rem; font-weight: 700; }
+.settings-back { display: none; }
+.settings-panes { flex: 1; overflow-y: auto; padding: 0.15rem 1.4rem 1.4rem; }
+.settings-pane { display: none; flex-direction: column; gap: 0.9rem; }
+.settings-pane.active { display: flex; }
+
+/* Each group is a card */
+.settings-shell .settings-section {
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.95rem 1.05rem;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+}
+.settings-shell .settings-section-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.settings-shell .settings-desc { font-size: 0.84rem; line-height: 1.45; }
+
+/* Switch rows: label on the left, switch on the right, full-width tap target */
+.settings-shell .settings-toggle {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0.2rem 0;
+  font-size: 0.93rem;
+}
+.settings-shell .settings-toggle input[type="checkbox"] { width: 46px; height: 28px; border-radius: 14px; }
+.settings-shell .settings-toggle input[type="checkbox"]::after { width: 22px; height: 22px; }
+.settings-shell .settings-toggle input[type="checkbox"]:checked::after { transform: translateX(18px); }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 40px;
+  font-size: 0.93rem;
+}
+.settings-row .theme-options { flex: 0 1 260px; }
+.range-row { display: flex; align-items: center; gap: 0.75rem; }
+.range-row input[type="range"] { flex: 1; min-width: 0; }
+.range-cap { flex: none; color: var(--text-dim); font-size: 0.78rem; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.settings-shell .zip-coords { font-family: inherit; font-size: 0.86rem; color: var(--text); }
+.settings-shell #wx-use-location-btn { margin: 0; }
+
+.settings-update { border-color: var(--accent) !important; }
+
+/* Family Link */
+.family-hero-top { display: flex; align-items: center; gap: 0.85rem; }
+.family-hero-tile { --tile: #2fb35a; width: 44px; height: 44px; border-radius: 12px; }
+.family-hero-tile .ico { width: 26px; height: 26px; }
+.family-status {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  background: var(--card-border);
+  color: var(--text-dim);
+}
+.family-status.on     { background: rgba(47,179,90,0.18);  color: var(--success); }
+.family-status.paused { background: rgba(240,138,0,0.18);  color: #f0a020; }
+[data-theme="light"] .family-status.paused { color: #9a5a00; }
+.family-points { margin: 0.1rem 0 0.2rem 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.9rem; }
+
+@media (max-width: 720px) {
+  .settings-shell { grid-template-columns: 1fr; height: calc(100vh - 2rem); }
+  .settings-shell.in-pane .settings-nav { display: none; }
+  .settings-shell:not(.in-pane) .settings-main { display: none; }
+  .settings-nav { border-right: 0; }
+  .settings-back { display: inline-flex; }
+  .settings-row { flex-direction: column; align-items: stretch; gap: 0.4rem; }
+  .settings-row .theme-options { flex: none; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   HOME-SCREEN GUIDE (Settings ▸ Family Link)
+   ══════════════════════════════════════════════════════════ */
+.homescreen-modal { max-width: 860px; }
+.hs-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.hs-tabs .theme-opt { flex: 0 1 auto; padding: 0.55rem 1.1rem; font-size: 0.9rem; }
+.hs-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+.hs-step { display: flex; flex-direction: column; align-items: center; gap: 0.55rem; text-align: center; }
+.hs-step svg.hs-phone { width: 100%; max-width: 150px; height: auto; }
+.hs-num {
+  display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-size: 0.85rem; font-weight: 700;
+}
+.hs-step p { font-size: 0.86rem; line-height: 1.4; color: var(--text); }
+.hs-note { margin-top: 1rem; font-size: 0.84rem; color: var(--text-dim); line-height: 1.45; }
+.hs-qr { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; }
+.hs-qr .qr-box { flex: none; width: 120px; }
+@media (max-width: 720px) {
+  .hs-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Drawn phones in the guide (colors fixed: they picture real phones) */
+.hs-phone .hs-body    { fill: #1b2233; }
+.hs-phone .hs-screen  { fill: #f4f6fb; }
+.hs-phone .hs-screen2 { fill: #eef1f7; }
+.hs-phone .hs-wall    { fill: #4a5fc1; }
+.hs-phone .hs-bar     { fill: #e6e9f0; }
+.hs-phone .hs-pill    { fill: #d5dae5; }
+.hs-phone .hs-card    { fill: #fff; stroke: #dde2ec; stroke-width: 0.8; }
+.hs-phone .hs-sheet   { fill: #fbfcfe; }
+.hs-phone .hs-dim     { fill: rgba(10, 14, 28, 0.35); }
+.hs-phone .hs-keys    { fill: #d3d8e2; }
+.hs-phone .hs-line    { fill: #9aa5bb; }
+.hs-phone .hs-line2   { fill: #c9d1e0; }
+.hs-phone .hs-dot     { fill: #3a4255; }
+.hs-phone .hs-ico     { fill: none; stroke: #2f7cf6; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.hs-phone .hs-appicon { fill: #2f7cf6; }
+.hs-phone .hs-t       { font: 500 8px system-ui, sans-serif; fill: #1b2233; }
+.hs-phone .hs-small   { font-size: 7px; }
+.hs-phone .hs-bold    { font-weight: 700; }
+.hs-phone .hs-mid     { text-anchor: middle; }
+.hs-phone .hs-blue    { fill: #2f7cf6; }
+.hs-phone .hs-white   { fill: #fff; font-size: 6px; }
+.hs-phone .hs-hl      { fill: none; stroke: #ff8a00; stroke-width: 2.5; animation: hs-pulse 1.6s ease-in-out infinite; }
+@keyframes hs-pulse { 50% { stroke-opacity: 0.35; } }

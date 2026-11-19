@@ -120,7 +120,7 @@ It installs `labwc` + `wlr-randr`, installs `system/labwc-autostart` to
 autostart; kept in sync by the self-updater from then on), and swaps the
 one-shot `startx` in your login profile for an equivalent one-shot `labwc`
 (backing the profile up to `*.dashboard-bak` first). Exit to Terminal works
-in both modes. Compare before/after with Settings ▸ Debug Options ▸
+in both modes. Compare before/after with Settings ▸ Debug Tools ▸
 Graphics Benchmark. If the screen stays black after switching, SSH in and run
 `bash scripts/kiosk-display.sh x11 && sudo reboot`.
 
@@ -136,9 +136,9 @@ applies the best settings, or skip) → done, with an offer to set up phone
 access. Everything stays changeable in Settings, including **📶 Wi-Fi**.
 
 It only appears in first-run mode (`db/first-run`), which is turned on by a
-fresh `provision-pi.sh` install, `prepare-image.sh`, or **Settings ▸ ♻️ Reset
-for a New Owner** (hidden with Debug Options; tap the version number 7
-times). Reset erases events, to-dos, bulletin, settings, the family code and
+fresh `provision-pi.sh` install, `prepare-image.sh`, or **Settings ▸ Reset**
+(an Advanced setting; tap the version number at the bottom of Settings 7
+times to show it). Reset erases events, to-dos, bulletin, settings, the family code and
 the Tailscale connection (optionally saved Wi-Fi too), keeping a backup copy
 in the home folder. Updating an existing dashboard never triggers it.
 
@@ -164,7 +164,7 @@ its own unique device. No keyboard, SSH or network setup needed.
    powers off. **Don't boot this card again before copying it.**
    Each copy also gets its **own random login password** on first boot (no
    shared password across units). It's shown only on that unit's screen, in
-   Debug Options ▸ Device Login, and saved in `~/.device-password`.
+   Settings ▸ Debug Tools ▸ Device Login, and saved in `~/.device-password`.
 3. **Copy the card to an image file** on Windows with
    [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/):
    choose a file name like `family-dashboard.img`, then **Read**.
@@ -186,7 +186,7 @@ anywhere: they scan a QR code or open a link, with no app or account. You
 get SSH to the Pi from anywhere too.
 
 Setup is a guided, step-by-step screen written for non-technical owners:
-**Settings ▸ Use the Calendar Away From Home ▸ Set Up / Manage**. It works
+**Settings ▸ Family Link ▸ Set Up Family Link**. It works
 on the wall screen itself; every link is shown as a QR code to scan with a
 phone, and each step advances by itself once it's done on the phone:
 
@@ -204,6 +204,14 @@ Then the screen shows a QR code family members scan (it signs them straight
 in), the link to copy/share, and the code (e.g. `K7QM-4XPD`). *Make a new
 code* signs everyone out; *Turn off family link* takes it down.
 
+**On phones:** the Family Link page is installable (app icon + web app
+manifest). After the first sign-in it offers, once, to be added to the home
+screen, with short steps for iPhone and a one-tap **Install** where Android
+Chrome supports it (a footer button brings the steps back). On the
+dashboard, **Settings ▸ Family Link ▸ Show me how** shows illustrated
+step-by-step pictures for iPhone and Android. iPhone home-screen apps keep
+their own storage, so the icon asks for the family code once.
+
 How it works:
 
 - **Tailscale is installed by the normal self-update.** `scripts/system-update.sh`
@@ -220,7 +228,7 @@ How it works:
   same account, then `ssh user@family-dashboard`. Your existing SSH keys
   work as on the LAN, and Tailscale SSH is also enabled. The dashboard is
   also at `http://family-dashboard:3000` from your Tailscale devices.
-- Turning remote access off (Settings) deletes the code, signs everyone out,
+- Turning Family Link off (Settings ▸ Family Link) deletes the code, signs everyone out,
   and takes the public link down.
 
 ---
@@ -259,7 +267,7 @@ service's default `PATH` doesn't include it:
 
 - `PIPER_BIN` (env var, default `piper` i.e. must be on `PATH` if unset — overridden to `piper/piper` by `dashboard.service`) — path to the binary
 - `PIPER_MODEL` (env var, default `piper/en_US-lessac-medium.onnx`) — path to the voice model
-- `PIPER_LENGTH_SCALE` (env var, default `1.15`) — server-wide default speech rate; higher is slower/clearer, lower is faster. Overridden per-request by the **Speech Rate** slider in Settings ▸ Alert Notifications, which lets you A/B test on the Pi's actual speaker via the **Test Speech Rate** button — no redeploy needed.
+- `PIPER_LENGTH_SCALE` (env var, default `1.15`) — server-wide default speech rate; higher is slower/clearer, lower is faster. Overridden per-request by the **Speech Rate** slider in Settings ▸ Weather & Alerts (**Reading speed**), which lets you A/B test on the Pi's actual speaker via the **Test Reading Speed** button — no redeploy needed.
 
 To try a different voice (clarity varies noticeably between voices, not
 just quality tiers), browse

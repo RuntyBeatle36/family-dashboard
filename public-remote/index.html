@@ -11,6 +11,8 @@
   <meta name="robots" content="noindex, nofollow" />
   <title>Family Calendar</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/remote.css" />
 </head>
 <body>
@@ -18,7 +20,7 @@
 <!-- ── Sign in ─────────────────────────────────────────────── -->
 <main id="login-view" class="login" hidden>
   <form id="login-form" class="login-card" autocomplete="on">
-    <div class="login-icon" aria-hidden="true">🏠</div>
+    <img class="login-icon" src="/icon.svg" alt="" width="64" height="64" />
     <h1>Family Calendar</h1>
     <p class="muted" id="login-msg">Enter the family code.</p>
     <input id="login-code" type="text" name="code" placeholder="XXXX-XXXX" maxlength="12" required
@@ -40,10 +42,30 @@
 
   <main id="agenda" class="agenda" aria-live="polite"></main>
   <footer class="agenda-footer">
+    <button class="btn btn-ghost btn-small" id="install-help-btn" hidden>Add to Home Screen</button>
     <button class="btn btn-ghost btn-small" id="logout-btn">Sign out</button>
   </footer>
 
   <button class="fab" id="add-btn" aria-label="Add event">＋</button>
+</div>
+
+<!-- ── Add to Home Screen tip (shown once; the footer button reopens it) ── -->
+<div class="sheet-backdrop" id="install-sheet" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="install-title">
+    <div class="install-head">
+      <img src="/icon.svg" alt="" width="52" height="52" />
+      <div>
+        <h2 id="install-title">Put it on your home screen</h2>
+        <p class="hint">Then it opens like an app, one tap away.</p>
+      </div>
+    </div>
+    <ol class="install-steps" id="install-steps"></ol>
+    <p class="hint" id="install-note"></p>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="install-later">Not now</button>
+      <button class="btn btn-primary" id="install-go" hidden>Install</button>
+    </div>
+  </section>
 </div>
 
 <!-- ── Event details ───────────────────────────────────────── -->
