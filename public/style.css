@@ -1320,6 +1320,7 @@ body {
 .debug-alert-tier:first-child { border-top: none; padding-top: 0; margin-top: 0; }
 
 .debug-wx-btn.active,
+.debug-sky-btn.active,
 .debug-alert-btn.active {
   background: var(--accent);
   color: #fff;

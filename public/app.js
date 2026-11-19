@@ -682,10 +682,13 @@ function mkCloud(offscreen, colorRgba) {
 
 function initClouds() {
   const n = qCount(wxMode === 'overcast' ? 8 : 4);
+  // Clouds pick up the sunrise/sunset color, like the real thing
+  const w = skyState?.warm ?? 0;
+  const tint = (from, to) => from.map((v, i) => Math.round(v + (to[i] - v) * w)).join(',');
   const colorRgba =
-    wxMode === 'cloudy-day'   ? 'rgba(255,255,255,0.92)' :
-    wxMode === 'cloudy-night' ? 'rgba(16,22,58,0.96)'    :
-                                'rgba(82,92,118,0.92)';
+    wxMode === 'cloudy-day' || wxMode === 'windy-day'     ? `rgba(${tint([255,255,255], [255,190,160])},0.92)` :
+    wxMode === 'cloudy-night' || wxMode === 'windy-night' ? `rgba(${tint([16,22,58], [96,70,112])},0.96)` :
+                                                            'rgba(82,92,118,0.92)';
   wxClouds = Array.from({ length: n }, () => mkCloud(false, colorRgba));
 }
 
@@ -702,42 +705,247 @@ function getSkyGrad(key, stops) {
   return skyGrads[key].g;
 }
 
-// drawDaySky: blits a pre-rendered OffscreenCanvas (gradient + cloud-smear highlights).
-// Re-rendered only on canvas resize, not every frame.
-function drawDaySky() {
+/* ── Sky by time of day ───────────────────────────────────── */
+// Clear, cloudy and windy skies follow the real sun: dawn glow, golden hour,
+// sunset and dusk colors, a sun that tracks across the sky by day, and the
+// moon (in its actual phase) by night. Colors blend between keyframes timed
+// off today's sunrise/sunset. The blended sky is pre-rendered to an
+// OffscreenCanvas and only redrawn when refreshSky() (once a minute) finds
+// it has visibly changed, so per-frame cost is one blit, same as before.
+const SKY_STOP_POS = [0, 0.45, 0.80, 1]; // top → horizon
+const SKY_PALETTES = {
+  night:    [[ 4,  7,  28, 0.94], [ 6,  11,  39, 0.84], [  7,  14,  47, 0.76], [  8,  16,  52, 0.72]],
+  twilight: [[10, 18,  60, 0.94], [38,  44, 110, 0.86], [120,  80, 140, 0.74], [215, 120, 110, 0.66]],
+  sunset:   [[22, 48, 120, 0.94], [96,  76, 150, 0.84], [232, 112,  82, 0.76], [255, 170,  80, 0.70]],
+  golden:   [[14, 70, 165, 0.95], [50, 120, 200, 0.85], [225, 170, 110, 0.70], [255, 200, 120, 0.60]],
+  day:      [[ 8, 55, 155, 0.95], [15, 100, 205, 0.85], [ 40, 140, 225, 0.68], [ 70, 170, 235, 0.48]],
+};
+// [minutes from sunrise, palette] and [minutes from sunset, palette]
+const SKY_MORNING = [[-70, 'night'], [-30, 'twilight'], [5, 'sunset'], [45, 'golden'], [110, 'day']];
+const SKY_EVENING = [[-110, 'day'], [-45, 'golden'], [0, 'sunset'], [30, 'twilight'], [70, 'night']];
+const SYNODIC_DAYS = 29.530588853;
+const NEW_MOON_REF = Date.UTC(2000, 0, 6, 18, 14); // a known new moon
+
+let skyClockOverride = null; // minutes since midnight; Debug ▸ Preview Sky Time
+let skyState = null;
+let moonOC = null, moonOCKey = '';
+
+function skyNowMins() {
+  if (skyClockOverride !== null) return skyClockOverride;
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes() + n.getSeconds() / 60;
+}
+
+// Moon age in days: 0 = new, ~14.8 = full
+function moonAgeDays() {
+  return (((Date.now() - NEW_MOON_REF) / 86400000) % SYNODIC_DAYS + SYNODIC_DAYS) % SYNODIC_DAYS;
+}
+
+// Which two palettes to blend right now, and how far between them (0-1)
+function skyBlend(nowM) {
+  if (sunriseMins === null || sunsetMins === null) {
+    const p = isCurrentlyDay() ? 'day' : 'night';
+    return [p, p, 0];
+  }
+  const keys = [
+    ...SKY_MORNING.map(([m, p]) => [sunriseMins + m, p]),
+    ...SKY_EVENING.map(([m, p]) => [sunsetMins + m, p]),
+  ].sort((a, b) => a[0] - b[0]);
+  if (nowM <= keys[0][0] || nowM >= keys[keys.length - 1][0]) return ['night', 'night', 0];
+  let i = 0;
+  while (nowM >= keys[i + 1][0]) i++;
+  const [a, pa] = keys[i], [b, pb] = keys[i + 1];
+  // Quantized to tenths, so the sky re-renders a handful of times per transition
+  return [pa, pb, Math.round((nowM - a) / (b - a) * 10) / 10];
+}
+
+// Screen position (as fractions) for a body "f" of the way through its time
+// above the horizon, rising bottom-left and setting bottom-right; null when
+// it's below the horizon
+function skyArc(f) {
+  if (f < -0.03 || f > 1.03) return null;
+  const e = Math.sin(Math.PI * Math.min(1, Math.max(0, f))); // 0 at horizon, 1 overhead
+  return { x: 0.08 + 0.84 * f, y: 0.95 - 0.8 * e, e: Math.round(e * 50) / 50 };
+}
+
+function refreshSky() {
+  const nowM = skyNowMins();
+  const [pa, pb, t] = skyBlend(nowM);
+  const weight = name => (pa === name ? 1 - t : 0) + (pb === name ? t : 0);
+  const stops = SKY_PALETTES[pa].map((ca, i) => ca.map((v, j) => {
+    const mixed = v + (SKY_PALETTES[pb][i][j] - v) * t;
+    return j === 3 ? +mixed.toFixed(2) : Math.round(mixed);
+  }));
+
+  let sun = null, moon = null;
+  if (sunriseMins !== null && sunsetMins !== null) {
+    const dayLen = sunsetMins - sunriseMins;
+    sun = skyArc(Math.round((nowM - sunriseMins) / dayLen * 100) / 100);
+    // The moon runs ~50 min a day behind the sun: it rises with the sun at
+    // new moon and at sunset when full. Close enough to place it in the sky.
+    const age = moonAgeDays();
+    const moonM = ((nowM - age / SYNODIC_DAYS * 1440) % 1440 + 1440) % 1440;
+    const pos = skyArc(Math.round((moonM - sunriseMins) / dayLen * 100) / 100);
+    if (pos) moon = { ...pos, age: Math.round(age * 4) / 4 };
+  }
+
+  const prevKey = skyState?.key;
+  skyState = {
+    stops,
+    sun,
+    moon,
+    day:   weight('day') + weight('golden') * 0.6,                                   // midday highlights
+    stars: weight('night') + weight('twilight') * 0.35,                              // stars/moon visibility
+    warm:  weight('sunset') + weight('golden') * 0.5 + weight('twilight') * 0.6,     // cloud tint
+  };
+  skyState.key = JSON.stringify([stops, sun, moon]);
+  if (skyState.key !== prevKey) {
+    daySkyOC = null;
+    // Clear Day draws one static frame rather than looping, so redraw it here
+    if (wxMode === 'clear-day' && getWxQuality() !== 'off' && !document.hidden) startAnim();
+  }
+}
+
+// drawTimeSky: blits the pre-rendered sky (gradient, highlights, sun).
+// Re-rendered only on resize or when refreshSky() changes it.
+function drawTimeSky() {
   const W = wxCanvas.width, H = wxCanvas.height;
+  if (!skyState) refreshSky();
   if (!daySkyOC || daySkyOC.width !== W || daySkyOC.height !== H) {
     daySkyOC = new OffscreenCanvas(W, H);
     const dc = daySkyOC.getContext('2d');
-    // Stops deepened + bumped in opacity from the original (was as low as
-    // 0.35 at the bottom) — on the TN panel this app runs on, pale/low-
-    // opacity color washes out further still at anything but a dead-on
-    // viewing angle, so the whole gradient reads punchier/more saturated
-    // than a "normal monitor" design would need.
+    // Stops are deep and fairly opaque on purpose: on the TN panel this app
+    // runs on, pale/low-opacity color washes out at anything but a dead-on
+    // viewing angle, so the gradient reads punchier than a normal monitor needs.
     const g = dc.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0,    'rgba(8,   55, 155, 0.95)');
-    g.addColorStop(0.45, 'rgba(15, 100, 205, 0.85)');
-    g.addColorStop(0.80, 'rgba(40, 140, 225, 0.68)');
-    g.addColorStop(1,    'rgba(70, 170, 235, 0.48)');
+    skyState.stops.forEach(([r, gr, b, a], i) => g.addColorStop(SKY_STOP_POS[i], `rgba(${r},${gr},${b},${a})`));
     dc.fillStyle = g;
     dc.fillRect(0, 0, W, H);
-    [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cfx,cfy]) => {
-      const g2 = dc.createRadialGradient(W*cfx,H*cfy,0, W*cfx,H*cfy,W*0.14);
-      g2.addColorStop(0, 'rgba(255,255,255,0.11)');
-      g2.addColorStop(1, 'rgba(255,255,255,0)');
-      dc.fillStyle = g2;
-      dc.fillRect(0, 0, W, H);
-    });
+    if (skyState.day > 0.05) {
+      [[0.20,0.16],[0.54,0.09],[0.79,0.21],[0.37,0.29]].forEach(([cfx,cfy]) => {
+        const g2 = dc.createRadialGradient(W*cfx,H*cfy,0, W*cfx,H*cfy,W*0.14);
+        g2.addColorStop(0, `rgba(255,255,255,${(0.11 * skyState.day).toFixed(3)})`);
+        g2.addColorStop(1, 'rgba(255,255,255,0)');
+        dc.fillStyle = g2;
+        dc.fillRect(0, 0, W, H);
+      });
+    }
+    const sun = skyState.sun;
+    if (sun) drawSun(dc, W * sun.x, H * sun.y, Math.min(W, H), sun.e);
   }
   wxCtx.drawImage(daySkyOC, 0, 0);
 }
 
-function drawNightSky() {
-  wxCtx.fillStyle = getSkyGrad('night', [
-    [0, 'rgba(4,  7, 28, 0.94)'],
-    [1, 'rgba(8, 16, 52, 0.72)'],
-  ]);
-  wxCtx.fillRect(0, 0, wxCanvas.width, wxCanvas.height);
+// The sun as light, not a sticker: a white-hot core with no hard edge,
+// a tight bloom, and a wide atmospheric glow. Low in the sky it turns
+// deep orange and its glow spreads out along the horizon.
+function drawSun(dc, sx, sy, R, e) {
+  const gr = Math.round(140 + 105 * e), b = Math.round(50 + 160 * e); // orange → near-white
+  const tint = a => `rgba(255,${gr},${b},${a})`;
+
+  const glowR = R * (0.62 - 0.22 * e);
+  dc.save();
+  dc.translate(sx, sy);
+  dc.scale(1.8 - 0.8 * e, 1); // flattened along the horizon when low
+  const glow = dc.createRadialGradient(0, 0, 0, 0, 0, glowR);
+  glow.addColorStop(0,    tint(0.42));
+  glow.addColorStop(0.18, tint(0.20));
+  glow.addColorStop(0.50, tint(0.06));
+  glow.addColorStop(1,    tint(0));
+  dc.fillStyle = glow;
+  dc.fillRect(-glowR, -glowR, glowR * 2, glowR * 2);
+  dc.restore();
+
+  // Core: white overhead, deep gold near the horizon
+  const low = 1 - e;
+  const core = a => `rgba(255,${Math.round(252 - 80 * low)},${Math.round(240 - 170 * low)},${a})`;
+  const bloomR = R * (0.11 + 0.03 * low);
+  const bloom = dc.createRadialGradient(sx, sy, 0, sx, sy, bloomR);
+  bloom.addColorStop(0,    core(0.9));
+  bloom.addColorStop(0.22, core(0.8));
+  bloom.addColorStop(0.30, tint(0.35));
+  bloom.addColorStop(1,    tint(0));
+  dc.fillStyle = bloom;
+  dc.fillRect(sx - bloomR, sy - bloomR, bloomR * 2, bloomR * 2);
+}
+
+// The moon's darker "seas" (maria) as seen from the Northern Hemisphere:
+// [x, y, radius-x, radius-y] as fractions of the moon's radius
+const MOON_MARIA = [
+  [-0.52,  0.02, 0.30, 0.46],  // Oceanus Procellarum
+  [-0.30, -0.38, 0.27, 0.22],  // Imbrium
+  [ 0.15, -0.32, 0.17, 0.16],  // Serenitatis
+  [ 0.32, -0.04, 0.22, 0.17],  // Tranquillitatis
+  [ 0.64, -0.24, 0.11, 0.09],  // Crisium
+  [ 0.50,  0.22, 0.12, 0.16],  // Fecunditatis
+  [ 0.26,  0.34, 0.09, 0.08],  // Nectaris
+  [-0.16,  0.40, 0.16, 0.12],  // Nubium
+];
+
+// Pre-renders the moon in its current phase (lit on the right while
+// waxing, as seen from the Northern Hemisphere): limb-darkened surface,
+// soft blurred maria, a soft terminator, faint earthshine on the dark side
+// and a halo that grows with the moon's brightness. Cached until the phase
+// or size changes, so this runs a few times a day at most.
+function renderMoon(r, age) {
+  const phase = age / SYNODIC_DAYS;          // 0 new, 0.5 full
+  const k = Math.cos(phase * 2 * Math.PI);   // terminator: 1 new, 0 half, -1 full
+  const lit = (1 - k) / 2;                   // fraction of the disc lit
+  const pad = r * 3.2, S = Math.ceil((r + pad) * 2), c = S / 2;
+  const oc = new OffscreenCanvas(S, S), m = oc.getContext('2d');
+
+  const halo = m.createRadialGradient(c, c, r * 0.95, c, c, r + pad);
+  halo.addColorStop(0,    `rgba(215,225,255,${(0.05 + 0.20 * lit).toFixed(3)})`);
+  halo.addColorStop(0.25, `rgba(215,225,255,${(0.02 + 0.07 * lit).toFixed(3)})`);
+  halo.addColorStop(1,    'rgba(215,225,255,0)');
+  m.fillStyle = halo;
+  m.fillRect(0, 0, S, S);
+
+  // Surface: limb darkening plus the maria, blurred so they read as tone, not spots
+  const surf = new OffscreenCanvas(S, S), s = surf.getContext('2d');
+  const limb = s.createRadialGradient(c - r * 0.15, c - r * 0.15, 0, c, c, r);
+  limb.addColorStop(0,   '#fbf8ef');
+  limb.addColorStop(0.7, '#eeeadf');
+  limb.addColorStop(1,   '#cfcbc0');
+  s.fillStyle = limb;
+  s.beginPath(); s.arc(c, c, r, 0, Math.PI * 2); s.fill();
+  s.globalCompositeOperation = 'source-atop';
+  s.filter = `blur(${Math.max(0.6, r * 0.07).toFixed(1)}px)`;
+  s.fillStyle = 'rgba(112,116,132,0.38)';
+  for (const [dx, dy, rx, ry] of MOON_MARIA) {
+    s.beginPath(); s.ellipse(c + dx * r, c + dy * r, rx * r, ry * r, 0.3, 0, Math.PI * 2); s.fill();
+  }
+  s.filter = 'none';
+
+  // Earthshine: the unlit part is faintly visible, especially near new moon
+  m.globalAlpha = 0.10 + 0.08 * (1 - lit);
+  m.drawImage(surf, 0, 0);
+  m.globalAlpha = 1;
+
+  // Phase mask: the lit half plus (gibbous) or minus (crescent) the
+  // terminator ellipse, blurred slightly so the terminator is soft
+  const mask = new OffscreenCanvas(S, S), q = mask.getContext('2d');
+  q.fillStyle = '#000';
+  q.beginPath(); q.arc(c, c, r, -Math.PI / 2, Math.PI / 2, phase >= 0.5); q.fill();
+  q.globalCompositeOperation = k > 0 ? 'destination-out' : 'source-over';
+  q.beginPath(); q.ellipse(c, c, Math.max(0.01, r * Math.abs(k)), r, 0, 0, Math.PI * 2); q.fill();
+  s.globalCompositeOperation = 'destination-in';
+  s.filter = `blur(${Math.max(0.5, r * 0.05).toFixed(1)}px)`;
+  s.drawImage(mask, 0, 0);
+  m.drawImage(surf, 0, 0);
+  return oc;
+}
+
+function drawMoon() {
+  const moon = skyState?.moon;
+  if (!moon || skyState.stars < 0.15) return;
+  const W = wxCanvas.width, H = wxCanvas.height;
+  const r = Math.round(Math.min(W, H) * 0.032);
+  const key = `${r}:${moon.age}`;
+  if (moonOCKey !== key) { moonOC = renderMoon(r, moon.age); moonOCKey = key; }
+  wxCtx.globalAlpha = Math.min(1, skyState.stars);
+  wxCtx.drawImage(moonOC, W * moon.x - moonOC.width / 2, H * moon.y - moonOC.height / 2);
+  wxCtx.globalAlpha = 1;
 }
 
 function drawOvercastSky() {
@@ -870,10 +1078,10 @@ function drawEclipseSky(ts) {
   wxCtx.fill();
 }
 
-function drawStars(ts) {
+function drawStars(ts, vis = 1) {
   wxCtx.fillStyle = '#ffffff';
   for (const s of wxStars) {
-    wxCtx.globalAlpha = s.base * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
+    wxCtx.globalAlpha = vis * s.base * (0.4 + 0.6 * Math.sin(ts * s.freq + s.phi));
     wxCtx.beginPath();
     wxCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
     wxCtx.fill();
@@ -1230,23 +1438,25 @@ function drawFrame(ts = 0) {
 
   switch (wxMode) {
     case 'clear-day':
-      drawDaySky();
+      drawTimeSky();
       wxAnimId = null;
       return;               // static — no RAF loop needed
 
     case 'clear-night':
-      drawNightSky();
-      drawStars(ts);
+      drawTimeSky();
+      drawStars(ts, skyState.stars);
+      drawMoon();
       break;
 
     case 'cloudy-day':
-      drawDaySky();
+      drawTimeSky();
       drawClouds(dt);
       break;
 
     case 'cloudy-night':
-      drawNightSky();
-      drawStars(ts);
+      drawTimeSky();
+      drawStars(ts, skyState.stars);
+      drawMoon();
       drawClouds(dt);       // dark puffs occlude stars beneath them
       break;
 
@@ -1268,14 +1478,15 @@ function drawFrame(ts = 0) {
       break;
 
     case 'windy-day':
-      drawDaySky();
+      drawTimeSky();
       drawClouds(dt);
       drawStreaks(dt);
       break;
 
     case 'windy-night':
-      drawNightSky();
-      drawStars(ts);
+      drawTimeSky();
+      drawStars(ts, skyState.stars);
+      drawMoon();
       drawClouds(dt);
       drawStreaks(dt);
       break;
@@ -1598,6 +1809,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopAnim(); else if (wxMode !== 'none') startAnim();
 });
 resizeWxCanvas();
+setInterval(refreshSky, 60000);
 
 /* ══════════════════════════════════════════════════════════
    NWS WEATHER ALERTS
@@ -2045,7 +2257,7 @@ function nwsIcon(desc, isDay) {
 }
 
 function isCurrentlyDay() {
-  const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowM = skyNowMins(); // follows Debug ▸ Preview Sky Time when set
   if (sunriseMins !== null && sunsetMins !== null)
     return nowM >= sunriseMins && nowM < sunsetMins;
   // Fallback before the first successful sunrise/sunset fetch (or after one
@@ -2095,6 +2307,7 @@ async function fetchWeather() {
       sunriseMins = parseISO(d.daily.sunrise[0]);
       sunsetMins  = parseISO(d.daily.sunset[0]);
       applyTheme();
+      refreshSky();
     }
   }
 
@@ -2849,6 +3062,37 @@ const DEBUG_MODE_DESC = {
   'extreme-heat': 'Extreme Heat', 'extreme-cold': 'Extreme Cold',
   'eclipse': 'Eclipse',
 };
+
+// Debug ▸ Preview Sky Time: [minutes from sunrise or sunset, which]. Falls
+// back to a 7am/6pm day when sunrise/sunset haven't loaded (offline).
+const SKY_PREVIEW = {
+  dawn:    [-20, 'rise'],
+  sunrise: [10,  'rise'],
+  golden:  [70,  'rise'],
+  midday:  [0,   'mid'],
+  sunset:  [-10, 'set'],
+  dusk:    [25,  'set'],
+  night:   [180, 'set'],
+};
+
+document.getElementById('debug-sky-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.debug-sky-btn');
+  if (!btn) return;
+  const rise = sunriseMins ?? 7 * 60, set = sunsetMins ?? 18 * 60;
+  const preview = SKY_PREVIEW[btn.dataset.sky];
+  skyClockOverride = !preview ? null
+    : preview[1] === 'mid'  ? (rise + set) / 2
+    : (preview[1] === 'rise' ? rise : set) + preview[0];
+  refreshSky();
+  // Swap a day/night weather visual to match the previewed time; clear
+  // skies stand in when no weather visual is showing yet
+  const half = isCurrentlyDay() ? 'day' : 'night';
+  if (/-(day|night)$/.test(wxMode)) applyWxMode(wxMode.replace(/(day|night)$/, half));
+  else if (wxMode === 'none') applyWxMode(`clear-${half}`);
+  else applyWxMode(wxMode);
+  document.querySelectorAll('.debug-sky-btn').forEach(b =>
+    b.classList.toggle('active', b === btn && !!preview));
+});
 
 document.getElementById('debug-wx-grid').addEventListener('click', e => {
   const btn = e.target.closest('.debug-wx-btn');
