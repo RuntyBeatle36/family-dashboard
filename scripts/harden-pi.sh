@@ -82,12 +82,22 @@ if [ -f "$SSHD_CONFIG" ]; then
   # first backup is the one worth keeping (closest to "before we touched it").
   cp -n "$SSHD_CONFIG" "$SSHD_CONFIG.pre-harden.bak"
 
+  # sshd uses the FIRST value it reads for each setting, and sshd_config
+  # includes sshd_config.d/*.conf near its top — so a drop-in like
+  # cloud-init's 50-cloud-init.conf ("PasswordAuthentication yes", written
+  # by Raspberry Pi Imager) overrides anything set in sshd_config itself.
+  # Ours is 00-, read before any of those.
+  DROPIN_DIR=/etc/ssh/sshd_config.d
+  DROPIN="$DROPIN_DIR/00-family-dashboard.conf"
+  [ -d "$DROPIN_DIR" ] && echo "# Written by family-dashboard scripts/harden-pi.sh" > "$DROPIN"
+
   set_sshd_opt() { # $1=directive $2=value — replaces an existing (even commented-out) line, else appends
     if grep -qE "^[#[:space:]]*$1[[:space:]]" "$SSHD_CONFIG"; then
       sed -i -E "s|^[#[:space:]]*$1[[:space:]].*|$1 $2|" "$SSHD_CONFIG"
     else
       echo "$1 $2" >> "$SSHD_CONFIG"
     fi
+    [ ! -f "$DROPIN" ] || echo "$1 $2" >> "$DROPIN"
   }
 
   set_sshd_opt PermitRootLogin no
@@ -111,10 +121,16 @@ if [ -f "$SSHD_CONFIG" ]; then
   if sshd -t 2>"$CHECK_ERR"; then
     systemctl reload ssh >/dev/null 2>&1 || systemctl reload sshd >/dev/null 2>&1
     pass "sshd_config updated and reloaded"
+    # What sshd will actually do, after every include is applied
+    EFFECTIVE_PW="$(sshd -T 2>/dev/null | awk '$1 == "passwordauthentication" { print $2 }')"
+    if [ -s "$AUTH_KEYS" ] && [ "$EFFECTIVE_PW" != "no" ]; then
+      warn "Password login is still ON (effective setting: ${EFFECTIVE_PW:-unknown}) — another file in $DROPIN_DIR or sshd_config overrides it"
+    fi
   else
     warn "New sshd_config failed validation — reverting to the pre-harden backup:"
     sed 's/^/    /' "$CHECK_ERR"
     cp "$SSHD_CONFIG.pre-harden.bak" "$SSHD_CONFIG"
+    rm -f "$DROPIN"
   fi
   rm -f "$CHECK_ERR"
 else
