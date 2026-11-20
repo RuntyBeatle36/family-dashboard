@@ -2412,31 +2412,95 @@ function cToF(c) {
   return (c != null && isFinite(c)) ? Math.round(c * 9 / 5 + 32) : null;
 }
 
-// Map NWS free-text descriptions to emoji, accounting for day vs. night
+// Weather condition icons, drawn (no emoji) so they match the rest of the
+// screen and follow day/night. Built from a few shared shapes on a 64x64
+// grid; nwsIcon() picks the combination for an NWS description.
+const WXI = {
+  sun: (cx = 32, cy = 32, r = 11) => {
+    const rays = Array.from({ length: 8 }, (_, i) => {
+      const a = i * Math.PI / 4, x1 = cx + Math.cos(a) * (r + 4), y1 = cy + Math.sin(a) * (r + 4);
+      const x2 = cx + Math.cos(a) * (r + 9), y2 = cy + Math.sin(a) * (r + 9);
+      return `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    }).join('');
+    return `<path d="${rays}" stroke="#ffb627" stroke-width="3.2" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="#ffc83d"/>`;
+  },
+  moon: (cx = 32, cy = 30, r = 14) =>
+    `<path d="M${cx + r * 0.25} ${cy - r}a${r} ${r} 0 1 0 ${r * 0.75} ${r * 1.55}a${r * 0.95} ${r * 0.95} 0 0 1 -${r * 0.75} -${r * 1.55}z" fill="#f2e7c3"/>`,
+  // A cloud whose bottom edge sits at y, centered on x, scaled by s
+  cloud: (x = 32, y = 46, s = 1, fill = '#f4f7fc', edge = '#b9c4d6') =>
+    `<path transform="translate(${x} ${y}) scale(${s}) translate(-32 -46)" d="M19 46h27a10 10 0 0 0 1.5-19.9A14 14 0 0 0 21 23.5 11.3 11.3 0 0 0 19 46z" fill="${fill}" stroke="${edge}" stroke-width="1.5"/>`,
+  rain: (n = 3) => Array.from({ length: n }, (_, i) =>
+    `<path d="M${22 + i * 9} ${50 + (i % 2) * 2}l-3 7" stroke="#4da3ff" stroke-width="3" stroke-linecap="round"/>`).join(''),
+  snow: (n = 3) => Array.from({ length: n }, (_, i) => {
+    const x = 22 + i * 10, y = 54 + (i % 2) * 3;
+    return `<path class="wx-snow" d="M${x - 3} ${y}h6M${x - 1.5} ${y - 2.6}l3 5.2M${x + 1.5} ${y - 2.6}l-3 5.2" stroke-width="2.2" stroke-linecap="round"/>`;
+  }).join(''),
+  hail: () => [[23, 53], [32, 57], [41, 53]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.6" fill="#e6f2ff" stroke="#9cc4ec"/>`).join(''),
+  bolt: () => '<path d="M34 42l-7 11h6l-3 9 10-13h-6l4-7z" fill="#ffd23f" stroke="#e0a800" stroke-width="1" stroke-linejoin="round"/>',
+  wind: (cls = 'wx-line') => `<path class="${cls}" d="M10 26h30a6 6 0 1 0-6-6M10 36h40a6 6 0 1 1-6 6M10 46h22" fill="none" stroke-width="3.2" stroke-linecap="round"/>`,
+  fog: () => '<path class="wx-line" d="M12 44h40M16 51h32M20 58h24" stroke-width="3.2" stroke-linecap="round"/>',
+  thermo: (fill = '#ff6b5b') => `<rect class="wx-line" x="27" y="10" width="10" height="34" rx="5" fill="none" stroke-width="3"/><circle cx="32" cy="48" r="8" fill="${fill}"/><rect x="30" y="24" width="4" height="22" fill="${fill}"/>`,
+};
+
+const wxSvg = inner => `<svg class="wx-svg" viewBox="0 0 64 64" aria-hidden="true">${inner}</svg>`;
+const DARK_CLOUD = ['#8f9bb0', '#6d788c'];
+
+const WX_ICONS = {
+  unknown:        () => WXI.thermo(),
+  eclipse:        () => '<circle cx="32" cy="32" r="16" fill="none" stroke="#ffd36b" stroke-width="5" opacity="0.6"/><circle cx="32" cy="32" r="14" fill="#1b2233"/>',
+  tornado:        () => '<path class="wx-line" d="M12 14h40M16 22h32M21 30h22M25 38h14M28 46h8M30 54h4" stroke-width="3.6" stroke-linecap="round"/>',
+  // The usual hurricane symbol: an eye with two curved arms
+  hurricane:      () => '<g class="wx-line" fill="none" stroke-width="3.6" stroke-linecap="round"><circle cx="32" cy="32" r="7"/><path d="M32 25C23 25 17 18 20 9M32 39c9 0 15 7 12 16"/></g>',
+  hail:           () => WXI.cloud(32, 44, 1, ...DARK_CLOUD) + WXI.hail(),
+  thunder:        () => WXI.cloud(32, 42, 1, ...DARK_CLOUD) + WXI.rain(2).replace(/22 /, '18 ') + WXI.bolt(),
+  sleet:          () => WXI.cloud(32, 44) + WXI.rain(2) +
+                         '<path class="wx-snow" d="M41 55h6M42.5 52.4l3 5.2M45.5 52.4l-3 5.2" stroke-width="2.2" stroke-linecap="round"/>',
+  heat:           () => WXI.sun(32, 28, 12).replace(/#ffc83d/, '#ff8c42').replace(/#ffb627/g, '#ff5f3a') + '<path d="M14 54q4-4 8 0t8 0 8 0 8 0 8 0" fill="none" stroke="#ff8c42" stroke-width="2.6" stroke-linecap="round"/>',
+  cold:           () => '<path class="wx-snow" d="M32 10v44M13 21l38 22M13 43l38-22M26 12l6 6 6-6M26 52l6-6 6 6" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>',
+  blizzard:       () => WXI.cloud(32, 40) + WXI.snow(3) + '<path class="wx-line" d="M6 30h10M4 38h8" stroke-width="3" stroke-linecap="round"/>',
+  rain:           () => WXI.cloud(32, 44) + WXI.rain(3),
+  snow:           () => WXI.cloud(32, 44) + WXI.snow(3),
+  dust:           () => WXI.wind('wx-dust'),
+  fog:            () => WXI.cloud(32, 38, 0.95) + WXI.fog(),
+  overcast:       () => WXI.cloud(38, 40, 0.8, '#c9d2e0', '#9aa6ba') + WXI.cloud(28, 50),
+  windy:          () => WXI.wind(),
+  'partly-day':   () => WXI.sun(24, 24, 9) + WXI.cloud(36, 52, 0.95),
+  'partly-night': () => WXI.moon(26, 22, 11) + WXI.cloud(36, 52, 0.95, '#d6dce8', '#a3aec0'),
+  'mostly-clear-day':   () => WXI.sun(28, 28, 11) + WXI.cloud(44, 54, 0.6),
+  'mostly-clear-night': () => WXI.moon(28, 26, 13) + WXI.cloud(44, 54, 0.6, '#d6dce8', '#a3aec0'),
+  'clear-day':    () => WXI.sun(),
+  'clear-night':  () => WXI.moon(),
+};
+
+// Map NWS free-text descriptions to an icon, accounting for day vs. night
 function nwsIcon(desc, isDay) {
-  if (!desc) return '🌡️';
-  const d = desc.toLowerCase();
-  if (d.includes('eclipse'))                                    return '🌑';
-  if (d.includes('tornado') || d.includes('funnel') || d.includes('waterspout')) return '🌪️';
-  if (d.includes('hurricane') || d.includes('typhoon') || d.includes('tropical')) return '🌀';
-  if (d.includes('hail'))                                       return '🧊';
-  if (d.includes('thunder'))                                    return '⛈️';
-  if (d.includes('freezing rain') || d.includes('ice pellet') || d.includes('sleet')) return '🌨️';
-  if (d.includes('extreme heat') || d.includes('excessive heat')) return '🥵';
-  if (d.includes('extreme cold') || d.includes('arctic') || d.includes('bitter cold')) return '🥶';
-  if (d.includes('blizzard'))                                   return '🌬️❄️';
-  if (d.includes('rain') || d.includes('shower') || d.includes('drizzle')) return '🌧️';
-  if (d.includes('snow'))                                       return '❄️';
-  if (d.includes('dust') || d.includes('sand'))                 return '💨';
-  if (d.includes('fog') || d.includes('mist') || d.includes('haze') ||
-      d.includes('smoke') || d.includes('ash'))                 return '🌫️';
-  if (d.includes('overcast') || d.includes('mostly cloudy'))   return '☁️';
-  if (d.includes('windy') || d.includes('breezy') || d.includes('blustery') || d.includes('gusty')) return '💨';
-  if (d.includes('partly') || d.includes('partly sunny'))      return isDay ? '⛅' : '☁️';
-  if (d.includes('mostly clear') || d.includes('mostly sunny'))return isDay ? '🌤️' : '🌙';
-  if (d.includes('clear') || d.includes('sunny') || d.includes('fair')) return isDay ? '☀️' : '🌙';
-  if (d.includes('cloud'))                                      return isDay ? '⛅' : '☁️';
-  return '🌡️';
+  const dn = isDay ? 'day' : 'night';
+  const key = (() => {
+    if (!desc) return 'unknown';
+    const d = desc.toLowerCase();
+    if (d.includes('eclipse'))                                    return 'eclipse';
+    if (d.includes('tornado') || d.includes('funnel') || d.includes('waterspout')) return 'tornado';
+    if (d.includes('hurricane') || d.includes('typhoon') || d.includes('tropical')) return 'hurricane';
+    if (d.includes('hail'))                                       return 'hail';
+    if (d.includes('thunder'))                                    return 'thunder';
+    if (d.includes('freezing rain') || d.includes('ice pellet') || d.includes('sleet')) return 'sleet';
+    if (d.includes('extreme heat') || d.includes('excessive heat')) return 'heat';
+    if (d.includes('extreme cold') || d.includes('arctic') || d.includes('bitter cold')) return 'cold';
+    if (d.includes('blizzard'))                                   return 'blizzard';
+    if (d.includes('rain') || d.includes('shower') || d.includes('drizzle')) return 'rain';
+    if (d.includes('snow'))                                       return 'snow';
+    if (d.includes('dust') || d.includes('sand'))                 return 'dust';
+    if (d.includes('fog') || d.includes('mist') || d.includes('haze') ||
+        d.includes('smoke') || d.includes('ash'))                 return 'fog';
+    if (d.includes('overcast') || d.includes('mostly cloudy'))   return 'overcast';
+    if (d.includes('windy') || d.includes('breezy') || d.includes('blustery') || d.includes('gusty')) return 'windy';
+    if (d.includes('partly') || d.includes('partly sunny'))      return `partly-${dn}`;
+    if (d.includes('mostly clear') || d.includes('mostly sunny'))return `mostly-clear-${dn}`;
+    if (d.includes('clear') || d.includes('sunny') || d.includes('fair')) return `clear-${dn}`;
+    if (d.includes('cloud'))                                      return `partly-${dn}`;
+    return 'unknown';
+  })();
+  return wxSvg(WX_ICONS[key]());
 }
 
 function isCurrentlyDay() {
@@ -2512,8 +2576,8 @@ async function fetchWeather() {
     // a plain day/night icon reads better when we just lack a text label.
     const desc = p.textDescription || '';
 
-    document.getElementById('wx-icon').textContent  =
-      desc ? nwsIcon(desc, isCurrentlyDay()) : (isCurrentlyDay() ? '☀️' : '🌙');
+    // No text from the station: a plain clear-sky icon for day or night
+    document.getElementById('wx-icon').innerHTML = nwsIcon(desc || 'clear', isCurrentlyDay());
     document.getElementById('wx-temp').textContent  = (tempF != null ? tempF : '--') + '°';
     document.getElementById('wx-feels').textContent = feelsF != null ? `Feels ${feelsF}°` : '';
     document.getElementById('wx-desc').textContent  = desc;
@@ -2526,13 +2590,13 @@ async function fetchWeather() {
       document.getElementById('wx-updated').textContent = `obs. ${t} · ${loc.stationId}`;
     }
   } else {
-    document.getElementById('wx-icon').textContent   = '🌡️';
+    document.getElementById('wx-icon').innerHTML     = nwsIcon('', true);
     document.getElementById('wx-desc').textContent   = 'Station unavailable';
     document.getElementById('wx-updated').textContent = '';
   }
 
   // Mirror into the Lock Screen too, so it stays live without its own fetch
-  document.getElementById('lock-wx-icon').textContent = document.getElementById('wx-icon').textContent;
+  document.getElementById('lock-wx-icon').innerHTML = document.getElementById('wx-icon').innerHTML;
   document.getElementById('lock-wx-temp').textContent = document.getElementById('wx-temp').textContent;
   document.getElementById('lock-wx-desc').textContent = document.getElementById('wx-desc').textContent;
 
@@ -3348,9 +3412,9 @@ document.getElementById('debug-wx-grid').addEventListener('click', e => {
     const isDay = btn.dataset.mode.includes('night') ? false
                 : btn.dataset.mode.includes('day')   ? true
                 : isCurrentlyDay();
-    document.getElementById('wx-icon').textContent = nwsIcon(desc, isDay);
+    document.getElementById('wx-icon').innerHTML = nwsIcon(desc, isDay);
     document.getElementById('wx-desc').textContent = desc;
-    document.getElementById('lock-wx-icon').textContent = document.getElementById('wx-icon').textContent;
+    document.getElementById('lock-wx-icon').innerHTML = document.getElementById('wx-icon').innerHTML;
     document.getElementById('lock-wx-desc').textContent = document.getElementById('wx-desc').textContent;
   }
 

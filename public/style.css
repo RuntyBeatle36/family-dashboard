@@ -2550,3 +2550,14 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
 .backup-row { flex-direction: row !important; align-items: center; justify-content: space-between; gap: 1rem; }
 .backup-when { font-weight: 600; font-size: 0.95rem; }
 .auto-gfx-note { padding: 0.7rem 0.9rem; border-radius: 12px; background: rgba(240,138,0,0.14); color: var(--text); }
+
+/* Drawn weather icons (nwsIcon) */
+.wx-svg { display: block; width: 1em; height: 1em; overflow: visible; }
+.wx-icon .wx-svg { width: 1.15em; height: 1.15em; }
+.lock-wx-icon { display: inline-flex; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35)); }
+.lock-wx-icon .wx-svg { width: 1.4em; height: 1.4em; }
+:root { --wx-line: #c4ccd8; --wx-snow: #d9ecff; --wx-dust: #d8b98a; }
+[data-theme="light"] { --wx-line: #4f5f7a; --wx-snow: #3a7bd0; --wx-dust: #9a6a2a; }
+.wx-svg .wx-line { stroke: var(--wx-line); }
+.wx-svg .wx-snow { stroke: var(--wx-snow); }
+.wx-svg .wx-dust { stroke: var(--wx-dust); }
