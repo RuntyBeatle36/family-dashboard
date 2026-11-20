@@ -365,8 +365,10 @@ body {
   padding: 0.65rem 1.1rem;
   font-size: 1.1rem;
   font-weight: 500;
-  backdrop-filter: var(--blur-soft);
-  -webkit-backdrop-filter: var(--blur-soft);
+  /* No backdrop blur here: the ticker scrolls constantly, and a blurred
+     background under moving text has to be re-blurred every frame. On a
+     Pi 4 at 1080p that alone dropped Frosted Glass from ~55 FPS to 6-12.
+     The banner color is near-solid anyway (see .alert-minor etc.). */
 }
 
 .alert-ico { font-size: 1.4rem; flex-shrink: 0; }
@@ -384,6 +386,11 @@ body {
   animation: ticker-scroll linear infinite;
   line-height: 1.35;
 }
+/* With Frosted Glass on, the ticker holds still: on a Pi, any constant
+   motion makes every frosted panel re-blur each frame (measured on a Pi 4
+   at 1080p: 8 FPS scrolling vs 54 still). The start of the alert shows,
+   and the Details button has the rest. */
+:is([data-glass="reduced"], [data-glass="full"]) .alert-ticker-inner { animation: none; }
 @keyframes ticker-scroll {
   from { transform: translateX(0); }
   to   { transform: translateX(-50%); }
@@ -433,9 +440,9 @@ body {
   transform: translateX(16px);
 }
 
-.alert-extreme, .alert-severe { background: rgba(180,20,20,0.72);  color: #fff; }
-.alert-moderate               { background: rgba(190,90,5,0.72);   color: #fff; }
-.alert-minor                  { background: rgba(160,130,0,0.72);  color: #fff; }
+.alert-extreme, .alert-severe { background: rgba(180,20,20,0.86);  color: #fff; }
+.alert-moderate               { background: rgba(190,90,5,0.86);   color: #fff; }
+.alert-minor                  { background: rgba(160,130,0,0.86);  color: #fff; }
 
 /* ── Top bar ──────────────────────────────────────────────── */
 .top-bar {
