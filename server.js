@@ -667,17 +667,19 @@ app.post('/api/update-apply', async (req, res) => {
 // a reboot brings the kiosk back the normal way.
 //
 // On a Pi switched to Wayland (scripts/kiosk-display.sh) the session is
-// labwc instead — it runs as this same user, so stopping it needs no sudo.
-// pkill exits 1 when nothing matched, which means we're on X11.
+// labwc instead. Either way the session belongs to the desktop login, and
+// the app runs as its own account (scripts/setup-app-account.sh), so ending
+// it goes through the sudo rule. On a Pi still running the app as the
+// desktop login, a plain pkill of labwc works too.
 app.post('/api/exit-kiosk', (req, res) => {
   const done = (err) => {
     if (err) return res.status(500).json({ error: 'failed', detail: err.message });
     res.json({ ok: true });
   };
-  execFile('pkill', ['-x', 'labwc'], { timeout: 5000 }, (err) => {
-    if (!err) return done();
-    if (err.code !== 1) return done(err);
-    execFile('sudo', ['/usr/bin/pkill', '-f', '/usr/lib/xorg/Xorg'], { timeout: 5000 }, done);
+  const sudoKill = args => execFile('sudo', ['-n', '/usr/bin/pkill', ...args], { timeout: 5000 }, done);
+  execFile('pgrep', ['-x', 'labwc'], { timeout: 5000 }, (notWayland) => {
+    if (notWayland) return sudoKill(['-f', '/usr/lib/xorg/Xorg']);
+    execFile('pkill', ['-x', 'labwc'], { timeout: 5000 }, err => (err ? sudoKill(['-x', 'labwc']) : done()));
   });
 });
 
@@ -778,7 +780,8 @@ function expandEvent(ev, weekStart, weekEnd) {
 const remoteAccess = createRemote({ db, calendarRouter: calendar });
 
 app.get('/api/remote/status', async (req, res) => {
-  res.json({ code: remoteAccess.code(), tailscale: await tailscale.status() });
+  // appUser: the account Tailscale SSH signs in as (the one this server runs as)
+  res.json({ code: remoteAccess.code(), tailscale: await tailscale.status(), appUser: os.userInfo().username });
 });
 
 // Turns remote access on (first time) or replaces the code, signing out
@@ -940,7 +943,10 @@ app.get('/api/device/password', (req, res) => {
     return res.status(403).json({ error: "Only shown on the dashboard's own screen." });
   }
   try {
-    const pw = fs.readFileSync(path.join(os.homedir(), '.device-password'), 'utf8').trim();
+    // Units set up before the app had its own account keep it in ~/.device-password
+    const file = ['/etc/family-dashboard/device-password', path.join(os.homedir(), '.device-password')]
+      .find(f => fs.existsSync(f));
+    const pw = fs.readFileSync(file, 'utf8').trim();
     res.json({ user: os.userInfo().username, password: pw || null });
   } catch {
     res.json({ user: os.userInfo().username, password: null });

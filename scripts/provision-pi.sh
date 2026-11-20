@@ -87,45 +87,7 @@ else
   echo "-- Voice model already present (or Piper unavailable), skipping --"
 fi
 
-# ── 5. Package helper + sudoers rule (self-update, Exit to Terminal) ──
-# The helper must be root-owned outside the (user-writable) repo, or the
-# sudo rule pointing at it would be meaningless.
-APT_HELPER=/usr/local/sbin/family-dashboard-apt
-if ! cmp -s "$REPO_DIR/system/family-dashboard-apt" "$APT_HELPER" 2>/dev/null; then
-  echo "-- Installing package helper --"
-  sudo install -o root -g root -m 755 "$REPO_DIR/system/family-dashboard-apt" "$APT_HELPER"
-fi
-SUDOERS_DEST="/etc/sudoers.d/dashboard-system-update"
-if ! sudo cmp -s "$REPO_DIR/system/dashboard-system-update.sudoers" "$SUDOERS_DEST" 2>/dev/null; then
-  echo "-- Installing sudoers rule --"
-  sudo install -m 440 "$REPO_DIR/system/dashboard-system-update.sudoers" "$SUDOERS_DEST"
-  if ! sudo visudo -c -f "$SUDOERS_DEST" >/dev/null 2>&1; then
-    echo "!! sudoers file failed validation — removing it. Self-update and Exit"
-    echo "!! to Terminal will prompt for a password until this is fixed."
-    sudo rm -f "$SUDOERS_DEST"
-  fi
-else
-  echo "-- Sudoers rule up to date, skipping --"
-fi
-
-# dashboard.service: installed here (by hand, as root) rather than by the
-# self-updater — see the note in system/dashboard-system-update.sudoers.
-if ! cmp -s "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service 2>/dev/null; then
-  echo "-- Installing dashboard.service --"
-  sudo install -o root -g root -m 644 "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service
-  sudo systemctl daemon-reload
-fi
-
-# ── 5b. polkit rule: Wi-Fi + time zone from the setup guide / Settings ──
-POLKIT_DEST="/etc/polkit-1/rules.d/50-family-dashboard.rules"
-if ! cmp -s "$REPO_DIR/system/50-family-dashboard.rules" "$POLKIT_DEST" 2>/dev/null; then
-  echo "-- Installing polkit rule (Wi-Fi / time zone) --"
-  sudo install -m 644 "$REPO_DIR/system/50-family-dashboard.rules" "$POLKIT_DEST"
-else
-  echo "-- polkit rule already installed, skipping --"
-fi
-
-# ── 5c. First-run setup guide on a brand-new install ────────────────
+# ── 5. First-run setup guide on a brand-new install ────────────────
 # Only when there's no database yet — re-running this on a Pi that's
 # already in use must never drop it back into setup.
 if [ ! -f "$REPO_DIR/db/dashboard.db" ]; then
@@ -133,18 +95,18 @@ if [ ! -f "$REPO_DIR/db/dashboard.db" ]; then
   date -u +%FT%TZ > "$REPO_DIR/db/first-run"
 fi
 
-# ── 6. System packages + systemd service + kiosk autostart ──────────
+# ── 6. System packages + kiosk autostart ────────────────────────────
 # Reuses the same script the in-app self-update flow runs, so there's one
-# source of truth for "what a correctly-configured Pi looks like."
+# source of truth for "what a correctly-configured Pi looks like." Runs as
+# the desktop user here, so it can install the kiosk autostart in this
+# account's home (the app account can't, later).
 bash "$REPO_DIR/scripts/system-update.sh"
 
-# system-update.sh only reinstalls/reloads the service definition (it
-# assumes the service is already enabled and running, since normally it's
-# that very process performing the update) — first-time setup needs an
-# explicit enable + start.
-echo "-- Enabling and starting the dashboard service --"
-sudo systemctl enable dashboard.service
-sudo systemctl restart dashboard.service
+# ── 6b. The app's own account, the system pieces, and the service ───
+# Moves the app to /opt/family-dashboard under the `fdash` account and
+# installs the package helper, sudoers/polkit rules and dashboard.service
+# for it, then starts it (undoing everything if it doesn't come up).
+bash "$REPO_DIR/scripts/setup-app-account.sh"
 
 # ── 7. GPU acceleration (cheap glass/canvas effects only if Chromium is
 #      actually hardware-compositing, not silently falling back to software) ──

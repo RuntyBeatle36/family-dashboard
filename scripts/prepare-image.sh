@@ -36,14 +36,17 @@ echo "-- Stopping the dashboard --"
 sudo systemctl stop dashboard.service
 
 echo "-- Erasing dashboard data, turning first-run setup on --"
-rm -f "$REPO_DIR"/db/dashboard.db "$REPO_DIR"/db/dashboard.db-*
-rm -rf "$REPO_DIR"/db/backups
+# The app folder belongs to the app's own account (setup-app-account.sh)
+APP_OWNER="$(stat -c %U "$REPO_DIR")"
+sudo rm -f "$REPO_DIR"/db/dashboard.db "$REPO_DIR"/db/dashboard.db-*
+sudo rm -rf "$REPO_DIR"/db/backups
 mkdir -p "$REPO_DIR/db"
-date -u +%FT%TZ > "$REPO_DIR/db/first-run"
+date -u +%FT%TZ | sudo -u "$APP_OWNER" tee "$REPO_DIR/db/first-run" >/dev/null
 rm -f "$HOME"/dashboard-backup-*.db "$HOME"/dashboard-reset-backup-*.db
+sudo sh -c 'rm -f /var/lib/family-dashboard/dashboard-reset-backup-*.db' # the app account's home
 
 echo "-- Removing this Pi's Tailscale identity --"
-rm -rf "$REPO_DIR/tailscale/state" "$REPO_DIR/tailscale/tailscaled.sock"
+sudo rm -rf "$REPO_DIR/tailscale/state" "$REPO_DIR/tailscale/tailscaled.sock"
 
 echo "-- Clearing the kiosk browser's saved settings --"
 # Close it first, or it writes its settings back out while shutting down
@@ -77,6 +80,7 @@ UNIT
 sudo systemctl enable family-dashboard-firstboot.service >/dev/null
 sudo rm -f /etc/ssh/ssh_host_*
 rm -f "$HOME/.device-password"
+sudo rm -f /etc/family-dashboard/device-password
 # An empty machine-id makes systemd generate a fresh one on next boot
 sudo truncate -s 0 /etc/machine-id
 sudo rm -f /var/lib/dbus/machine-id

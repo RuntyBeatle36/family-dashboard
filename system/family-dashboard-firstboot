@@ -6,21 +6,24 @@
 # Makes each copy its own device:
 #   - fresh SSH host keys (prepare-image.sh deleted the master's)
 #   - a random login password for `user`, so no two units share one. It's
-#     saved to ~user/.device-password (readable only by that user), which
-#     the dashboard shows on its own screen in Debug Options ▸ Device Login.
+#     saved to /etc/family-dashboard/device-password (readable by root and
+#     the app account only), which the dashboard shows on its own screen in
+#     Debug Tools ▸ Device Login.
 set -eu
 
 ssh-keygen -A
 
-PWFILE=/home/user/.device-password
+PWFILE=/etc/family-dashboard/device-password
+APP_GROUP="$(id -gn fdash 2>/dev/null || echo root)"
 if [ ! -s "$PWFILE" ]; then
+  install -d -o root -g "$APP_GROUP" -m 750 /etc/family-dashboard
   # No look-alike characters (0/O, 1/l/I), so it can be read off the screen
   PW="$(tr -dc 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 16)"
   echo "user:$PW" | chpasswd
   umask 077
   printf '%s\n' "$PW" > "$PWFILE"
-  chown user:user "$PWFILE"
-  chmod 600 "$PWFILE"
+  chown root:"$APP_GROUP" "$PWFILE"
+  chmod 640 "$PWFILE"
 fi
 
 systemctl disable family-dashboard-firstboot.service

@@ -29,31 +29,50 @@ if [ -f "$PACKAGES_FILE" ]; then
 fi
 
 # ── systemd service file ─────────────────────────────────────
-# Not installed from here any more: the repo is writable by this user, so
-# a sudo rule letting it copy the file into /etc/systemd/system would let
-# anything running as `user` define a root service. Just flag the change.
-if [ -f "$REPO_DIR/system/dashboard.service" ] && \
-   ! cmp -s "$REPO_DIR/system/dashboard.service" /etc/systemd/system/dashboard.service 2>/dev/null; then
-  echo "system-update: dashboard.service changed — run scripts/provision-pi.sh once to apply it"
+# Not installed from here: the app folder is writable by the app, so a sudo
+# rule letting it copy the file into /etc/systemd/system would let it define
+# a root service. Just flag the change (comparing the filled-in template).
+if [ -f "$REPO_DIR/system/dashboard.service" ] && [ -f /etc/systemd/system/dashboard.service ] && \
+   [ "$(systemctl show -p User --value dashboard.service 2>/dev/null)" = fdash ] && \
+   [ "$(sed -e 's#@APP_USER@#fdash#g' -e "s#@APP_DIR@#$REPO_DIR#g" "$REPO_DIR/system/dashboard.service")" != "$(cat /etc/systemd/system/dashboard.service)" ]; then
+  echo "system-update: dashboard.service changed — run scripts/setup-app-account.sh once to apply it"
 fi
+
+# ── Kiosk autostart (in the desktop login's home) ────────────
+# The app runs as its own account (scripts/setup-app-account.sh), which
+# can't write into the desktop login's home; then these are skipped with a
+# note, and re-running provision-pi.sh as the desktop user applies them.
+DESKTOP_HOME="$HOME"
+if [ -f /etc/family-dashboard/desktop-user ]; then
+  DESKTOP_HOME="$(getent passwd "$(cat /etc/family-dashboard/desktop-user)" | cut -d: -f6)"
+fi
+can_write() { [ -w "$1" ] || { [ ! -e "$1" ] && [ -w "$(dirname "$1")" ]; }; }
 
 # ── Openbox kiosk autostart ──────────────────────────────────
 if [ -f "$REPO_DIR/system/openbox-autostart" ]; then
-  DEST="$HOME/.config/openbox/autostart"
+  DEST="$DESKTOP_HOME/.config/openbox/autostart"
   if ! cmp -s "$REPO_DIR/system/openbox-autostart" "$DEST" 2>/dev/null; then
-    echo "system-update: openbox autostart changed, installing"
-    mkdir -p "$HOME/.config/openbox"
-    cp "$REPO_DIR/system/openbox-autostart" "$DEST" || echo "system-update: failed to install openbox autostart, continuing"
+    if can_write "$DEST" || [ "$DESKTOP_HOME" = "$HOME" ]; then
+      echo "system-update: openbox autostart changed, installing"
+      mkdir -p "$(dirname "$DEST")"
+      cp "$REPO_DIR/system/openbox-autostart" "$DEST" || echo "system-update: failed to install openbox autostart, continuing"
+    else
+      echo "system-update: openbox autostart changed; run scripts/provision-pi.sh as the desktop user to apply it"
+    fi
   fi
 fi
 
 # ── labwc (Wayland) kiosk autostart ──────────────────────────
 # Only on a Pi switched to Wayland via scripts/kiosk-display.sh (which is
 # what creates this file) — an X11/Openbox Pi never gets one.
-if [ -f "$REPO_DIR/system/labwc-autostart" ] && [ -f "$HOME/.config/labwc/autostart" ]; then
-  if ! cmp -s "$REPO_DIR/system/labwc-autostart" "$HOME/.config/labwc/autostart"; then
-    echo "system-update: labwc autostart changed, installing"
-    cp "$REPO_DIR/system/labwc-autostart" "$HOME/.config/labwc/autostart" || echo "system-update: failed to install labwc autostart, continuing"
+if [ -f "$REPO_DIR/system/labwc-autostart" ] && [ -f "$DESKTOP_HOME/.config/labwc/autostart" ]; then
+  if ! cmp -s "$REPO_DIR/system/labwc-autostart" "$DESKTOP_HOME/.config/labwc/autostart"; then
+    if can_write "$DESKTOP_HOME/.config/labwc/autostart"; then
+      echo "system-update: labwc autostart changed, installing"
+      cp "$REPO_DIR/system/labwc-autostart" "$DESKTOP_HOME/.config/labwc/autostart" || echo "system-update: failed to install labwc autostart, continuing"
+    else
+      echo "system-update: labwc autostart changed; run scripts/provision-pi.sh as the desktop user to apply it"
+    fi
   fi
 fi
 

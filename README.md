@@ -73,12 +73,24 @@ its content actually changed.
 two commands: `/usr/local/sbin/family-dashboard-apt` (a root-owned helper
 that installs Debian packages **by name only**, refusing apt options, paths
 and `.deb` files, which a bare `apt-get install -y *` rule would allow and
-which would amount to root) and killing the X session for Exit to Terminal.
-`dashboard.service` is deliberately not installable by the app (the repo is
-user-writable); `provision-pi.sh` installs it, so service-file changes need
-that script re-run by hand. **Pis provisioned before this change keep the
-old, broader rule until `bash scripts/provision-pi.sh` (or `sudo bash
-scripts/harden-pi.sh`) is run once.**
+which would amount to root) and ending the desktop session for Exit to
+Terminal. `dashboard.service` is deliberately not installable by the app
+(the app folder is app-writable), so service-file changes need
+`setup-app-account.sh` re-run by hand.
+
+**The app runs as its own account.** `scripts/setup-app-account.sh` (run by
+`provision-pi.sh`, or by hand as the desktop user) creates a `fdash` system
+account, moves the app to `/opt/family-dashboard` (leaving
+`~/family-dashboard` as a link), and installs the sudoers rule, polkit rule
+and service file scoped to `fdash` only, so the kiosk browser and anything
+else running as the desktop login get none of these permissions. It checks
+the dashboard comes back and undoes everything if not. Tailscale runs inside
+the app, so afterwards **Tailscale SSH signs in as `fdash`**
+(`ssh fdash@family-dashboard`); normal SSH as `user` on the home network is
+unchanged.
+**A Pi set up before this keeps the old, broader rule until
+`bash ~/family-dashboard/scripts/setup-app-account.sh` is run once, then
+`sudo bash /opt/family-dashboard/scripts/harden-pi.sh`.**
 
 **GPU acceleration** (Pi 4/5, 2GB+) — the dashboard leans on
 `backdrop-filter: blur()` (glass panels) and a full-screen animated canvas.
@@ -143,9 +155,9 @@ the Tailscale connection (optionally saved Wi-Fi too), keeping a backup copy
 in the home folder. Updating an existing dashboard never triggers it.
 
 Wi-Fi and time-zone changes use NetworkManager / timedatectl, allowed for
-the dashboard's user by `system/50-family-dashboard.rules` (polkit), which
-`provision-pi.sh` installs. A Pi provisioned before this existed needs
-`bash scripts/provision-pi.sh` run once for Settings ▸ Wi-Fi to work.
+the dashboard's account by `system/50-family-dashboard.rules` (polkit), which
+`setup-app-account.sh` installs. A Pi set up before this needs that script
+run once for Settings ▸ Wi-Fi to work.
 
 ## Making a plug-and-play SD card image
 
@@ -228,8 +240,10 @@ How it works:
   3000: settings, updates, Exit to Terminal) is never reachable from the
   internet. Wrong codes are throttled (5 per device, 30 overall, per 15 minutes).
 - **SSH from anywhere:** install Tailscale on your laptop/phone, sign in to the
-  same account, then `ssh user@family-dashboard`. Your existing SSH keys
-  work as on the LAN, and Tailscale SSH is also enabled. The dashboard is
+  same account, then `ssh fdash@family-dashboard` (Tailscale SSH signs in as
+  the account the dashboard runs as: `user` on a Pi not yet moved to its own
+  account). On the home network, normal SSH as `user` works too (over
+  Tailscale, port 22 goes to Tailscale SSH). The dashboard is
   also at `http://family-dashboard:3000` from your Tailscale devices.
 - Turning Family Link off (Settings ▸ Family Link) deletes the code, signs everyone out,
   and takes the public link down.

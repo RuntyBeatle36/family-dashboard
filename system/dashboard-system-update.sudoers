@@ -1,25 +1,25 @@
 # /etc/sudoers.d/dashboard-system-update
 #
-# Grants the dashboard's Node process (running as `user`, see
-# system/dashboard.service) passwordless access to exactly the system
-# commands it needs — nothing broader:
+# A template: scripts/setup-app-account.sh fills in @APP_USER@ (the app's
+# own account, which nothing else runs as) and installs it.
+#
+# Grants the dashboard's Node process passwordless access to exactly the
+# system commands it needs — nothing broader:
 #   - /usr/local/sbin/family-dashboard-apt, used by scripts/system-update.sh
 #     after every self-update to install packages listed in
 #     system/packages.txt. It accepts Debian package NAMES only (no apt
 #     options, paths or .deb files) — a plain `apt-get install -y *` rule
 #     would amount to passwordless root.
-#   - the "Exit to Terminal" debug feature (kills the X session)
+#   - the "Exit to Terminal" debug feature (ends the desktop session,
+#     which belongs to the desktop login, not the app account)
 #
 # Deliberately NOT here: installing system/dashboard.service. That file
-# lives in the user-writable repo, so letting this user copy it into
-# /etc/systemd/system would let anything running as `user` define a root
-# service. Service-file changes are applied by re-running
-# scripts/provision-pi.sh by hand.
+# lives in the app-writable folder, so letting the app copy it into
+# /etc/systemd/system would let it define a root service. Service-file
+# changes are applied by re-running scripts/setup-app-account.sh by hand.
 #
-# Installed (and kept in sync) by scripts/provision-pi.sh and
-# scripts/harden-pi.sh. To install by hand instead:
-#   sudo install -m 440 system/dashboard-system-update.sudoers /etc/sudoers.d/dashboard-system-update
-#   sudo visudo -c    # validate before trusting it
+# Installed by scripts/setup-app-account.sh; checked by scripts/harden-pi.sh.
 
-user ALL=(root) NOPASSWD: /usr/local/sbin/family-dashboard-apt
-user ALL=(root) NOPASSWD: /usr/bin/pkill -f /usr/lib/xorg/Xorg
+@APP_USER@ ALL=(root) NOPASSWD: /usr/local/sbin/family-dashboard-apt
+@APP_USER@ ALL=(root) NOPASSWD: /usr/bin/pkill -f /usr/lib/xorg/Xorg
+@APP_USER@ ALL=(root) NOPASSWD: /usr/bin/pkill -x labwc

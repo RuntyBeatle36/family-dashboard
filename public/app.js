@@ -3761,7 +3761,7 @@ function renderRemote() {
         <details class="remote-details">
           <summary>For the technical person</summary>
           <p class="settings-desc">Tailscale address: <code>${escHtml(ts.ip || '')}</code><br>
-          SSH from your own Tailscale devices: <code>ssh user@family-dashboard</code><br>
+          SSH from your own Tailscale devices: <code>ssh ${escHtml(s.appUser || 'user')}@family-dashboard</code><br>
           Full dashboard: <code>http://family-dashboard:3000</code><br>
           The public link serves only the calendar (remote.js, port 3001).</p>
         </details>`;

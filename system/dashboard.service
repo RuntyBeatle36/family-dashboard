@@ -1,20 +1,20 @@
 # /etc/systemd/system/dashboard.service
+# A template: scripts/setup-app-account.sh fills in @APP_USER@ / @APP_DIR@
+# and installs it. The app runs as its own account, not the desktop login.
 [Unit]
 Description=Family Dashboard
 After=network.target
 
 [Service]
 Type=simple
-User=user
-WorkingDirectory=/home/user/family-dashboard
+User=@APP_USER@
+WorkingDirectory=@APP_DIR@
 # Piper is a standalone binary + voice model, not an apt package (see
-# system/packages.txt) — installed into piper/ inside the repo working
-# directory rather than relying on it being on PATH, since a systemd
-# service gets a minimal default PATH that doesn't include wherever a
-# manually-installed binary might live (unlike an interactive login shell,
-# which is why this could silently work when testing via a terminal but
-# fail here).
-Environment=PIPER_BIN=/home/user/family-dashboard/piper/piper
+# system/packages.txt) — installed into piper/ inside the app folder rather
+# than relying on it being on PATH, since a systemd service gets a minimal
+# default PATH that doesn't include wherever a manually-installed binary
+# might live.
+Environment=PIPER_BIN=@APP_DIR@/piper/piper
 ExecStart=/usr/bin/node server.js
 Restart=always
 

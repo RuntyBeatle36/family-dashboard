@@ -201,15 +201,25 @@ fi
 
 DASH_SUDOERS_SRC="$REPO_DIR/system/dashboard-system-update.sudoers"
 DASH_SUDOERS_DEST=/etc/sudoers.d/dashboard-system-update
+APP_USER="$(systemctl show -p User --value dashboard.service 2>/dev/null)"
 if [ -f "$DASH_SUDOERS_SRC" ]; then
-  if [ -f "$DASH_SUDOERS_DEST" ] && cmp -s "$DASH_SUDOERS_SRC" "$DASH_SUDOERS_DEST"; then
-    pass "dashboard sudoers rule matches the repo (scoped to the package-name-only helper + pkill Xorg)"
+  if [ "$APP_USER" != "fdash" ]; then
+    # The rule is written for the app's own account; installing it before the
+    # move would take the permissions away from the account still running it.
+    warn "The dashboard still runs as '${APP_USER:-?}'. Run scripts/setup-app-account.sh first (as the desktop user), then this again."
   else
-    act "Installing/repairing the dashboard sudoers rule from the repo"
-    install -m 440 "$DASH_SUDOERS_SRC" "$DASH_SUDOERS_DEST"
-    if ! visudo -c -f "$DASH_SUDOERS_DEST" >/dev/null 2>&1; then
-      warn "That rule failed validation — removing it (self-update/Exit to Terminal will prompt for a password until this is fixed)"
-      rm -f "$DASH_SUDOERS_DEST"
+    WANT="$(sed -e "s#@APP_USER@#fdash#g" "$DASH_SUDOERS_SRC")"
+    if [ -f "$DASH_SUDOERS_DEST" ] && [ "$WANT" = "$(cat "$DASH_SUDOERS_DEST")" ]; then
+      pass "dashboard sudoers rule matches the repo (the app account only; package helper + ending the desktop session)"
+    else
+      act "Installing/repairing the dashboard sudoers rule from the repo"
+      printf '%s\n' "$WANT" > "$DASH_SUDOERS_DEST.new"
+      if visudo -c -f "$DASH_SUDOERS_DEST.new" >/dev/null 2>&1; then
+        install -m 440 "$DASH_SUDOERS_DEST.new" "$DASH_SUDOERS_DEST"
+      else
+        warn "The rule failed validation; left the existing one in place"
+      fi
+      rm -f "$DASH_SUDOERS_DEST.new"
     fi
   fi
 fi
