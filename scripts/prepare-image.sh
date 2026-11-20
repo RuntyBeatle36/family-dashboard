@@ -16,6 +16,8 @@
 #     boot step that regenerates them and sets a random login password, so
 #     each copy is its own device (no shared password across units)
 #   - optionally removes authorized SSH keys and turns SSH off
+#   - takes away `user`'s passwordless sudo-for-everything (from Raspberry
+#     Pi Imager), so sudo needs the unit's own password
 #   - clears logs, shell history and backups, then powers off
 #
 # DESTRUCTIVE for this Pi's data, by design. Run by hand only.
@@ -91,6 +93,17 @@ if [[ "$ssh_off" =~ ^[Yy] ]]; then
   sudo systemctl disable ssh.service >/dev/null 2>&1 || true
 fi
 
+# Raspberry Pi Imager's cloud-init gives `user` passwordless sudo for
+# everything (90-cloud-init-users), so anything running as the desktop login
+# (the kiosk browser included) could become root. It's removed as the very
+# last step, since sudo asks for a password from then on; make sure the
+# normal password-protected sudo rule (the sudo group) is there first.
+CLOUD_SUDO=/etc/sudoers.d/90-cloud-init-users
+if [ -f "$CLOUD_SUDO" ] && ! id -nG "$USER" | grep -qw sudo; then
+  echo "-- Adding $USER to the sudo group --"
+  sudo usermod -aG sudo "$USER"
+fi
+
 echo "-- Clearing logs, history and caches --"
 sudo journalctl --rotate >/dev/null 2>&1 || true
 sudo journalctl --vacuum-time=1s >/dev/null 2>&1 || true
@@ -104,4 +117,4 @@ echo "Next: copy this SD card to an image file (README ▸ Making a"
 echo "plug-and-play SD card image). Don't boot this card again before"
 echo "copying it, or it will start setting itself up."
 sleep 3
-sudo poweroff
+sudo sh -c "rm -f $CLOUD_SUDO; poweroff"

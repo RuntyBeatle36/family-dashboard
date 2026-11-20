@@ -176,6 +176,8 @@ its own unique device. No keyboard, SSH or network setup needed.
    Each copy also gets its **own random login password** on first boot (no
    shared password across units). It's shown only on that unit's screen, in
    Settings ▸ Debug Tools ▸ Device Login, and saved in `~/.device-password`.
+   It's also what `sudo` asks for: the script removes the passwordless
+   sudo-for-everything rule Raspberry Pi Imager adds for `user`.
 3. **Copy the card to an image file** on Windows with
    [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/):
    choose a file name like `family-dashboard.img`, then **Read**.
