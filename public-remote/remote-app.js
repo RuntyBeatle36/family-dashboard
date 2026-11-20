@@ -164,6 +164,23 @@ function showCalendar() {
   $('cal-view').hidden = false;
   loadMonth({ toToday: true });
   offerInstall();
+  attachHomeScreenPass();
+}
+
+// iPhone: put a one-time home-screen pass in the page address (and the
+// app manifest), so an icon added from here opens already signed in. See
+// remote.js. Not needed on Android, where the installed app shares
+// Chrome's sign-in, nor inside the home-screen app itself.
+async function attachHomeScreenPass() {
+  if (!isIOS || isStandalone()) return;
+  let pass = null;
+  try { pass = sessionStorage.getItem('homeScreenPass'); } catch { /* private mode */ }
+  if (!pass) {
+    try { ({ pass } = await api('POST', '/api/pass', {})); } catch { return; }
+    try { sessionStorage.setItem('homeScreenPass', pass); } catch { /* private mode */ }
+  }
+  history.replaceState(null, '', `/?pass=${pass}`);
+  document.querySelector('link[rel="manifest"]').href = `/manifest.webmanifest?pass=${pass}`;
 }
 
 // toToday: in the current month, open scrolled to today — earlier days stay
@@ -521,7 +538,7 @@ function openInstallSheet() {
   ];
   $('install-steps').innerHTML = steps.map(s => `<li>${s}</li>`).join('');
   $('install-note').textContent = isIOS
-    ? 'The first time you open it from the home screen, enter the family code once.'
+    ? 'It opens already signed in. If it ever asks, enter the family code.'
     : '';
   $('install-go').hidden = !installPrompt;
   $('install-sheet').hidden = false;
@@ -572,6 +589,15 @@ $('install-go').addEventListener('click', async () => {
     $('login-code').disabled = true;
     $('login-btn').disabled = true;
     return;
+  }
+  // First launch of an iPhone home-screen icon: trade its pass for a session
+  const pass = new URLSearchParams(location.search).get('pass');
+  if (pass && isStandalone()) history.replaceState(null, '', '/');
+  if (!s.authed && pass && isStandalone()) {
+    try {
+      await api('POST', '/api/pass/redeem', { pass });
+      return showCalendar();
+    } catch { /* expired or used: fall through to the family code */ }
   }
   if (s.authed) return showCalendar();
   showLogin();

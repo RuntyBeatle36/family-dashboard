@@ -4007,8 +4007,7 @@ async function renderHomescreenGuide() {
     if (remoteScreen(s) === 'live') {
       extra = `<div class="hs-qr">${qrSvg(`${s.tailscale.publicUrl}#code=${s.code}`)}
         <p class="settings-desc">Scan this with the phone's camera to open the Family Link, then follow the steps above.
-        ${homescreenTab === 'ios' ? `If the home-screen icon asks for the family code the first time, it's
-        <strong>${escHtml(s.code)}</strong>.` : ''}</p></div>`;
+        If the home-screen icon ever asks for the family code, it's <strong>${escHtml(s.code)}</strong>.</p></div>`;
     } else {
       extra = '<p class="hs-note">Family Link isn\'t on yet. Turn it on first, then open it on the phone.</p>';
     }

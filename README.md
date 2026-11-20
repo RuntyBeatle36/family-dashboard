@@ -209,8 +209,11 @@ manifest). After the first sign-in it offers, once, to be added to the home
 screen, with short steps for iPhone and a one-tap **Install** where Android
 Chrome supports it (a footer button brings the steps back). On the
 dashboard, **Settings ▸ Family Link ▸ Show me how** shows illustrated
-step-by-step pictures for iPhone and Android. iPhone home-screen apps keep
-their own storage, so the icon asks for the family code once.
+step-by-step pictures for iPhone and Android. iPhone home-screen apps don't
+share Safari's sign-in, so a signed-in iPhone gets a one-time **home-screen
+pass** in its page address (and manifest `start_url`); the icon's first
+launch trades it for its own session. Passes are single-use, last 30 days,
+and a new family code cancels them.
 
 How it works:
 

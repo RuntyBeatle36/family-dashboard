@@ -36,6 +36,14 @@ const MAX_FAILS_GLOBAL = 30;
 
 const sha256 = s => crypto.createHash('sha256').update(s).digest('hex');
 
+// Home-screen pass: an iPhone home-screen app doesn't share Safari's
+// cookies, so it would otherwise ask for the family code again. A signed-in
+// iPhone gets a one-time pass in its page address (which Add to Home Screen
+// saves); the new icon's first launch trades it for its own session.
+// Single use, 30 days, and a new family code cancels any outstanding.
+const PASS_DAYS = 30;
+const PASS_RE = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url
+
 function generateCode() {
   let code = '';
   for (let i = 0; i < CODE_LEN; i++) code += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
@@ -53,6 +61,10 @@ function codeMatches(input, code) {
 }
 
 function createRemote({ db, calendarRouter }) {
+  db.exec(`CREATE TABLE IF NOT EXISTS remote_passes (
+    token_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+  )`);
   const stmt = {
     getSetting:     db.prepare('SELECT value FROM app_settings WHERE key = ?'),
     setSetting:     db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
@@ -63,6 +75,10 @@ function createRemote({ db, calendarRouter }) {
     sessionsPurge:  db.prepare('DELETE FROM remote_sessions WHERE expires_at < ?'),
     sessionRenew:   db.prepare('UPDATE remote_sessions SET expires_at = ? WHERE token_hash = ?'),
     sessionsClear:  db.prepare('DELETE FROM remote_sessions'),
+    passInsert:     db.prepare('INSERT INTO remote_passes (token_hash, expires_at) VALUES (?, ?)'),
+    passTake:       db.prepare('DELETE FROM remote_passes WHERE token_hash = ? AND expires_at > ? RETURNING token_hash'),
+    passesPurge:    db.prepare('DELETE FROM remote_passes WHERE expires_at < ?'),
+    passesClear:    db.prepare('DELETE FROM remote_passes'),
   };
 
   // Stored as-is (not hashed): the dashboard has to be able to show it so
@@ -74,12 +90,14 @@ function createRemote({ db, calendarRouter }) {
     const code = generateCode();
     stmt.setSetting.run('remote_code', code);
     stmt.sessionsClear.run(); // a new code signs everyone out
+    stmt.passesClear.run();
     return formatCode(code);
   }
 
   function clearCode() {
     stmt.delSetting.run('remote_code');
     stmt.sessionsClear.run();
+    stmt.passesClear.run();
   }
 
   // ── Sessions ──────────────────────────────────────────────────
@@ -168,10 +186,41 @@ function createRemote({ db, calendarRouter }) {
     }
 
     fails.delete(ip);
+    startSession(res);
+    res.json({ ok: true });
+  });
+
+  function startSession(res) {
     stmt.sessionsPurge.run(Date.now());
     const token = crypto.randomBytes(32).toString('base64url');
     stmt.sessionInsert.run(sha256(token), Date.now() + SESSION_DAYS * 86400000);
     setCookie(res, token, SESSION_DAYS * 86400);
+  }
+
+  // A signed-in page asks for a home-screen pass
+  remote.post('/api/pass', (req, res) => {
+    if (!session(req)) return res.status(401).json({ error: 'Not signed in' });
+    stmt.passesPurge.run(Date.now());
+    const pass = crypto.randomBytes(32).toString('base64url');
+    stmt.passInsert.run(sha256(pass), Date.now() + PASS_DAYS * 86400000);
+    res.json({ pass });
+  });
+
+  // The home-screen app's first launch trades the pass for a session.
+  // Wrong passes count toward the same throttling as wrong codes.
+  remote.post('/api/pass/redeem', (req, res) => {
+    if (!getCode()) return res.status(503).json({ error: 'Remote access is turned off.' });
+    const ip = clientIp(req);
+    if (recentFails(ip).length >= MAX_FAILS_IP || recentFails('*').length >= MAX_FAILS_GLOBAL)
+      return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
+    const pass = String(req.body?.pass || '');
+    if (!PASS_RE.test(pass) || !stmt.passTake.get(sha256(pass), Date.now())) {
+      const now = Date.now();
+      fails.set(ip,  [...recentFails(ip),  now]);
+      fails.set('*', [...recentFails('*'), now]);
+      return res.status(401).json({ error: 'That sign-in link has expired. Enter the family code.' });
+    }
+    startSession(res);
     res.json({ ok: true });
   });
 
@@ -188,6 +237,15 @@ function createRemote({ db, calendarRouter }) {
   }, calendarRouter);
 
   remote.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+
+  const manifest = require('./public-remote/manifest.webmanifest.json');
+  remote.get('/manifest.webmanifest', (req, res) => {
+    const pass = String(req.query.pass || '');
+    res.type('application/manifest+json').send(JSON.stringify({
+      ...manifest,
+      start_url: PASS_RE.test(pass) ? `/?pass=${pass}` : '/',
+    }));
+  });
   remote.use(express.static(path.join(__dirname, 'public-remote')));
 
   return {
