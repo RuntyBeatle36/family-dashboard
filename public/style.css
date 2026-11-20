@@ -371,7 +371,10 @@ body {
      The banner color is near-solid anyway (see .alert-minor etc.). */
 }
 
-.alert-ico { font-size: 1.4rem; flex-shrink: 0; }
+.alert-ico { font-size: 1.4rem; flex-shrink: 0; display: inline-flex; }
+.alert-ico .ico { width: 1.3rem; height: 1.3rem; vertical-align: 0; }
+.settings-btn .ico { width: 1.25rem; height: 1.25rem; vertical-align: -0.25em; }
+.card-title .ico { width: 1.05em; height: 1.05em; color: var(--accent); }
 
 /* Scrolling ticker */
 .alert-ticker-wrap {
@@ -648,6 +651,7 @@ body {
    not red — this is informational, not an alarm. */
 .connectivity-badge {
   display: inline-flex;
+  align-self: center; /* like .update-badge: don't stretch to the top bar's full height */
   align-items: center;
   gap: 0.35rem;
   padding: 0.3rem 0.65rem;
@@ -660,6 +664,12 @@ body {
   white-space: nowrap;
 }
 .connectivity-badge[hidden] { display: none; }
+
+[data-theme="light"] .connectivity-badge {
+  color: #8a4f00; /* the dark-theme amber is unreadable on the light sky */
+  background: rgba(255, 182, 72, 0.32);
+  border-color: rgba(176, 102, 0, 0.45);
+}
 
 #lock-connectivity-badge {
   margin-top: 1rem;
@@ -2529,3 +2539,9 @@ body.osk-open .setup-screen { --osk-on: 1; align-items: flex-start; }
   border-top: 1px solid var(--card-border);
 }
 .alert-card-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.2rem; }
+
+/* Settings ▸ Backups */
+.backup-list { display: flex; flex-direction: column; gap: 0.6rem; }
+.backup-row { flex-direction: row !important; align-items: center; justify-content: space-between; gap: 1rem; }
+.backup-when { font-weight: 600; font-size: 0.95rem; }
+.auto-gfx-note { padding: 0.7rem 0.9rem; border-radius: 12px; background: rgba(240,138,0,0.14); color: var(--text); }

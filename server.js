@@ -42,16 +42,26 @@ const db = new DatabaseSync(dbPath);
 // writes a clean, consistent copy even while the app has the file open.
 // Never blocks startup: a failed backup is logged and the app carries on.
 const BACKUPS_KEPT = 14;
+const BACKUP_DIR = path.join(dbDir, 'backups');
+const BACKUP_NAME = /^dashboard-(\d{8})-(\d{6})\.db$/; // UTC time it was taken
+
+// Saves a copy now and returns its file name. Also used before a restore,
+// so a restore can be undone.
+function backupNow() {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+  const name = `dashboard-${stamp}.db`;
+  // Two in the same second would be the same data anyway
+  if (!fs.existsSync(path.join(BACKUP_DIR, name))) db.prepare('VACUUM INTO ?').run(path.join(BACKUP_DIR, name));
+  const old = fs.readdirSync(BACKUP_DIR).filter(f => BACKUP_NAME.test(f)).sort().slice(0, -BACKUPS_KEPT);
+  for (const f of old) fs.unlinkSync(path.join(BACKUP_DIR, f));
+  return name;
+}
+
 function backupOnStart() {
   if (!dbExisted) return; // brand-new install: nothing to save yet
   try {
-    const dir = path.join(dbDir, 'backups');
-    fs.mkdirSync(dir, { recursive: true });
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
-    db.prepare('VACUUM INTO ?').run(path.join(dir, `dashboard-${stamp}.db`));
-    const old = fs.readdirSync(dir).filter(f => /^dashboard-\d{8}-\d{6}\.db$/.test(f)).sort().slice(0, -BACKUPS_KEPT);
-    for (const f of old) fs.unlinkSync(path.join(dir, f));
-    console.log(`Backed up data to db/backups/dashboard-${stamp}.db`);
+    console.log(`Backed up data to db/backups/${backupNow()}`);
   } catch (err) {
     console.error('Startup backup failed:', err.message);
   }
@@ -545,14 +555,50 @@ app.get('/api/version', (req, res) => {
 const execFileP = require('util').promisify(execFile);
 const GIT_OPTS = { cwd: __dirname, timeout: 15000 };
 
+// Update channel. 'stable' (the default, what every unit follows) only
+// moves when the developer releases with scripts/release.sh; 'testing'
+// gets every push to main straight away, for trying changes on one's own
+// dashboard first. Stored in app_settings, so Reset and a fresh image go
+// back to stable.
+const UPDATE_BRANCH = { stable: 'stable', testing: 'main' };
+const getAppSetting = db.prepare('SELECT value FROM app_settings WHERE key = ?');
+const setAppSetting = db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+const updateChannel = () => getAppSetting.get('updateChannel')?.value === 'testing' ? 'testing' : 'stable';
+
+// Fetches the channel's branch and returns the ref to update to. If the
+// stable branch can't be fetched (e.g. it doesn't exist yet), falls back
+// to main rather than leaving the dashboard unable to update at all.
+async function fetchUpdateRef() {
+  const branch = UPDATE_BRANCH[updateChannel()];
+  try {
+    await execFileP('git', ['fetch', 'origin', branch], GIT_OPTS);
+    return `origin/${branch}`;
+  } catch (err) {
+    if (branch === 'main') throw err;
+    await execFileP('git', ['fetch', 'origin', 'main'], GIT_OPTS);
+    return 'origin/main';
+  }
+}
+
+app.get('/api/update-channel', (req, res) => res.json({ channel: updateChannel() }));
+app.post('/api/update-channel', (req, res) => {
+  const { channel } = req.body || {};
+  if (!(channel in UPDATE_BRANCH)) return res.status(400).json({ error: 'Unknown channel' });
+  setAppSetting.run('updateChannel', channel);
+  res.json({ channel });
+});
+
 app.get('/api/update-check', async (req, res) => {
   if (!GIT_COMMIT) return res.json({ updateAvailable: false }); // not a git checkout
 
   try {
-    await execFileP('git', ['fetch', 'origin', 'main'], GIT_OPTS);
-    const { stdout: local }  = await execFileP('git', ['rev-parse', 'HEAD'], GIT_OPTS);
-    const { stdout: remote } = await execFileP('git', ['rev-parse', 'origin/main'], GIT_OPTS);
-    if (local.trim() === remote.trim()) return res.json({ updateAvailable: false });
+    const ref = await fetchUpdateRef();
+    // Commits on the channel this dashboard doesn't have yet. Counting
+    // rather than comparing hashes, so a dashboard that's ahead (it just
+    // moved from Testing to Stable) correctly sees nothing to install.
+    const { stdout: behind } = await execFileP('git', ['rev-list', '--count', `HEAD..${ref}`], GIT_OPTS);
+    if (Number(behind.trim()) === 0) return res.json({ updateAvailable: false, channel: updateChannel() });
+    const { stdout: remote } = await execFileP('git', ['rev-parse', ref], GIT_OPTS);
 
     // Full subject + body per commit, not just the latest one-line summary
     // — the client builds a plain-language "what this adds" list from the
@@ -561,7 +607,7 @@ app.get('/api/update-check', async (req, res) => {
     // characters) delimit fields safely since commit text can otherwise
     // contain almost anything.
     const { stdout: logOut } = await execFileP('git',
-      ['log', '--format=%h%x1f%s%x1f%b%x1e', 'HEAD..origin/main'], GIT_OPTS);
+      ['log', '--format=%h%x1f%s%x1f%b%x1e', `HEAD..${ref}`], GIT_OPTS);
     const commits = logOut.split('\x1e').filter(s => s.trim()).map(rec => {
       const [hash, subject, body] = rec.replace(/^\n/, '').split('\x1f');
       return { hash, subject: (subject || '').trim(), body: (body || '').trim() };
@@ -569,6 +615,7 @@ app.get('/api/update-check', async (req, res) => {
 
     res.json({
       updateAvailable: true,
+      channel: updateChannel(),
       behindBy: commits.length,
       latestCommit: remote.trim().slice(0, 7),
       commits,
@@ -583,7 +630,8 @@ app.get('/api/update-check', async (req, res) => {
 
 app.post('/api/update-apply', async (req, res) => {
   try {
-    await execFileP('git', ['pull', '--ff-only'], GIT_OPTS);
+    const ref = await fetchUpdateRef();
+    await execFileP('git', ['merge', '--ff-only', ref], GIT_OPTS);
     await execFileP('npm', ['install', '--omit=dev'], GIT_OPTS); // in case a new commit added a dependency
   } catch (err) {
     return res.status(500).json({ error: 'update failed', detail: err.message });
@@ -792,6 +840,65 @@ app.post('/api/setup/complete', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Backups (Settings ▸ Advanced ▸ Backups) ─────────────────
+// Restoring brings back the family's data (events, to-dos, bulletin) from
+// a backup, leaving settings and the family code as they are now. What's
+// there now is backed up first, so a restore can itself be undone. Only
+// the columns both copies have are copied, so a backup made by an older
+// version still restores.
+const RESTORE_TABLES = ['calendar_events', 'todo_items', 'bulletin_posts'];
+
+app.get('/api/backups', (req, res) => {
+  let files = [];
+  try { files = fs.readdirSync(BACKUP_DIR).filter(f => BACKUP_NAME.test(f)).sort().reverse(); } catch { /* none yet */ }
+  res.json(files.map(name => {
+    const [, d, t] = name.match(BACKUP_NAME);
+    const at = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}Z`;
+    let counts = null;
+    try {
+      const b = new DatabaseSync(path.join(BACKUP_DIR, name), { readOnly: true });
+      counts = Object.fromEntries(RESTORE_TABLES.map(tb => {
+        try { return [tb, b.prepare(`SELECT count(*) AS n FROM ${tb}`).get().n]; } catch { return [tb, 0]; }
+      }));
+      b.close();
+    } catch { /* unreadable file: listed without counts */ }
+    return { name, at, counts };
+  }));
+});
+
+app.post('/api/backups/restore', (req, res) => {
+  const { name, confirm } = req.body || {};
+  if (confirm !== 'RESTORE' || !BACKUP_NAME.test(name || '')) return res.status(400).json({ error: 'Confirmation required' });
+  const file = path.join(BACKUP_DIR, name);
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'That backup is gone' });
+  try {
+    const savedFirst = backupNow();
+    db.prepare('ATTACH DATABASE ? AS restore_src').run(file);
+    try {
+      db.exec('BEGIN');
+      try {
+        const cols = (schema, t) => db.prepare(`PRAGMA ${schema}.table_info(${t})`).all().map(c => c.name);
+        for (const t of RESTORE_TABLES) {
+          const from = cols('restore_src', t);
+          if (!from.length) continue; // that backup predates this table: leave it alone
+          const shared = cols('main', t).filter(c => from.includes(c)).map(c => `"${c}"`).join(', ');
+          db.exec(`DELETE FROM main.${t}`);
+          db.exec(`INSERT INTO main.${t} (${shared}) SELECT ${shared} FROM restore_src.${t}`);
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    } finally {
+      db.exec('DETACH DATABASE restore_src');
+    }
+    res.json({ ok: true, savedFirst });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // "Reset for a new owner": snapshots the database to the home folder (just
 // in case), then erases everything personal — events, to-dos, bulletin,
 // remote access code/sessions, the startup backups in db/backups (they hold
@@ -811,7 +918,7 @@ app.post('/api/setup/reset', async (req, res) => {
       DELETE FROM app_settings;
       DELETE FROM gfx_benchmarks;
     `);
-    fs.rmSync(path.join(dbDir, 'backups'), { recursive: true, force: true });
+    fs.rmSync(BACKUP_DIR, { recursive: true, force: true });
     await tailscale.logout();
     setup.markFirstRun();
     res.json({ ok: true, backup });

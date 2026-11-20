@@ -256,7 +256,7 @@ function renderLockWeek() {
       const shortTime = (!ev.all_day && ev.start_time)
         ? `<span class="lock-week-time">${fmt12h(ev.start_time)}</span>` : '';
       return ev.is_private
-        ? `<div class="lock-week-chip is-private">${shortTime}🔒 Private</div>`
+        ? `<div class="lock-week-chip is-private">${shortTime}${ICON.lock} Private</div>`
         : `<div class="lock-week-chip" style="background:${ev.color}">${shortTime}${escHtml(ev.title)}</div>`;
     }).join('');
 
@@ -281,7 +281,7 @@ function renderLockAgenda() {
       // Private events already hide the title — giving them their real
       // color too would leak identity (color = person/category) through
       // the lock screen, defeating the point of marking them private.
-      const label = ev.is_private ? '🔒 Private event' : escHtml(ev.title);
+      const label = ev.is_private ? `${ICON.lock} Private event` : escHtml(ev.title);
       // Time isn't identity-revealing the way title/color are, so it's
       // shown even for private events — just when, not what.
       const t    = lockEventTime(ev);
@@ -1899,7 +1899,8 @@ setInterval(refreshSky, 60000);
    ══════════════════════════════════════════════════════════ */
 const ALERT_SEV  = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3, Unknown: 4 };
 const ALERT_CLS  = { Extreme: 'alert-extreme', Severe: 'alert-severe', Moderate: 'alert-moderate', Minor: 'alert-minor' };
-const ALERT_ICON = { Extreme: '🚨', Severe: '🚨', Moderate: '⚠️', Minor: '💛' };
+// Filled in lazily: ICON is defined further down the file
+const alertIcon = sev => (sev === 'Minor' || !sev) ? ICON.info : ICON.alert;
 
 /* ── Alert sound & TTS ────────────────────────────────────── */
 const getSoundEnabled = () => localStorage.getItem('alertSound') === 'true';
@@ -2296,7 +2297,7 @@ function alertTickerHtml(sorted) {
   return sorted.map(f => {
     const p        = f.properties;
     const cls      = ALERT_CLS[p.severity]  || 'alert-minor';
-    const ico      = ALERT_ICON[p.severity] || '⚠️';
+    const ico      = alertIcon(p.severity);
     const headline = p.headline || p.event;
     const areas    = p.areaDesc
       ? p.areaDesc.split(';').map(s => s.trim()).filter(Boolean).join(', ')
@@ -2578,9 +2579,9 @@ function renderRain(hourly) {
   let headline;
   if (!windows.length) {
     const maxP = Math.max(...hours.map(h => h.prob));
-    headline = maxP >= 10 ? `🌂 Slight chance (${maxP}%)` : `☀️ No rain today`;
+    headline = maxP >= 10 ? `${ICON.drop} Slight chance of rain (${maxP}%)` : `${ICON.sun} No rain today`;
   } else {
-    headline = '🌧 Rain: ' + windows
+    headline = `${ICON.drop} Rain: ` + windows
       .map(w => `${fmt12hHM(w.start, 0)}–${fmt12hHM(w.end, 0)} (${w.peak}%)`)
       .join(' · ');
   }
@@ -2638,11 +2639,11 @@ function updateConnectivityBadge() {
   const offlineMs = Date.now() - lastOnlineAt;
   const stale = offlineMs > OFFLINE_THRESHOLD_MS;
   const label = stale
-    ? `📡 Offline · last synced ${Math.round(offlineMs / 60000)}m ago`
+    ? `${ICON.wifiOff} Offline · last synced ${Math.round(offlineMs / 60000)}m ago`
     : '';
   for (const id of ['connectivity-badge', 'lock-connectivity-badge']) {
     const el = document.getElementById(id);
-    el.textContent = label;
+    el.innerHTML = label;
     el.hidden = !stale;
   }
 }
@@ -2984,7 +2985,58 @@ document.addEventListener('focusout', e => {
 fetch('/api/version').then(r => r.json()).then(({ build, commit }) => {
   document.getElementById('app-version').textContent =
     (build ? `Build ${build}` : '') + (commit ? ` · ${commit}` : '');
+  speedCheckAfterUpdate(commit);
 }).catch(() => {});
+
+/* ── Speed check after an update ─────────────────────────────
+   The first time a new version runs (and on a brand-new unit), once
+   startup has settled, measure the frame rate for a few seconds. If the
+   screen is struggling, turn the graphics down one step at a time
+   (Frosted Glass first, then the Animated Sky), measuring again after
+   each, and leave a note in Settings ▸ Graphics. Silent. Skipped (and
+   tried again next load) if the screen is hidden or busy. */
+const SPEED_OK_FPS = 40;
+
+function measureFps(ms = 5000) {
+  return new Promise(resolve => {
+    let frames = 0;
+    const t0 = performance.now();
+    const tick = now => {
+      frames++;
+      if (now - t0 < ms) requestAnimationFrame(tick);
+      else resolve(frames * 1000 / (now - t0));
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+async function speedCheckAfterUpdate(commit) {
+  if (!commit || localStorage.getItem('speedCheckedCommit') === commit) return;
+  await new Promise(r => setTimeout(r, 45000)); // let startup work (weather, calendar) finish
+  if (document.hidden || !setupScreen.hidden || benchRunning) return;
+  localStorage.setItem('speedCheckedCommit', commit);
+  const changes = [];
+  for (let i = 0; i < 3; i++) {
+    const fps = await measureFps();
+    if (document.hidden) break; // measured while hidden: not a real reading
+    if (fps >= SPEED_OK_FPS) break;
+    const step = getGlassMode() !== 'off'      ? ['gfxGlass', 'off', 'Frosted Glass Off']
+               : getWxQuality() === 'full'     ? ['gfxWxQuality', 'reduced', 'Animated Sky Reduced']
+               : getWxQuality() === 'reduced'  ? ['gfxWxQuality', 'off', 'Animated Sky Off']
+               : null;
+    if (!step) break;
+    localStorage.setItem(step[0], step[1]);
+    applyGlassSetting();
+    applyWxMode(wxMode);
+    changes.push(step[2]);
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  if (!changes.length) return;
+  const when = new Date().toLocaleDateString([], { month: 'short', day: 'numeric' });
+  localStorage.setItem('autoGfxNote',
+    `After the update on ${when} the screen was running slowly, so the graphics were changed to ${changes.join(', then ')}.`);
+  showToast('The screen was running slowly after the update, so the graphics were turned down. See Settings, Graphics.', 'success');
+}
 
 // Debug Options, Graphics and Reset are hidden by default — Debug so kids/
 // guests don't stumble into weather/alert simulation tools, Graphics
@@ -2994,7 +3046,7 @@ fetch('/api/version').then(r => r.json()).then(({ build, commit }) => {
 // Android uses. Stored in localStorage so it stays unlocked across
 // reloads once found; taps more than 2s apart don't count toward the streak.
 const ADVANCED_SECTION_IDS = ['debug-section', 'graphics-section', 'reset-section',
-  'nav-advanced-title', 'nav-graphics', 'nav-debug', 'nav-reset'];
+  'nav-advanced-title', 'nav-graphics', 'nav-debug', 'nav-backups', 'nav-reset'];
 let debugTapCount = 0;
 let debugTapTimer = null;
 if (localStorage.getItem('debugUnlocked') === 'true') {
@@ -3348,7 +3400,83 @@ function showSettingsPane(name, { enter = true } = {}) {
   settingsShell.classList.toggle('in-pane', enter);
   if (name === 'graphics') syncGraphicsOptions();
   if (name === 'family') refreshFamilyStatus();
+  if (name === 'debug') refreshUpdateChannel();
+  if (name === 'backups') refreshBackups();
 }
+
+// Settings ▸ Debug Tools ▸ Update Channel
+async function refreshUpdateChannel() {
+  try {
+    const { channel } = await api('GET', '/api/update-channel');
+    document.querySelectorAll('#update-channel-options .theme-opt').forEach(b =>
+      b.classList.toggle('active', b.dataset.val === channel));
+  } catch { /* leave as is */ }
+}
+document.getElementById('update-channel-options').addEventListener('click', async e => {
+  const btn = e.target.closest('.theme-opt');
+  if (!btn) return;
+  try {
+    await api('POST', '/api/update-channel', { channel: btn.dataset.val });
+    refreshUpdateChannel();
+    checkForUpdate();
+  } catch (err) { showError(errText(err)); }
+});
+
+// Settings ▸ Backups: newest first; Restore takes two taps
+async function refreshBackups() {
+  const list = document.getElementById('backup-list');
+  let backups;
+  try { backups = await api('GET', '/api/backups'); }
+  catch (err) { list.innerHTML = `<p class="panel-hint">Couldn't list backups: ${escHtml(errText(err))}</p>`; return; }
+  if (!backups.length) {
+    list.innerHTML = '<p class="panel-hint">No backups yet. One is saved the next time the dashboard starts.</p>';
+    return;
+  }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  list.innerHTML = backups.map(b => {
+    const when = new Date(b.at).toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      hour12: getTimeFormat() !== '24h',
+    });
+    const what = b.counts
+      ? [plural(b.counts.calendar_events, 'event'), plural(b.counts.todo_items, 'to-do'), plural(b.counts.bulletin_posts, 'post')].join(' · ')
+      : 'Contents unreadable';
+    return `<div class="settings-section backup-row">
+      <div><div class="backup-when">${escHtml(when)}</div><div class="settings-desc">${what}</div></div>
+      <button class="btn btn-ghost btn-sm" data-restore="${escHtml(b.name)}" ${b.counts ? '' : 'disabled'}>Restore</button>
+    </div>`;
+  }).join('');
+}
+
+let restoreArmed = null;
+document.getElementById('backup-list').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-restore]');
+  if (!btn) return;
+  if (restoreArmed !== btn) {
+    restoreArmed = btn;
+    btn.textContent = 'Tap again to restore';
+    btn.classList.add('btn-danger-outline');
+    setTimeout(() => {
+      if (restoreArmed !== btn) return;
+      restoreArmed = null;
+      btn.textContent = 'Restore';
+      btn.classList.remove('btn-danger-outline');
+    }, 4000);
+    return;
+  }
+  restoreArmed = null;
+  btn.disabled = true;
+  btn.textContent = 'Restoring…';
+  try {
+    await api('POST', '/api/backups/restore', { name: btn.dataset.restore, confirm: 'RESTORE' });
+    showToast('Restored. What was there before was saved as a backup first.', 'success');
+    sessionStorage.setItem('quietReload', '1');
+    setTimeout(() => location.reload(), 1500);
+  } catch (err) {
+    showError(errText(err));
+    refreshBackups();
+  }
+});
 
 settingsShell.querySelector('.settings-nav').addEventListener('click', e => {
   const item = e.target.closest('.settings-nav-item');
@@ -3393,6 +3521,9 @@ applyGlassSetting();
 
 // Settings ▸ Graphics pane: show the current choices whenever it opens
 function syncGraphicsOptions() {
+  const note = document.getElementById('auto-gfx-note');
+  note.textContent = localStorage.getItem('autoGfxNote') || '';
+  note.hidden = !note.textContent;
   document.querySelectorAll('#gfx-glass .theme-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.val === getGlassMode()));
   document.getElementById('toggle-gfx-lightning').checked = getLightningEnabled();
@@ -3404,6 +3535,8 @@ document.getElementById('gfx-glass').addEventListener('click', e => {
   const btn = e.target.closest('.theme-opt');
   if (!btn) return;
   localStorage.setItem('gfxGlass', btn.dataset.val);
+  localStorage.removeItem('autoGfxNote');
+  document.getElementById('auto-gfx-note').hidden = true;
   document.querySelectorAll('#gfx-glass .theme-opt').forEach(b =>
     b.classList.toggle('active', b === btn));
   applyGlassSetting();
@@ -3413,6 +3546,8 @@ document.getElementById('gfx-wx-quality').addEventListener('click', e => {
   const btn = e.target.closest('.theme-opt');
   if (!btn) return;
   localStorage.setItem('gfxWxQuality', btn.dataset.val);
+  localStorage.removeItem('autoGfxNote');
+  document.getElementById('auto-gfx-note').hidden = true;
   document.querySelectorAll('#gfx-wx-quality .theme-opt').forEach(b =>
     b.classList.toggle('active', b === btn));
   applyWxMode(wxMode); // re-init particle counts (or stop/start the loop) immediately
@@ -3853,8 +3988,8 @@ async function checkRemoteHealth() {
     const paused  = !!s.code && ts.running && ts.state !== 'Running';
     const expires = ts.keyExpiry ? new Date(ts.keyExpiry) : null;
     const dueSoon = !!s.code && expires && expires - Date.now() < REMOTE_WARN_DAYS * 86400000;
-    badge.textContent = paused ? '⚠️ Family link paused'
-      : `⚠️ Family link: sign in by ${expires?.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+    badge.innerHTML = ICON.alert + (paused ? ' Family Link paused'
+      : ` Family Link: sign in by ${escHtml(expires?.toLocaleDateString([], { month: 'short', day: 'numeric' }) || '')}`);
     badge.hidden = !(paused || dueSoon);
   } catch { /* server busy/restarting — check again next interval */ }
 }
@@ -3877,6 +4012,10 @@ const ICON = {
   alert:   '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
   refresh: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>',
   calendar:'<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  info:    '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></svg>',
+  wifiOff: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 6.4-3.6M22 9a15 15 0 0 0-8.6-4.3M5.5 12.5a10 10 0 0 1 4.2-2.3M18.5 12.5a10 10 0 0 0-2-1.4M9 16a5 5 0 0 1 6 0M12 19.5h.01M3 3l18 18"/></svg>',
+  drop:    '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>',
+  sun:     '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
 };
 
 /* ══════════════════════════════════════════════════════════
@@ -4404,7 +4543,7 @@ function renderPerfOverlay() {
       s.gpu.coreMHz != null ? `${s.gpu.coreMHz}MHz`  : null,
     ].filter(Boolean).join(' · ') || 'N/A' : 'N/A (no vcgencmd)'}`,
   ];
-  if (s?.gpu?.throttled != null) lines.push(`THROTTLED: ${s.gpu.throttled ? 'YES ⚠️' : 'No'}`);
+  if (s?.gpu?.throttled != null) lines.push(`THROTTLED: ${s.gpu.throttled ? 'YES' : 'No'}`);
   if (s?.uptimeSec != null)      lines.push(`UPTIME: ${fmtUptime(s.uptimeSec)}`);
 
   perfOverlay.textContent = lines.join('\n');
@@ -4566,8 +4705,8 @@ function renderBenchResults(res) {
         ? `<strong>Recommended:</strong> Frosted Glass <strong>${cap(rec.glass)}</strong>, Animated Sky <strong>${cap(rec.wx)}</strong>
            <button class="btn btn-ghost btn-sm" id="bench-apply">Apply</button>`
         : '<strong>Nothing stayed smooth</strong> — keep Frosted Glass and Animated Sky both Off.'}
-      ${res.runs.some(r => r.verdict === 'invalid') ? '<br>⚠️ The screen was hidden or covered during some runs (marked Invalid), so those were skipped. Re-run for a complete result.' : ''}
-      ${res.runs.some(r => r.throttled) ? '<br>⚠️ The Pi reported throttling (heat or undervoltage) during the run, so these numbers may be pessimistic.' : ''}
+      ${res.runs.some(r => r.verdict === 'invalid') ? '<br>Note: the screen was hidden or covered during some runs (marked Invalid), so those were skipped. Re-run for a complete result.' : ''}
+      ${res.runs.some(r => r.throttled) ? '<br>Note: the Pi reported throttling (heat or undervoltage) during the run, so these numbers may be pessimistic.' : ''}
       <br><span class="settings-desc">${when} · ${res.screen}</span>
     </div>
     <div class="bench-scroll"><table>

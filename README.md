@@ -291,9 +291,11 @@ The app will launch fullscreen like a native app.
 
 Every time the dashboard starts (each update, restart and reboot) it saves a
 copy of all its data to `db/backups/dashboard-YYYYMMDD-HHMMSS.db`, keeping
-the newest 14. To restore one: stop the service, copy the backup over
-`db/dashboard.db` (delete any `dashboard.db-wal`/`-shm` next to it), and
-start the service again. **Reset for a New Owner** and `prepare-image.sh`
+the newest 14. To restore one, use **Settings ▸ Backups** (an Advanced
+setting): it lists each backup with what's in it, and Restore (two taps)
+brings back the events, to-dos and bulletin posts. Settings and the family
+code are left alone, and the current data is backed up first, so a restore
+can be undone. **Reset for a New Owner** and `prepare-image.sh`
 delete these backups, since they hold the family's data.
 
 ---
@@ -304,6 +306,26 @@ Normally automatic: the dashboard checks for updates every 5 minutes and
 shows an **Update available** badge — tap it, then **Update Now**, and it
 pulls, reinstalls dependencies, reapplies `scripts/system-update.sh`, and
 restarts itself.
+
+**Update channels.** Every dashboard follows **Stable** by default, which
+only moves when you release. Set your own dashboard to **Testing**
+(Settings ▸ Debug Tools ▸ Update Channel) to get every push to `main`
+straight away. Once you're happy with a change there, release it to every
+Stable dashboard:
+
+```bash
+bash scripts/release.sh
+```
+
+It lists exactly what would go out and asks for a `yes`, then moves the
+GitHub `stable` branch up to `main`. If `stable` can't be reached, dashboards
+fall back to `main` rather than being stuck.
+
+**Speed check after updates.** The first time a new version runs, the
+dashboard measures its frame rate for a few seconds once startup settles.
+If it's under 40 FPS it turns the graphics down a step at a time (Frosted
+Glass first, then the Animated Sky) and leaves a note in Settings ▸
+Graphics.
 
 To update manually from a terminal instead:
 
