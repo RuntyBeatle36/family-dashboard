@@ -506,6 +506,20 @@ body {
   z-index: 1;
 }
 #lock-screen[hidden] { display: none; }
+/* Locked: the dashboard stays laid out and painted, just fully transparent,
+   so a tap only has to show it (~35ms on a Pi 4) instead of rebuilding and
+   re-rastering it (~0.4s; display:none and visibility:hidden both drop the
+   raster). No will-change: that would make it a backdrop root and break
+   Frosted Glass. The Lock Screen covers its area. */
+body.locked .top-bar,
+body.locked .app-body { opacity: 0; pointer-events: none; }
+body.locked #lock-screen {
+  position: absolute;
+  top:    calc(env(safe-area-inset-top) + var(--alert-banner-h, 0px));
+  bottom: env(safe-area-inset-bottom);
+  left:   env(safe-area-inset-left);
+  right:  env(safe-area-inset-right);
+}
 
 .lock-clock {
   font-size: clamp(4.5rem, 13vw, 10rem);

@@ -168,11 +168,18 @@ let privacyRevealTimer = null;
 
 function updateLockUI() {
   const locked = getLockScreenEnabled() && !privacyRevealed;
-  document.getElementById('lock-screen').hidden     = !locked;
-  document.querySelector('.top-bar').style.display  = locked ? 'none' : '';
-  document.querySelector('.app-body').style.display = locked ? 'none' : '';
+  document.getElementById('lock-screen').hidden = !locked;
+  // The dashboard stays rendered underneath (just transparent, see
+  // body.locked in style.css) rather than display:none, which made the first
+  // tap after a few idle minutes rebuild the whole screen (~0.4s on a Pi 4).
+  document.body.classList.toggle('locked', locked);
   if (locked) renderLockScreen();
 }
+// The Lock Screen floats over the dashboard, so it starts below the alert
+// banner instead of being pushed down by it
+new ResizeObserver(([e]) => {
+  document.body.style.setProperty('--alert-banner-h', `${e.target.offsetHeight}px`);
+}).observe(document.getElementById('alert-banner'));
 
 function revealPrivacy() {
   const wasHidden = !privacyRevealed;
