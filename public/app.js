@@ -1515,9 +1515,15 @@ function renderBolt(pts) {
 const WX_FRAME_MS = 1000 / 30;
 let wxLastFrameTs  = 0;
 
+// Calm skies (drifting clouds, slow twinkle) look the same at 15fps and
+// halve the full-screen repaint; falling rain/snow keeps 30fps
+const WX_CALM_MODES   = new Set(['clear-night', 'cloudy-day', 'cloudy-night', 'overcast']);
+const WX_CALM_FRAME_MS = 1000 / 15;
+
 function drawFrame(ts = 0) {
-  const elapsed = wxLastFrameTs ? ts - wxLastFrameTs : WX_FRAME_MS;
-  if (elapsed < WX_FRAME_MS - 1) {
+  const frameMs = WX_CALM_MODES.has(wxMode) ? WX_CALM_FRAME_MS : WX_FRAME_MS;
+  const elapsed = wxLastFrameTs ? ts - wxLastFrameTs : frameMs;
+  if (elapsed < frameMs - 1) {
     wxAnimId = requestAnimationFrame(drawFrame);
     return;
   }
