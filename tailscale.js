@@ -6,8 +6,9 @@
 //
 // In userspace mode, connections arriving over Tailscale are delivered to
 // this Pi's localhost — so from any of the owner's own Tailscale devices,
-// SSH (port 22) and the dashboard (port 3000) work from anywhere. `--ssh`
-// additionally enables Tailscale SSH (logs in as this same user only).
+// SSH (port 22) and the dashboard (port 3000) work from anywhere. Tailscale
+// SSH stays OFF: it could only log in as the app account, and it would take
+// port 22 away from the real sshd (key logins as the desktop user).
 // Funnel publishes ONLY the remote calendar port (remote.js) to the public
 // internet over HTTPS.
 //
@@ -51,6 +52,9 @@ function startDaemon() {
   };
   daemon.on('exit',  code => retry(`exited (${code})`));
   daemon.on('error', err  => retry(`failed to start (${err.message})`));
+
+  // Units signed in before Tailscale SSH was dropped still have it on
+  setTimeout(() => cli(['set', '--ssh=false']).catch(() => {}), 5000);
 }
 
 async function cli(args, timeout = 8000) {
@@ -114,7 +118,7 @@ async function status() {
 }
 
 function login() {
-  return runInteractive(['up', '--ssh', `--hostname=${HOSTNAME}`, '--accept-dns=false']);
+  return runInteractive(['up', '--ssh=false', `--hostname=${HOSTNAME}`, '--accept-dns=false']);
 }
 
 function enableFunnel(port) {

@@ -22,10 +22,7 @@
 #   5. starts the dashboard and checks it answers. If it doesn't within a
 #      minute, everything above is undone and the old setup is restarted.
 #
-# Afterwards, Tailscale SSH logs in as the app account:
-#   ssh fdash@family-dashboard
-# (Tailscale runs inside the dashboard, so it can only sign in as the account
-# the dashboard runs as.) Normal SSH as `user` on the home network is unchanged.
+# SSH as `user` is unchanged, at home and over Tailscale (ssh user@family-dashboard).
 
 set -euo pipefail
 
@@ -136,7 +133,6 @@ for _ in $(seq 1 30); do
     echo
     echo "== Done. The dashboard runs as $APP_USER from $APP_DIR. =="
     [ ! -d "$LINK.pre-move" ] || echo "The old copy is kept at $LINK.pre-move. Delete it once you're happy: rm -rf $LINK.pre-move"
-    echo "Tailscale SSH now signs in as the app account: ssh $APP_USER@family-dashboard"
     echo "Next: sudo bash $APP_DIR/scripts/harden-pi.sh"
     rm -rf "$ROLLBACK"
     exit 0

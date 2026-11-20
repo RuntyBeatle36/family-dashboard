@@ -84,10 +84,9 @@ account, moves the app to `/opt/family-dashboard` (leaving
 `~/family-dashboard` as a link), and installs the sudoers rule, polkit rule
 and service file scoped to `fdash` only, so the kiosk browser and anything
 else running as the desktop login get none of these permissions. It checks
-the dashboard comes back and undoes everything if not. Tailscale runs inside
-the app, so afterwards **Tailscale SSH signs in as `fdash`**
-(`ssh fdash@family-dashboard`); normal SSH as `user` on the home network is
-unchanged.
+the dashboard comes back and undoes everything if not. SSH is unchanged:
+`ssh user@family-dashboard` over Tailscale, or `ssh user@familydashboard.local`
+at home.
 **A Pi set up before this keeps the old, broader rule until
 `bash ~/family-dashboard/scripts/setup-app-account.sh` is run once, then
 `sudo bash /opt/family-dashboard/scripts/harden-pi.sh`.**
@@ -240,11 +239,11 @@ How it works:
   3000: settings, updates, Exit to Terminal) is never reachable from the
   internet. Wrong codes are throttled (5 per device, 30 overall, per 15 minutes).
 - **SSH from anywhere:** install Tailscale on your laptop/phone, sign in to the
-  same account, then `ssh fdash@family-dashboard` (Tailscale SSH signs in as
-  the account the dashboard runs as: `user` on a Pi not yet moved to its own
-  account). On the home network, normal SSH as `user` works too (over
-  Tailscale, port 22 goes to Tailscale SSH). The dashboard is
-  also at `http://family-dashboard:3000` from your Tailscale devices.
+  same account, then `ssh user@family-dashboard`. Port 22 reaches the Pi's
+  normal SSH server (key login once `harden-pi.sh` has turned passwords off);
+  Tailscale SSH is deliberately off, since it could only sign in as the app
+  account. The dashboard is also at `http://family-dashboard:3000` from your
+  Tailscale devices.
 - Turning Family Link off (Settings ▸ Family Link) deletes the code, signs everyone out,
   and takes the public link down.
 
